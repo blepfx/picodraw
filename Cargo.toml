@@ -1,0 +1,20 @@
+[package]
+name = "picodraw"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytemuck = "1"
+rustc-hash = "2"
+crunch = "0.5"
+image = { version = "0.25", default-features = false }
+picodraw-derive = { path = "derive" }
+
+[dev-dependencies]
+baseview = { git = "https://github.com/RustAudio/baseview", features = ["opengl"] }
+
+[workspace]
+members = [
+    ".",
+    "derive"
+]
