@@ -2,7 +2,7 @@ use baseview::{
     gl::GlConfig, Event, EventStatus, Size, Window, WindowEvent, WindowHandler, WindowOpenOptions,
     WindowScalePolicy,
 };
-use picodraw::{opengl::OpenGl, Float2, Float4, GlFloat, Shader, ShaderData};
+use picodraw::{opengl::OpenGl, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData};
 use std::time::Instant;
 
 fn main() {
@@ -107,9 +107,10 @@ impl Shader for Circle {
         [0.0, 0.0, 1000.0, 1000.0]
     }
 
-    fn draw(pos: Float2, vars: Self::ShaderVars) -> Float4 {
-        let center = Float2::new(vars.center[0], vars.center[1]);
-        let mask = 1.0 - ((center - pos).len() - vars.radius).smoothstep(-0.707, 0.707);
+    fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4 {
+        let center = Float2::new(shader.center[0], shader.center[1]);
+        let mask =
+            1.0 - ((center - shader.position).len() - shader.radius).smoothstep(-0.707, 0.707);
 
         Float4::from(1.0) * mask
     }

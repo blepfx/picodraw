@@ -1,4 +1,4 @@
-use crate::{graph::ShaderGraph, types::GlType, Float2, Float4, Shader};
+use crate::{graph::ShaderGraph, types::GlType, Float2, Float4, Shader, ShaderContext};
 use encoding::InputStructure;
 use rustc_hash::FxHashMap;
 
@@ -34,7 +34,11 @@ impl ShaderMap {
         let graph = ShaderGraph::collect(|| {
             let (structure, vars) = InputStructure::of::<T>();
             input = Some(structure);
-            T::draw(Float2::input_raw("@pos".to_string()), vars)
+            T::draw(ShaderContext {
+                vars,
+                position: Float2::input_raw("@pos".to_string()),
+                resolution: Float2::input_raw("@res".to_string()),
+            })
         });
 
         let id = T::id();
