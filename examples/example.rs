@@ -99,10 +99,6 @@ pub struct Circle {
 }
 
 impl Shader for Circle {
-    fn id() -> &'static str {
-        "circle"
-    }
-
     fn bounds(&self) -> [f32; 4] {
         [0.0, 0.0, 1000.0, 1000.0]
     }

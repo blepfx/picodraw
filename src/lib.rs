@@ -24,7 +24,6 @@ impl<T> std::ops::Deref for ShaderContext<T> {
 }
 
 pub trait Shader: ShaderData {
-    fn id() -> &'static str;
     fn bounds(&self) -> [f32; 4];
     fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4;
 }

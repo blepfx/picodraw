@@ -1,6 +1,7 @@
 use crate::{graph::ShaderGraph, types::GlType, Float2, Float4, Shader, ShaderContext};
 use encoding::InputStructure;
 use rustc_hash::FxHashMap;
+use std::any::TypeId;
 
 mod atlas;
 mod encoding;
@@ -17,7 +18,7 @@ struct ShaderData {
 }
 
 pub struct ShaderMap {
-    shaders: FxHashMap<String, ShaderData>,
+    shaders: FxHashMap<TypeId, ShaderData>,
     dirty: bool,
 }
 
@@ -41,14 +42,14 @@ impl ShaderMap {
             })
         });
 
-        let id = T::id();
-        if self.shaders.contains_key(id) {
-            panic!("shader id duplicate '{}'", id);
+        let id = shader_id::<T>();
+        if self.shaders.contains_key(&id) {
+            return;
         }
 
         self.dirty = true;
         self.shaders.insert(
-            id.to_owned(),
+            id,
             ShaderData {
                 id: self.shaders.len() as u32,
                 graph,
@@ -93,9 +94,17 @@ impl ShaderMap {
     ) {
         let data = self
             .shaders
-            .get(T::id())
+            .get(&shader_id::<T>())
             .expect("register the drawable first");
 
         encoder.push(value, data.id, &data.input, width, height);
     }
+}
+
+fn shader_id<S: Shader>() -> TypeId {
+    fn id<U, T: Fn(U) -> Float4 + 'static>(_: T) -> TypeId {
+        TypeId::of::<T>()
+    }
+
+    id(|x| S::draw(x))
 }

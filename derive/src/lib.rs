@@ -1,6 +1,6 @@
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
-use syn::{parse_macro_input, DeriveInput, Ident};
+use syn::{parse_macro_input, parse_quote, DeriveInput, GenericParam, Generics, Ident};
 
 #[proc_macro_derive(ShaderData)]
 pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -8,7 +8,8 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     let name = input.ident;
     let vis = input.vis;
 
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let generics = add_trait_bounds(input.generics);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     let str = match input.data {
         syn::Data::Struct(s) => s,
@@ -22,6 +23,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
     };
 
     let shader_vars_name = Ident::new(&format!("{}__ShaderVars", name), name.span());
+
     let (shader_vars, shader_collect, shader_write) = match str.fields {
         syn::Fields::Named(fields) => {
             let shader_vars_fields = fields
@@ -59,7 +61,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
             (
                 quote! {
-                    #vis struct #shader_vars_name {
+                    #vis struct #shader_vars_name #generics {
                         #(#shader_vars_fields),*
                     }
                 },
@@ -107,7 +109,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
             (
                 quote! {
-                    #vis struct #shader_vars_name (#(#shader_vars_fields),*);
+                    #vis struct #shader_vars_name #generics (#(#shader_vars_fields),*);
                 },
                 quote! {
                     #shader_vars_name (#(#shader_collect_fields),*)
@@ -130,7 +132,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         #shader_vars
 
         impl #impl_generics picodraw::ShaderData for #name #ty_generics #where_clause {
-            type ShaderVars = #shader_vars_name;
+            type ShaderVars = #shader_vars_name #ty_generics;
             fn shader_vars(vars: &mut dyn picodraw::ShaderVars) -> Self::ShaderVars {
                 #shader_collect
             }
@@ -140,4 +142,13 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         }
     }
     .into()
+}
+
+fn add_trait_bounds(mut generics: Generics) -> Generics {
+    for param in &mut generics.params {
+        if let GenericParam::Type(ref mut type_param) = *param {
+            type_param.bounds.push(parse_quote!(::picodraw::ShaderData));
+        }
+    }
+    generics
 }
