@@ -1,4 +1,5 @@
-use quote::quote;
+use proc_macro2::Span;
+use quote::{quote, quote_spanned};
 use syn::{parse_macro_input, DeriveInput, Ident};
 
 #[proc_macro_derive(ShaderData)]
@@ -11,7 +12,13 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     let str = match input.data {
         syn::Data::Struct(s) => s,
-        _ => panic!("struct expected"),
+        _ => {
+            return quote_spanned! {
+                Span::call_site() =>
+                compile_error!("ShaderData can only be derived for struct types");
+            }
+            .into();
+        }
     };
 
     let shader_vars_name = Ident::new(&format!("{}__ShaderVars", name), name.span());
