@@ -9,6 +9,7 @@ pub use image;
 pub use picodraw_derive::ShaderData;
 pub use types::{Bool, Float, Float2, Float3, Float4, GlFloat, Int, Texture};
 
+#[non_exhaustive]
 pub struct ShaderContext<T> {
     pub vars: T,
     pub position: Float2,
