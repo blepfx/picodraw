@@ -138,7 +138,6 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     quote! {
         #[allow(non_camel_case_types)]
-        #[derive(Clone)]
         #shader_vars
 
         impl #impl_generics picodraw::ShaderData for #name #ty_generics #where_clause {
