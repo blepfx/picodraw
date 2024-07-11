@@ -383,7 +383,6 @@ impl GlTexture {
 pub struct GlInfo {
     pub version: (i32, i32),
     pub max_texture_size: usize,
-    pub max_texture_image_units: usize,
     pub max_texture_buffer_size: usize,
 }
 
@@ -430,9 +429,6 @@ impl GlInfo {
                 version,
                 max_texture_buffer_size: max_texture_buffer_size as usize,
                 max_texture_size: max_texture_size as usize,
-                max_texture_image_units: max_texture_image_units
-                    .max(max_texture_image_units_combined)
-                    as usize,
             })
         }
     }
