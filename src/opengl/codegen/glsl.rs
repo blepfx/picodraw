@@ -191,21 +191,21 @@ fn emit_decoder_for_type(
         }
 
         InputRepr::UInt8 => {
-            write!(f, "uint {id}=")?;
+            write!(f, "int {id}=int(")?;
             extract8(f, field.offset)?;
-            write!(f, ";")?;
+            write!(f, ");")?;
         }
 
         InputRepr::UInt16 => {
-            write!(f, "uint {id}=")?;
+            write!(f, "int {id}=int(")?;
             extract16(f, field.offset)?;
-            write!(f, ";")?;
+            write!(f, ");")?;
         }
 
         InputRepr::UInt32 => {
-            write!(f, "uint {id}=")?;
+            write!(f, "int {id}=int(")?;
             extract32(f, field.offset)?;
-            write!(f, ";")?;
+            write!(f, ");")?;
         }
 
         InputRepr::Float32 => {
