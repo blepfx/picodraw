@@ -2,7 +2,7 @@ use baseview::{
     gl::GlConfig, Event, EventStatus, Size, Window, WindowEvent, WindowHandler, WindowOpenOptions,
     WindowScalePolicy,
 };
-use picodraw::{opengl::OpenGl, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData};
+use picodraw::{opengl::OpenGl, Float, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData};
 use std::time::Instant;
 
 fn main() {
@@ -65,6 +65,17 @@ impl WindowHandler for App {
                     render.draw(&Circle {
                         center: [256.0, 256.0],
                         radius: 100.0,
+
+                        ignored: 0,
+                        alpha: 0.5,
+                    });
+
+                    render.draw(&Circle {
+                        center: [320.0, 320.0],
+                        radius: 50.0,
+
+                        ignored: 0,
+                        alpha: 0.5,
                     });
                 },
             );
@@ -96,11 +107,22 @@ impl WindowHandler for App {
 pub struct Circle {
     pub center: [f32; 2],
     pub radius: f32,
+
+    #[shader(ignore)]
+    pub ignored: u64,
+
+    #[shader(F16_01)]
+    pub alpha: f32,
 }
 
 impl Shader for Circle {
     fn bounds(&self) -> [f32; 4] {
-        [0.0, 0.0, 1000.0, 1000.0]
+        [
+            self.center[0] - self.radius,
+            self.center[1] - self.radius,
+            self.center[0] + self.radius,
+            self.center[1] + self.radius,
+        ]
     }
 
     fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4 {
@@ -108,6 +130,27 @@ impl Shader for Circle {
         let mask =
             1.0 - ((center - shader.position).len() - shader.radius).smoothstep(-0.707, 0.707);
 
-        Float4::from(1.0) * mask
+        Float4::from(shader.alpha) * mask
+    }
+}
+
+/// An example custom data encoder implementation for encoding a float as a 16 bit fixed point number between 0 and 1
+struct F16_01(pub f32);
+
+impl ShaderData for F16_01 {
+    type ShaderVars = Float;
+
+    fn shader_vars(vars: &mut dyn picodraw::ShaderVars) -> Self::ShaderVars {
+        Float::from(vars.uint16("")) / 65535.0
+    }
+
+    fn write(&self, writer: &mut dyn picodraw::ShaderDataWriter) {
+        writer.write_int("", (self.0 * 65535.0) as u16 as i32);
+    }
+}
+
+impl From<f32> for F16_01 {
+    fn from(value: f32) -> Self {
+        Self(value)
     }
 }

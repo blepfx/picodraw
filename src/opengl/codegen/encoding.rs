@@ -183,6 +183,18 @@ impl<'a> ShaderDataWriter for InputEncoder<'a> {
                 let ints = bytemuck::cast_slice_mut::<_, u32>(self.data);
                 ints[(field.offset / 4) as usize] = x as u32;
             }
+            InputRepr::UInt8 => {
+                let bytes = bytemuck::cast_slice_mut::<_, u8>(self.data);
+                bytes[field.offset as usize] = x as u8;
+            }
+            InputRepr::UInt16 => {
+                let shorts = bytemuck::cast_slice_mut::<_, u16>(self.data);
+                shorts[(field.offset / 2) as usize] = x as u16;
+            }
+            InputRepr::UInt32 => {
+                let ints = bytemuck::cast_slice_mut::<_, u32>(self.data);
+                ints[(field.offset / 4) as usize] = x as u32;
+            }
             _ => panic!("wrong type for '{}'", location),
         }
     }
