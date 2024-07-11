@@ -138,6 +138,41 @@ impl<const N: usize, T: ShaderData> ShaderData for [T; N] {
     }
 }
 
+impl<'a, T: ShaderData> ShaderData for &'a T {
+    type ShaderVars = T::ShaderVars;
+    fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
+        T::shader_vars(vars)
+    }
+    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+        T::write(&self, writer)
+    }
+}
+
+macro_rules! impl_tuple {
+    ($($id:ident),*) => {
+        impl<$($id: ShaderData),*> ShaderData for ($($id,)*) {
+            type ShaderVars = ($($id::ShaderVars,)*);
+
+            fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
+                ($($id::shader_vars(&mut prefix_vars(vars, stringify!($id))),)*)
+            }
+
+            fn write(&self, writer: &mut dyn ShaderDataWriter) {
+                #[allow(non_snake_case)]
+                let ($($id,)*) = self;
+                $($id::write($id, &mut prefix_writer(writer, stringify!($id)));)*
+            }
+        }
+    };
+}
+
+impl_tuple!(A);
+impl_tuple!(A, B);
+impl_tuple!(A, B, C);
+impl_tuple!(A, B, C, D);
+impl_tuple!(A, B, C, D, E);
+impl_tuple!(A, B, C, D, E, F);
+
 pub struct ShaderVarsPrefix<'a>(&'a mut dyn ShaderVars, &'a str);
 pub struct ShaderWriterPrefix<'a>(&'a mut dyn ShaderDataWriter, &'a str);
 
