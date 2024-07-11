@@ -1,8 +1,8 @@
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use syn::{
-    parse2, parse_macro_input, parse_quote, Attribute, DataStruct, DeriveInput, Field,
-    GenericParam, Generics, Ident, Meta, Type, Visibility,
+    parse2, parse_macro_input, parse_quote, Attribute, DeriveInput, Field, GenericParam, Generics,
+    Ident, Meta, Type, Visibility,
 };
 
 #[proc_macro_derive(ShaderData, attributes(shader))]
@@ -138,6 +138,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
     quote! {
         #[allow(non_camel_case_types)]
+        #[derive(Clone)]
         #shader_vars
 
         impl #impl_generics picodraw::ShaderData for #name #ty_generics #where_clause {

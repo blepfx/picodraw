@@ -10,10 +10,21 @@ pub use picodraw_derive::ShaderData;
 pub use types::{Bool, Float, Float2, Float3, Float4, GlFloat, Int, Texture};
 
 #[non_exhaustive]
+#[derive(Clone)]
 pub struct ShaderContext<T> {
     pub vars: T,
     pub position: Float2,
     pub resolution: Float2,
+}
+
+impl<T> ShaderContext<T> {
+    pub fn with_vars<U>(&self, vars: U) -> ShaderContext<U> {
+        ShaderContext {
+            vars,
+            position: self.position,
+            resolution: self.resolution,
+        }
+    }
 }
 
 impl<T> std::ops::Deref for ShaderContext<T> {

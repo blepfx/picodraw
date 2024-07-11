@@ -2,7 +2,7 @@ use crate::*;
 use std::{array::from_fn, sync::Arc};
 
 pub trait ShaderData {
-    type ShaderVars;
+    type ShaderVars: Clone;
 
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars;
     fn write(&self, writer: &mut dyn ShaderDataWriter);

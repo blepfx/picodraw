@@ -102,7 +102,7 @@ impl ShaderMap {
 }
 
 fn shader_id<S: Shader>() -> TypeId {
-    fn id<U, T: Fn(U) -> Float4 + 'static>(_: T) -> TypeId {
+    fn id<T: 'static>(_: T) -> TypeId {
         TypeId::of::<T>()
     }
 
