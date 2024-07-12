@@ -653,19 +653,22 @@ fn emit_graph_atom<'a>(
                 _ => unreachable!(),
             };
 
+            let (sample, w, h) = if texture.rotated {
+                (".yx", texture.data.height(), texture.data.width())
+            } else {
+                ("", texture.data.width(), texture.data.height())
+            };
+
             write!(
                 f,
-                "texture(uAtlas,vec2({}.0,{}.0)+clamp(0.5+",
+                "texture(uAtlas,(vec2({}.0,{}.0)+clamp(0.5+",
                 texture.x, texture.y
             )?;
             dep(f, *b)?;
             write!(
                 f,
-                "{},vec2(0.0),vec2({}.0,{}.0))/{}.0)",
-                if texture.rotated { ".yx" } else { "" },
-                texture.data.width(),
-                texture.data.height(),
-                atlas.atlas.size
+                "{},vec2(0.0),vec2({}.0,{}.0)))/{}.0)",
+                sample, w, h, atlas.atlas.size
             )?;
         }
 
@@ -675,19 +678,19 @@ fn emit_graph_atom<'a>(
                 _ => unreachable!(),
             };
 
+            let (sample, w, h) = if texture.rotated {
+                (".yx", texture.data.height(), texture.data.width())
+            } else {
+                ("", texture.data.width(), texture.data.height())
+            };
+
             write!(
                 f,
                 "texelFetch(uAtlas,ivec2({},{})+clamp(ivec2(",
                 texture.x, texture.y
             )?;
             dep(f, *b)?;
-            write!(
-                f,
-                "){},ivec2(0),ivec2({},{})),0)",
-                if texture.rotated { ".yx" } else { "" },
-                texture.data.width(),
-                texture.data.height()
-            )?;
+            write!(f, "){},ivec2(0),ivec2({},{})),0)", sample, w, h)?;
         }
 
         ValueSource::TextureSize(index) => {
