@@ -76,12 +76,9 @@ impl TextureAtlas {
 
             for j in 0..h {
                 for i in 0..w {
-                    let mut src_x = i.saturating_sub(PADDING).min(tex.data.width() - 1);
-                    let mut src_y = j.saturating_sub(PADDING).min(tex.data.height() - 1);
-
-                    if tex.rotated {
-                        swap(&mut src_x, &mut src_y);
-                    }
+                    let (src_x, src_y) = if tex.rotated { (j, i) } else { (i, j) };
+                    let src_x = src_x.saturating_sub(PADDING).min(tex.data.width() - 1);
+                    let src_y = src_y.saturating_sub(PADDING).min(tex.data.height() - 1);
 
                     image.put_pixel(x + i, y + j, tex.data.get_pixel(src_x, src_y));
                 }
