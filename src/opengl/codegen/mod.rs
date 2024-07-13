@@ -1,7 +1,7 @@
 use crate::{graph::ShaderGraph, types::GlType, Float2, Float4, Shader, ShaderContext};
 use encoding::InputStructure;
 use rustc_hash::FxHashMap;
-use std::any::TypeId;
+use std::any::{type_name, TypeId};
 
 mod atlas;
 mod encoding;
@@ -95,7 +95,7 @@ impl ShaderMap {
         let data = self
             .shaders
             .get(&shader_id::<T>())
-            .expect("register the drawable first");
+            .unwrap_or_else(|| panic!("register the drawable first ({})", type_name::<T>()));
 
         encoder.push(value, data.id, &data.input, width, height);
     }
