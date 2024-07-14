@@ -2,7 +2,9 @@ use baseview::{
     gl::GlConfig, Event, EventStatus, Size, Window, WindowEvent, WindowHandler, WindowOpenOptions,
     WindowScalePolicy,
 };
-use picodraw::{opengl::OpenGl, Float, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData};
+use picodraw::{
+    opengl::OpenGl, Bounds, Float, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData,
+};
 use std::time::Instant;
 
 fn main() {
@@ -62,21 +64,37 @@ impl WindowHandler for App {
                 self.size.width.ceil() as u32,
                 self.size.height.ceil() as u32,
                 |mut render| {
-                    render.draw(&Circle {
-                        center: [256.0, 256.0],
-                        radius: 100.0,
+                    render.draw(
+                        &Circle {
+                            center: [256.0, 256.0],
+                            radius: 100.0,
 
-                        ignored: 0,
-                        alpha: 0.5,
-                    });
+                            ignored: 0,
+                            alpha: 0.5,
+                        },
+                        Bounds {
+                            left: 256.0 - 100.0,
+                            top: 256.0 - 100.0,
+                            bottom: 256.0 + 100.0,
+                            right: 256.0 + 100.0,
+                        },
+                    );
 
-                    render.draw(&Circle {
-                        center: [320.0, 320.0],
-                        radius: 50.0,
+                    render.draw(
+                        &Circle {
+                            center: [320.0, 320.0],
+                            radius: 50.0,
 
-                        ignored: 0,
-                        alpha: 0.5,
-                    });
+                            ignored: 0,
+                            alpha: 0.5,
+                        },
+                        Bounds {
+                            left: 320.0 - 50.0,
+                            top: 320.0 - 50.0,
+                            bottom: 320.0 + 50.0,
+                            right: 320.0 + 50.0,
+                        },
+                    );
                 },
             );
 
@@ -116,15 +134,6 @@ pub struct Circle {
 }
 
 impl Shader for Circle {
-    fn bounds(&self) -> [f32; 4] {
-        [
-            self.center[0] - self.radius,
-            self.center[1] - self.radius,
-            self.center[0] + self.radius,
-            self.center[1] + self.radius,
-        ]
-    }
-
     fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4 {
         let center = Float2::new(shader.center[0], shader.center[1]);
         let mask =

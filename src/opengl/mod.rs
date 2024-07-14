@@ -2,7 +2,7 @@ mod bindings;
 mod codegen;
 mod gllayer;
 
-use crate::Shader;
+use crate::{Bounds, Shader};
 use bindings::GlBindings;
 use codegen::{QuadEncoder, ShaderMap};
 use gllayer::*;
@@ -90,7 +90,7 @@ impl<'a> OpenGlRenderer<'a> {
         self.data.shaders.register::<T>();
     }
 
-    pub fn draw<T: Shader>(&mut self, drawable: &T) {
+    pub fn draw<T: Shader>(&mut self, drawable: &T, bounds: Bounds) {
         let pass = self
             .data
             .pass_viewport
@@ -99,6 +99,7 @@ impl<'a> OpenGlRenderer<'a> {
 
         self.data.shaders.write(
             &mut self.data.pass_encoding,
+            bounds,
             drawable,
             pass.width,
             pass.height,

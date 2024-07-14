@@ -1,5 +1,6 @@
 use crate::{
-    types::GlType, Float, Float2, Int, Shader, ShaderData, ShaderDataWriter, ShaderVars, Texture,
+    types::GlType, Bounds, Float, Float2, Int, Shader, ShaderData, ShaderDataWriter, ShaderVars,
+    Texture,
 };
 use rustc_hash::FxHashMap;
 use std::{ops::Range, sync::Arc};
@@ -244,6 +245,7 @@ impl QuadEncoder {
         &mut self,
         draw: &T,
         shader_id: u32,
+        bounds: Bounds,
         input: &InputStructure,
         width: u32,
         height: u32,
@@ -257,14 +259,12 @@ impl QuadEncoder {
             structure: input,
         });
 
-        let bounds = draw.bounds();
-
         self.quads.push(QuadEncoded {
             bounds: [
-                (bounds[0] / width as f32 * 65535.0).floor() as u16,
-                (bounds[1] / height as f32 * 65535.0).floor() as u16,
-                (bounds[2] / width as f32 * 65535.0).ceil() as u16,
-                (bounds[3] / height as f32 * 65535.0).ceil() as u16,
+                (bounds.left / width as f32 * 65535.0).floor() as u16,
+                (bounds.top / height as f32 * 65535.0).floor() as u16,
+                (bounds.right / width as f32 * 65535.0).ceil() as u16,
+                (bounds.bottom / height as f32 * 65535.0).ceil() as u16,
             ],
             shader_id,
             data_range: data_start..self.data.len(),

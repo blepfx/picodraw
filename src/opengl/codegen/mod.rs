@@ -1,4 +1,4 @@
-use crate::{graph::ShaderGraph, types::GlType, Float2, Float4, Shader, ShaderContext};
+use crate::{graph::ShaderGraph, types::GlType, Bounds, Float2, Float4, Shader, ShaderContext};
 use encoding::InputStructure;
 use rustc_hash::FxHashMap;
 use std::any::{type_name, TypeId};
@@ -89,6 +89,7 @@ impl ShaderMap {
     pub fn write<T: Shader>(
         &mut self,
         encoder: &mut QuadEncoder,
+        bounds: Bounds,
         value: &T,
         width: u32,
         height: u32,
@@ -98,7 +99,7 @@ impl ShaderMap {
             .get(&shader_id::<T>())
             .unwrap_or_else(|| panic!("register the drawable first ({})", type_name::<T>()));
 
-        encoder.push(value, data.id, &data.input, width, height);
+        encoder.push(value, data.id, bounds, &data.input, width, height);
     }
 }
 
