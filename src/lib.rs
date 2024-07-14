@@ -14,6 +14,7 @@ pub struct ShaderContext<T> {
     pub vars: T,
     pub position: Float2,
     pub resolution: Float2,
+    pub bounds: Float4,
 }
 
 impl<T> std::ops::Deref for ShaderContext<T> {

@@ -20,7 +20,7 @@ uniform usamplerBuffer uBuffer;
 uniform vec2 uResolution;
 flat out int fragType;
 flat out int fragData;
-out vec4 fragBounds;
+flat out vec4 fragBounds;
 out vec2 fragPosition;
 void main() {
     int triangleId = gl_VertexID / 3;
@@ -33,6 +33,7 @@ void main() {
     vec2 pos = vec2(float(cornerId >> 1), float(cornerId & 1)) * (bottomRight - topLeft) + topLeft;
     gl_Position = vec4((2.0 * pos - 1.0) * vec2(1.0, -1.0), 0.0, 1.0);
     fragPosition = pos * uResolution;
+    fragBounds = vec4(topLeft * uResolution, bottomRight * uResolution);
     fragType = int(packedData.z);
     fragData = uBufferOffsetData + int(packedData.w);    
 }"#;
@@ -45,6 +46,7 @@ uniform sampler2D uAtlas;
 uniform vec2 uResolution;
 flat in int fragType;
 flat in int fragData;
+flat in vec4 fragBounds;
 in vec2 fragPosition;
 out vec4 outColor;
 int uint2int(uint x,uint m){return int(x)-int((x&m)<<1);}
@@ -78,6 +80,7 @@ pub fn generate_fragment_shader<'a>(
             |f, v| match v {
                 "@pos" => write!(f, "fragPosition"),
                 "@res" => write!(f, "uResolution"),
+                "@bounds" => write!(f, "fragBounds"),
                 v => write!(f, "{}", inputs.get(v).unwrap()),
             },
             |f, expr| write!(f, "outColor={};", expr),

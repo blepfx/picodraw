@@ -39,6 +39,7 @@ impl ShaderMap {
                 vars,
                 position: Float2::input_raw("@pos".to_string()),
                 resolution: Float2::input_raw("@res".to_string()),
+                bounds: Float4::input_raw("@bounds".to_string()),
             })
         });
 
