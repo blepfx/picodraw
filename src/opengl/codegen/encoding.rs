@@ -261,10 +261,10 @@ impl QuadEncoder {
 
         self.quads.push(QuadEncoded {
             bounds: [
-                (bounds.left / width as f32 * 65535.0).floor() as u16,
-                (bounds.top / height as f32 * 65535.0).floor() as u16,
-                (bounds.right / width as f32 * 65535.0).ceil() as u16,
-                (bounds.bottom / height as f32 * 65535.0).ceil() as u16,
+                (bounds.left / width as f32 * 65535.0).round() as u16,
+                (bounds.top / height as f32 * 65535.0).round() as u16,
+                (bounds.right / width as f32 * 65535.0).round() as u16,
+                (bounds.bottom / height as f32 * 65535.0).round() as u16,
             ],
             shader_id,
             data_range: data_start..self.data.len(),

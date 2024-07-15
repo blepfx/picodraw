@@ -472,6 +472,10 @@ fn emit_graph_atom<'a>(
             write!(f, ")")?;
         }
 
+        ValueSource::LitFloat(f32::INFINITY) => write!(f, "uintBitsToFloat(0x7F800000)")?,
+        ValueSource::LitFloat(f32::NEG_INFINITY) => write!(f, "uintBitsToFloat(0xFF800000)")?,
+        ValueSource::LitFloat(x) if x.is_nan() => write!(f, "intBitsToFloat(-1)")?,
+
         ValueSource::LitFloat(x) if x.is_sign_positive() => write!(f, "{x:?}")?,
         ValueSource::LitFloat(x) => write!(f, "({x:?})")?,
 

@@ -26,6 +26,23 @@ impl Bounds {
             right: f32::INFINITY,
         }
     }
+
+    pub fn extend(self, a: f32) -> Self {
+        Self {
+            top: self.top - a,
+            left: self.left - a,
+            bottom: self.bottom + a,
+            right: self.right + a,
+        }
+    }
+
+    pub fn width(&self) -> f32 {
+        self.right - self.left
+    }
+
+    pub fn height(&self) -> f32 {
+        self.bottom - self.top
+    }
 }
 
 impl<T> Deref for ShaderContext<T> {
