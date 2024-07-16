@@ -5,7 +5,7 @@ mod graph;
 mod shader;
 mod types;
 
-pub use data::{prefix_vars, prefix_writer, ShaderData, ShaderDataWriter, ShaderVars};
+pub use data::{ShaderData, ShaderDataWriter, ShaderVars};
 pub use image;
 pub use picodraw_derive::ShaderData;
 pub use shader::{Bounds, Shader, ShaderContext};

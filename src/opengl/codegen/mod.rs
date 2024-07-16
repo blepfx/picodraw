@@ -1,5 +1,5 @@
 use crate::{graph::ShaderGraph, types::GlType, Bounds, Float2, Float4, Shader, ShaderContext};
-use encoding::InputStructure;
+use encoding::{InputStructure, BUILTIN_BOUNDS, BUILTIN_POSITION, BUILTIN_RESOLUTION};
 use rustc_hash::FxHashMap;
 use std::any::{type_name, TypeId};
 
@@ -37,9 +37,9 @@ impl ShaderMap {
             input = Some(structure);
             T::draw(ShaderContext {
                 vars,
-                position: Float2::input_raw("@pos".to_string()),
-                resolution: Float2::input_raw("@res".to_string()),
-                bounds: Float4::input_raw("@bounds".to_string()),
+                position: Float2::input_raw(BUILTIN_POSITION),
+                resolution: Float2::input_raw(BUILTIN_RESOLUTION),
+                bounds: Float4::input_raw(BUILTIN_BOUNDS),
             })
         });
 
@@ -71,7 +71,8 @@ impl ShaderMap {
                 data.input
                     .textures
                     .iter()
-                    .map(move |(name, generator)| (data.id, name.as_str(), generator()))
+                    .enumerate()
+                    .map(move |(id, generator)| (data.id, id as u32, generator()))
             }),
             max_texture_size,
         );

@@ -46,7 +46,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                     let ident = x.ident.as_ref().unwrap();
                     let ident_str = ident.to_string();
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
-                    quote! { #ident: <#ty as picodraw::ShaderData>::shader_vars(&mut picodraw::prefix_vars(vars, #ident_str)) }
+                    quote! { #ident: <#ty as picodraw::ShaderData>::shader_vars(vars) }
                 })
                 .collect::<Vec<_>>();
 
@@ -58,9 +58,9 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
 
                     if x.ty_encoder.is_some() {
-                        quote! { <#ty as picodraw::ShaderData>::write(&self.#ident.into(), &mut picodraw::prefix_writer(writer, #ident_str)); }
+                        quote! { <#ty as picodraw::ShaderData>::write(&self.#ident.into(), writer); }
                     } else {
-                        quote! { <#ty as picodraw::ShaderData>::write(&self.#ident, &mut picodraw::prefix_writer(writer, #ident_str)); }
+                        quote! { <#ty as picodraw::ShaderData>::write(&self.#ident, writer); }
                     }
                 })
                 .collect::<Vec<_>>();
@@ -99,7 +99,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 .map(|x| {
                     let id = x.index;
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
-                    quote! { <#ty as picodraw::ShaderData>::shader_vars(&mut picodraw::prefix_vars(vars, stringify!(#id))) }
+                    quote! { <#ty as picodraw::ShaderData>::shader_vars(vars) }
                 })
                 .collect::<Vec<_>>();
 
@@ -109,9 +109,9 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                     let id = x.index;
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
                     if x.ty_encoder.is_some() {
-                        quote! { <#ty as picodraw::ShaderData>::write(&self.#id.into(), &mut picodraw::prefix_writer(writer, stringify!(#id))); }
+                        quote! { <#ty as picodraw::ShaderData>::write(&self.#id.into(), writer); }
                     } else {
-                        quote! { <#ty as picodraw::ShaderData>::write(&self.#id, &mut picodraw::prefix_writer(writer, stringify!(#id))); }
+                        quote! { <#ty as picodraw::ShaderData>::write(&self.#id, writer); }
                     }
                 })
                 .collect::<Vec<_>>();

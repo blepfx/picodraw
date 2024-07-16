@@ -1,6 +1,8 @@
 use super::{
     atlas::{ShaderTextures, TextureAtlas},
-    encoding::{InputField, InputRepr, InputStructure},
+    encoding::{
+        InputField, InputRepr, InputStructure, BUILTIN_BOUNDS, BUILTIN_POSITION, BUILTIN_RESOLUTION,
+    },
 };
 use crate::{
     graph::{ShaderGraph, Swizzle, Value, ValueSource, ValueType},
@@ -78,10 +80,10 @@ pub fn generate_fragment_shader<'a>(
             graph,
             atlas.shader(key),
             |f, v| match v {
-                "@pos" => write!(f, "fragPosition"),
-                "@res" => write!(f, "uResolution"),
-                "@bounds" => write!(f, "fragBounds"),
-                v => write!(f, "{}", inputs.get(v).unwrap()),
+                BUILTIN_POSITION => write!(f, "fragPosition"),
+                BUILTIN_RESOLUTION => write!(f, "uResolution"),
+                BUILTIN_BOUNDS => write!(f, "fragBounds"),
+                v => write!(f, "{}", inputs.get(&v).unwrap()),
             },
             |f, expr| write!(f, "outColor={};", expr),
         )
@@ -99,7 +101,7 @@ fn emit_decoder(
     f: &mut dyn Write,
     mut fetch: impl FnMut(&mut dyn Write, u32) -> fmt::Result,
     input: &InputStructure,
-) -> Result<HashMap<String, String>, fmt::Error> {
+) -> Result<HashMap<usize, String>, fmt::Error> {
     let mut result = HashMap::new();
 
     for i in 0..input.size.div_ceil(16) {
@@ -108,9 +110,9 @@ fn emit_decoder(
         write!(f, ";")?;
     }
 
-    for (id, (ident, field)) in input.inputs.iter().enumerate() {
+    for (id, field) in input.inputs.iter().enumerate() {
         let expr = emit_decoder_for_type(f, id as u32, field)?;
-        result.insert(ident.clone(), expr);
+        result.insert(id, expr);
     }
 
     Ok(result)
@@ -225,7 +227,7 @@ fn emit_graph_function(
     f: &mut dyn Write,
     graph: &ShaderGraph<Float4>,
     atlas: ShaderTextures,
-    mut write_input: impl FnMut(&mut dyn Write, &str) -> fmt::Result,
+    mut write_input: impl FnMut(&mut dyn Write, usize) -> fmt::Result,
     mut write_output: impl FnMut(&mut dyn Write, &str) -> fmt::Result,
 ) -> fmt::Result {
     // usage analysis
@@ -283,7 +285,7 @@ fn emit_graph_function(
 fn emit_graph_atom<'a>(
     f: &mut dyn Write,
     graph: &ShaderGraph<Float4>,
-    source: &ValueSource,
+    source: ValueSource,
     atlas: ShaderTextures,
     mut dep: impl FnMut(&mut dyn Write, Value) -> fmt::Result,
 ) -> fmt::Result {
@@ -292,183 +294,183 @@ fn emit_graph_atom<'a>(
 
         ValueSource::Add(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "+")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Sub(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "-")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Mul(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "*")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Div(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "/")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Rem(a, b) => {
             write!(f, "mod(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Dot(a, b) => {
             write!(f, "dot(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Cross(a, b) => {
             write!(f, "cross(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Neg(a) => {
             write!(f, "(-")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?
         }
         ValueSource::Sin(a) => {
             write!(f, "sin(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Cos(a) => {
             write!(f, "cos(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Tan(a) => {
             write!(f, "tan(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Asin(a) => {
             write!(f, "asin(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Acos(a) => {
             write!(f, "acos(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Atan(a) => {
             write!(f, "atan(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Atan2(a, b) => {
             write!(f, "atan(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?;
         }
         ValueSource::Sqrt(a) => {
             write!(f, "sqrt(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Pow(a, b) => {
             write!(f, "pow(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?;
         }
         ValueSource::Exp(a) => {
             write!(f, "exp(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Ln(a) => {
             write!(f, "log(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Min(a, b) => {
             write!(f, "min(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?;
         }
         ValueSource::Max(a, b) => {
             write!(f, "max(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?;
         }
         ValueSource::Clamp(x, min, max) => {
             write!(f, "clamp(")?;
-            dep(f, *x)?;
+            dep(f, x)?;
             write!(f, ",")?;
-            dep(f, *min)?;
+            dep(f, min)?;
             write!(f, ",")?;
-            dep(f, *max)?;
+            dep(f, max)?;
             write!(f, ")")?;
         }
         ValueSource::Abs(a) => {
             write!(f, "abs(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Sign(a) => {
             write!(f, "sign(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Floor(a) => {
             write!(f, "floor(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Fract(a) => {
             write!(f, "fract(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Lerp(x, min, max) => {
             write!(f, "mix(")?;
-            dep(f, *min)?;
+            dep(f, min)?;
             write!(f, ",")?;
-            dep(f, *max)?;
+            dep(f, max)?;
             write!(f, ",")?;
-            dep(f, *x)?;
+            dep(f, x)?;
             write!(f, ")")?;
         }
         ValueSource::Smoothstep(x, min, max) => {
             write!(f, "smoothstep(")?;
-            dep(f, *min)?;
+            dep(f, min)?;
             write!(f, ",")?;
-            dep(f, *max)?;
+            dep(f, max)?;
             write!(f, ",")?;
-            dep(f, *x)?;
+            dep(f, x)?;
             write!(f, ")")?;
         }
         ValueSource::Step(x, edge) => {
             write!(f, "step(")?;
-            dep(f, *edge)?;
+            dep(f, edge)?;
             write!(f, ",")?;
-            dep(f, *x)?;
+            dep(f, x)?;
             write!(f, ")")?;
         }
 
@@ -479,7 +481,7 @@ fn emit_graph_atom<'a>(
         ValueSource::LitFloat(x) if x.is_sign_positive() => write!(f, "{x:?}")?,
         ValueSource::LitFloat(x) => write!(f, "({x:?})")?,
 
-        ValueSource::LitInt(x) if *x >= 0 => write!(f, "{x}")?,
+        ValueSource::LitInt(x) if x >= 0 => write!(f, "{x}")?,
         ValueSource::LitInt(x) => write!(f, "({x})")?,
 
         ValueSource::LitBool(true) => write!(f, "true")?,
@@ -487,176 +489,176 @@ fn emit_graph_atom<'a>(
 
         ValueSource::Eq(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "==")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Ne(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "!=")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Lt(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "<")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Le(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "<=")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Gt(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ">")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Ge(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ">=")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::And(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "&&")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Or(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "||")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Xor(a, b) => {
             write!(f, "(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, "^^")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?
         }
         ValueSource::Not(a) => {
             write!(f, "(!")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?
         }
 
         ValueSource::NewVec2(a, b) => {
             write!(f, "vec2(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ")")?;
         }
         ValueSource::NewVec3(a, b, c) => {
             write!(f, "vec3(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ",")?;
-            dep(f, *c)?;
+            dep(f, c)?;
             write!(f, ")")?;
         }
         ValueSource::NewVec4(a, b, c, d) => {
             write!(f, "vec4(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ",")?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, ",")?;
-            dep(f, *c)?;
+            dep(f, c)?;
             write!(f, ",")?;
-            dep(f, *d)?;
+            dep(f, d)?;
             write!(f, ")")?;
         }
         ValueSource::SplatVec2(a) => {
             write!(f, "vec2(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::SplatVec3(a) => {
             write!(f, "vec3(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::SplatVec4(a) => {
             write!(f, "vec4(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::CastFloat(a) => {
             write!(f, "float(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::CastInt(a) => {
             write!(f, "int(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
 
         ValueSource::Length(a) => {
             write!(f, "length(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::Normalize(a) => {
             write!(f, "normalize(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
 
         ValueSource::Swizzle1(a, Swizzle::X) => {
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ".x")?;
         }
 
         ValueSource::Swizzle1(a, Swizzle::Y) => {
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ".y")?;
         }
 
         ValueSource::Swizzle1(a, Swizzle::Z) => {
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ".z")?;
         }
 
         ValueSource::Swizzle1(a, Swizzle::W) => {
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ".w")?;
         }
 
         ValueSource::DerivX(a) => {
             write!(f, "dFdx(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::DerivY(a) => {
             write!(f, "dFdy(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
         ValueSource::DerivWidth(a) => {
             write!(f, "fwidth(")?;
-            dep(f, *a)?;
+            dep(f, a)?;
             write!(f, ")")?;
         }
 
         ValueSource::TextureSampleLinear(index, b) => {
-            let texture = match graph.get(*index) {
-                (ValueSource::Input(id), _) => atlas.get(id),
+            let texture = match graph.get(index) {
+                (ValueSource::Input(id), _) => atlas.get(*id as u32),
                 _ => unreachable!(),
             };
 
@@ -671,7 +673,7 @@ fn emit_graph_atom<'a>(
                 "texture(uAtlas,(vec2({}.0,{}.0)+clamp(0.5+",
                 texture.x, texture.y
             )?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(
                 f,
                 "{},vec2(0.0),vec2({}.0,{}.0)))/{}.0)",
@@ -680,8 +682,8 @@ fn emit_graph_atom<'a>(
         }
 
         ValueSource::TextureSampleNearest(index, b) => {
-            let texture = match graph.get(*index) {
-                (ValueSource::Input(id), _) => atlas.get(id),
+            let texture = match graph.get(index) {
+                (ValueSource::Input(id), _) => atlas.get(*id as u32),
                 _ => unreachable!(),
             };
 
@@ -696,13 +698,13 @@ fn emit_graph_atom<'a>(
                 "texelFetch(uAtlas,ivec2({},{})+clamp(ivec2(",
                 texture.x, texture.y
             )?;
-            dep(f, *b)?;
+            dep(f, b)?;
             write!(f, "){},ivec2(0),ivec2({},{})),0)", sample, w, h)?;
         }
 
         ValueSource::TextureSize(index) => {
-            let texture = match graph.get(*index) {
-                (ValueSource::Input(id), _) => atlas.get(id),
+            let texture = match graph.get(index) {
+                (ValueSource::Input(id), _) => atlas.get(*id as u32),
                 _ => unreachable!(),
             };
 

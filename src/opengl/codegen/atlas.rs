@@ -1,7 +1,6 @@
 use crunch::{Item, Rotation};
 use image::{DynamicImage, GenericImageView, RgbaImage};
-use rustc_hash::FxHashMap;
-use std::mem::swap;
+use std::{collections::HashMap, mem::swap};
 
 const PADDING: u32 = 1;
 
@@ -14,7 +13,7 @@ pub struct PackedTexture {
 
 pub struct TextureAtlas {
     pub size: u32,
-    pub textures: FxHashMap<(u32, String), PackedTexture>,
+    pub textures: HashMap<(u32, u32), PackedTexture>,
 }
 
 #[derive(Clone, Copy)]
@@ -25,7 +24,7 @@ pub struct ShaderTextures<'a> {
 
 impl TextureAtlas {
     pub fn pack<'a>(
-        data: impl IntoIterator<Item = (u32, &'a str, DynamicImage)>,
+        data: impl IntoIterator<Item = (u32, u32, DynamicImage)>,
         max_size: u32,
     ) -> Self {
         let packed = crunch::pack_into_po2(
@@ -39,7 +38,7 @@ impl TextureAtlas {
 
         Self {
             size: packed.w as u32,
-            textures: FxHashMap::from_iter(packed.items.into_iter().map(|packed| {
+            textures: HashMap::from_iter(packed.items.into_iter().map(|packed| {
                 (
                     (packed.data.0, packed.data.1.to_owned()),
                     PackedTexture {
@@ -90,10 +89,10 @@ impl TextureAtlas {
 }
 
 impl<'a> ShaderTextures<'a> {
-    pub fn get(&self, id: &str) -> &PackedTexture {
+    pub fn get(&self, id: u32) -> &PackedTexture {
         self.atlas
             .textures
-            .get(&(self.index, id.to_owned()))
+            .get(&(self.index, id))
             .unwrap_or_else(|| panic!("unknown texture index: {}", id))
     }
 }

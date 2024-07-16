@@ -152,11 +152,11 @@ impl ShaderData for F16_01 {
     type ShaderVars = Float;
 
     fn shader_vars(vars: &mut dyn picodraw::ShaderVars) -> Self::ShaderVars {
-        Float::from(vars.uint16("")) / 65535.0
+        Float::from(vars.read_uint16()) / 65535.0
     }
 
     fn write(&self, writer: &mut dyn picodraw::ShaderDataWriter) {
-        writer.write_int("", (self.0 * 65535.0) as u16 as i32);
+        writer.write_int((self.0 * 65535.0) as u16 as i32);
     }
 }
 

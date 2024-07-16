@@ -2,12 +2,15 @@ use crate::{
     types::GlType, Bounds, Float, Float2, Int, Shader, ShaderData, ShaderDataWriter, ShaderVars,
     Texture,
 };
-use rustc_hash::FxHashMap;
 use std::{ops::Range, sync::Arc};
 
+pub const BUILTIN_POSITION: usize = usize::MAX;
+pub const BUILTIN_RESOLUTION: usize = usize::MAX - 1;
+pub const BUILTIN_BOUNDS: usize = usize::MAX - 2;
+
 pub struct InputStructure {
-    pub inputs: FxHashMap<String, InputField>,
-    pub textures: FxHashMap<String, Arc<dyn Fn() -> image::DynamicImage>>,
+    pub inputs: Vec<InputField>,
+    pub textures: Vec<Arc<dyn Fn() -> image::DynamicImage>>,
     pub size: u32,
 }
 
@@ -28,8 +31,8 @@ pub struct InputField {
 }
 
 struct InputCollector {
-    inputs: FxHashMap<String, InputField>,
-    textures: FxHashMap<String, Arc<dyn Fn() -> image::DynamicImage>>,
+    inputs: Vec<InputField>,
+    textures: Vec<Arc<dyn Fn() -> image::DynamicImage>>,
     bitmap: Vec<bool>,
 }
 
@@ -44,8 +47,8 @@ impl InputStructure {
 impl InputCollector {
     fn new() -> Self {
         Self {
-            inputs: FxHashMap::default(),
-            textures: FxHashMap::default(),
+            inputs: vec![],
+            textures: vec![],
             bitmap: vec![],
         }
     }
@@ -58,11 +61,8 @@ impl InputCollector {
         }
     }
 
-    fn register(&mut self, id: &str, repr: InputRepr) {
-        if self.inputs.contains_key(id) {
-            return;
-        }
-
+    fn register(&mut self, repr: InputRepr) -> usize {
+        let id = self.inputs.len();
         let (size, align) = match repr {
             InputRepr::Int8 => (1, 1),
             InputRepr::Int16 => (2, 2),
@@ -73,60 +73,52 @@ impl InputCollector {
             InputRepr::Float32 => (4, 4),
         };
 
-        self.inputs.insert(
-            id.to_owned(),
-            InputField {
-                offset: take_offset(&mut self.bitmap, size, align),
-                repr: repr.clone(),
-            },
-        );
+        self.inputs.push(InputField {
+            offset: take_offset(&mut self.bitmap, size, align),
+            repr: repr.clone(),
+        });
+
+        id
     }
 }
 
 impl ShaderVars for InputCollector {
-    fn int8(&mut self, id: &str) -> Int {
-        self.register(id, InputRepr::Int8);
-        Int::input_raw(id.to_owned())
+    fn read_int8(&mut self) -> Int {
+        Int::input_raw(self.register(InputRepr::Int8))
     }
 
-    fn int16(&mut self, id: &str) -> Int {
-        self.register(id, InputRepr::Int16);
-        Int::input_raw(id.to_owned())
+    fn read_int16(&mut self) -> Int {
+        Int::input_raw(self.register(InputRepr::Int16))
     }
 
-    fn int32(&mut self, id: &str) -> Int {
-        self.register(id, InputRepr::Int32);
-        Int::input_raw(id.to_owned())
+    fn read_int32(&mut self) -> Int {
+        Int::input_raw(self.register(InputRepr::Int32))
     }
 
-    fn uint8(&mut self, id: &str) -> Int {
-        self.register(id, InputRepr::UInt8);
-        Int::input_raw(id.to_owned())
+    fn read_uint8(&mut self) -> Int {
+        Int::input_raw(self.register(InputRepr::UInt8))
     }
 
-    fn uint16(&mut self, id: &str) -> Int {
-        self.register(id, InputRepr::UInt16);
-        Int::input_raw(id.to_owned())
+    fn read_uint16(&mut self) -> Int {
+        Int::input_raw(self.register(InputRepr::UInt16))
     }
 
-    fn uint32(&mut self, id: &str) -> Int {
-        self.register(id, InputRepr::UInt32);
-        Int::input_raw(id.to_owned())
+    fn read_uint32(&mut self) -> Int {
+        Int::input_raw(self.register(InputRepr::UInt32))
     }
 
-    fn float(&mut self, id: &str) -> Float {
-        self.register(id, InputRepr::Float32);
-        Float::input_raw(id.to_owned())
+    fn read_float(&mut self) -> Float {
+        Float::input_raw(self.register(InputRepr::Float32))
     }
 
     fn texture(&mut self, tex: Arc<dyn Fn() -> image::DynamicImage>) -> Texture {
-        let id = format!("@tex/{}", self.textures.len());
-        self.textures.insert(id.clone(), tex);
+        let id = self.textures.len();
+        self.textures.push(tex);
         Texture::input_raw(id)
     }
 
     fn resolution(&mut self) -> Float2 {
-        Float2::input_raw("@res".to_owned())
+        Float2::input_raw(BUILTIN_RESOLUTION)
     }
 }
 
@@ -159,13 +151,14 @@ pub struct InputEncoder<'a> {
     resolution: (f32, f32),
     data: &'a mut [[u32; 4]],
     structure: &'a InputStructure,
+    pointer: usize,
 }
 
 impl<'a> ShaderDataWriter for InputEncoder<'a> {
-    fn write_int(&mut self, location: &str, x: i32) {
-        let field = match self.structure.inputs.get(location) {
+    fn write_int(&mut self, x: i32) {
+        let field = match self.structure.inputs.get(self.pointer) {
             Some(field) => field,
-            None => panic!("unknown field '{}'", location),
+            None => panic!("invalid shader data structure: writes more than reads"),
         };
 
         match field.repr {
@@ -193,14 +186,16 @@ impl<'a> ShaderDataWriter for InputEncoder<'a> {
                 let ints = bytemuck::cast_slice_mut::<_, u32>(self.data);
                 ints[(field.offset / 4) as usize] = x as u32;
             }
-            _ => panic!("wrong type for '{}'", location),
+            _ => panic!("invalid shader data structure: write/read type mismatch"),
         }
+
+        self.pointer += 1;
     }
 
-    fn write_float(&mut self, location: &str, x: f32) {
-        let field = match self.structure.inputs.get(location) {
+    fn write_float(&mut self, x: f32) {
+        let field = match self.structure.inputs.get(self.pointer) {
             Some(field) => field,
-            None => panic!("unknown field '{}'", location),
+            None => panic!("invalid shader data structure: writes more than reads"),
         };
 
         match field.repr {
@@ -209,8 +204,10 @@ impl<'a> ShaderDataWriter for InputEncoder<'a> {
                 ints[(field.offset / 4) as usize] = f32::to_bits(x);
             }
 
-            _ => panic!("wrong type for '{}'", location),
+            _ => panic!("invalid shader data structure: write/read type mismatch"),
         }
+
+        self.pointer += 1;
     }
 
     fn resolution(&self) -> (f32, f32) {
@@ -267,6 +264,7 @@ impl QuadEncoder {
                 data: &mut self.data[data_start..],
                 structure: input,
                 resolution: (width, height),
+                pointer: 0,
             });
 
             self.quads.push(QuadEncoded {

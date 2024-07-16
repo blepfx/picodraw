@@ -45,14 +45,14 @@ impl<T: GlType> ShaderGraph<T> {
 
     pub fn iter<'a>(
         &'a self,
-    ) -> impl Iterator<Item = (Value, &'a ValueSource, ValueType)>
+    ) -> impl Iterator<Item = (Value, ValueSource, ValueType)>
            + DoubleEndedIterator
            + ExactSizeIterator
            + 'a {
         self.values
             .iter()
             .enumerate()
-            .map(|(i, (source, ty))| (Value(i as u32, PhantomData), source, *ty))
+            .map(|(i, (source, ty))| (Value(i as u32, PhantomData), *source, *ty))
     }
 
     pub fn result(&self) -> Value {
@@ -75,9 +75,9 @@ impl Debug for Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum ValueSource {
-    Input(String),
+    Input(usize),
 
     Add(Value, Value),
     Sub(Value, Value),

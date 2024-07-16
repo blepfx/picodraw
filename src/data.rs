@@ -3,27 +3,27 @@ use std::{array::from_fn, sync::Arc};
 
 pub trait ShaderData {
     type ShaderVars;
+
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars;
     fn write(&self, writer: &mut dyn ShaderDataWriter);
 }
 
 pub trait ShaderVars {
-    fn int8(&mut self, id: &str) -> Int;
-    fn int16(&mut self, id: &str) -> Int;
-    fn int32(&mut self, id: &str) -> Int;
-    fn uint8(&mut self, id: &str) -> Int;
-    fn uint16(&mut self, id: &str) -> Int;
-    fn uint32(&mut self, id: &str) -> Int;
-    fn float(&mut self, id: &str) -> Float;
+    fn read_int8(&mut self) -> Int;
+    fn read_int16(&mut self) -> Int;
+    fn read_int32(&mut self) -> Int;
+    fn read_uint8(&mut self) -> Int;
+    fn read_uint16(&mut self) -> Int;
+    fn read_uint32(&mut self) -> Int;
+    fn read_float(&mut self) -> Float;
     fn texture(&mut self, tex: Arc<dyn Fn() -> image::DynamicImage>) -> Texture;
     fn resolution(&mut self) -> Float2;
 }
 
 pub trait ShaderDataWriter {
     fn resolution(&self) -> (f32, f32);
-
-    fn write_float(&mut self, id: &str, x: f32);
-    fn write_int(&mut self, id: &str, x: i32);
+    fn write_float(&mut self, x: f32);
+    fn write_int(&mut self, x: i32);
 }
 
 impl ShaderData for () {
@@ -37,90 +37,90 @@ impl ShaderData for () {
 impl ShaderData for bool {
     type ShaderVars = Bool;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.uint8("").neq(0)
+        vars.read_uint8().neq(0)
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_int("", if *self { 1 } else { 0 })
+        writer.write_int(if *self { 1 } else { 0 })
     }
 }
 
 impl ShaderData for u8 {
     type ShaderVars = Int;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.uint8("")
+        vars.read_uint8()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_int("", *self as i32)
+        writer.write_int(*self as i32)
     }
 }
 
 impl ShaderData for u16 {
     type ShaderVars = Int;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.uint16("")
+        vars.read_uint16()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_int("", *self as i32)
+        writer.write_int(*self as i32)
     }
 }
 
 impl ShaderData for u32 {
     type ShaderVars = Int;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.uint32("")
+        vars.read_uint32()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_int("", *self as i32)
+        writer.write_int(*self as i32)
     }
 }
 
 impl ShaderData for i8 {
     type ShaderVars = Int;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.int8("")
+        vars.read_int8()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_int("", *self as i32)
+        writer.write_int(*self as i32)
     }
 }
 
 impl ShaderData for i16 {
     type ShaderVars = Int;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.int16("")
+        vars.read_int16()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_int("", *self as i32)
+        writer.write_int(*self as i32)
     }
 }
 
 impl ShaderData for i32 {
     type ShaderVars = Int;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.int32("")
+        vars.read_int32()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_int("", *self as i32)
+        writer.write_int(*self as i32)
     }
 }
 
 impl ShaderData for f32 {
     type ShaderVars = Float;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.float("")
+        vars.read_float()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_float("", *self)
+        writer.write_float(*self)
     }
 }
 
 impl ShaderData for f64 {
     type ShaderVars = Float;
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        vars.float("")
+        vars.read_float()
     }
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
-        writer.write_float("", *self as f32)
+        writer.write_float(*self as f32)
     }
 }
 
@@ -128,12 +128,12 @@ impl<const N: usize, T: ShaderData> ShaderData for [T; N] {
     type ShaderVars = [T::ShaderVars; N];
 
     fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-        from_fn(|i| T::shader_vars(&mut prefix_vars(vars, &format!("{}", i))))
+        from_fn(|_| T::shader_vars(vars))
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
         for i in 0..N {
-            self[i].write(&mut prefix_writer(writer, &format!("{}", i)));
+            self[i].write(writer);
         }
     }
 }
@@ -154,13 +154,13 @@ macro_rules! impl_tuple {
             type ShaderVars = ($($id::ShaderVars,)*);
 
             fn shader_vars(vars: &mut dyn ShaderVars) -> Self::ShaderVars {
-                ($($id::shader_vars(&mut prefix_vars(vars, stringify!($id))),)*)
+                ($($id::shader_vars(vars),)*)
             }
 
             fn write(&self, writer: &mut dyn ShaderDataWriter) {
                 #[allow(non_snake_case)]
                 let ($($id,)*) = self;
-                $($id::write($id, &mut prefix_writer(writer, stringify!($id)));)*
+                $($id::write($id, writer);)*
             }
         }
     };
@@ -172,69 +172,3 @@ impl_tuple!(A, B, C);
 impl_tuple!(A, B, C, D);
 impl_tuple!(A, B, C, D, E);
 impl_tuple!(A, B, C, D, E, F);
-
-pub struct ShaderVarsPrefix<'a>(&'a mut dyn ShaderVars, &'a str);
-pub struct ShaderWriterPrefix<'a>(&'a mut dyn ShaderDataWriter, &'a str);
-
-pub fn prefix_vars<'a>(vars: &'a mut dyn ShaderVars, prefix: &'a str) -> ShaderVarsPrefix<'a> {
-    ShaderVarsPrefix(vars, prefix)
-}
-
-pub fn prefix_writer<'a>(
-    writer: &'a mut dyn ShaderDataWriter,
-    prefix: &'a str,
-) -> ShaderWriterPrefix<'a> {
-    ShaderWriterPrefix(writer, prefix)
-}
-
-impl<'a> ShaderVars for ShaderVarsPrefix<'a> {
-    fn int8(&mut self, id: &str) -> Int {
-        self.0.int8(&format!("{}/{}", self.1, id))
-    }
-
-    fn int16(&mut self, id: &str) -> Int {
-        self.0.int16(&format!("{}/{}", self.1, id))
-    }
-
-    fn int32(&mut self, id: &str) -> Int {
-        self.0.int32(&format!("{}/{}", self.1, id))
-    }
-
-    fn uint8(&mut self, id: &str) -> Int {
-        self.0.uint8(&format!("{}/{}", self.1, id))
-    }
-
-    fn uint16(&mut self, id: &str) -> Int {
-        self.0.uint16(&format!("{}/{}", self.1, id))
-    }
-
-    fn uint32(&mut self, id: &str) -> Int {
-        self.0.uint32(&format!("{}/{}", self.1, id))
-    }
-
-    fn float(&mut self, id: &str) -> Float {
-        self.0.float(&format!("{}/{}", self.1, id))
-    }
-
-    fn texture(&mut self, tex: Arc<dyn Fn() -> image::DynamicImage>) -> Texture {
-        self.0.texture(tex)
-    }
-
-    fn resolution(&mut self) -> Float2 {
-        self.0.resolution()
-    }
-}
-
-impl<'a> ShaderDataWriter for ShaderWriterPrefix<'a> {
-    fn write_float(&mut self, id: &str, x: f32) {
-        self.0.write_float(&format!("{}/{}", self.1, id), x);
-    }
-
-    fn write_int(&mut self, id: &str, x: i32) {
-        self.0.write_int(&format!("{}/{}", self.1, id), x);
-    }
-
-    fn resolution(&self) -> (f32, f32) {
-        self.0.resolution()
-    }
-}

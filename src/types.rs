@@ -6,7 +6,7 @@ pub trait GlType: Copy + 'static {
     fn wrap(value: Value) -> Self;
     fn unwrap(self) -> Value;
 
-    fn input_raw(id: String) -> Self {
+    fn input_raw(id: usize) -> Self {
         Self::wrap(push_op(ValueSource::Input(id), Self::TYPE))
     }
 }
