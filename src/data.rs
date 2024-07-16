@@ -16,12 +16,12 @@ pub trait ShaderVars {
     fn uint32(&mut self, id: &str) -> Int;
     fn float(&mut self, id: &str) -> Float;
     fn texture(&mut self, tex: Arc<dyn Fn() -> image::DynamicImage>) -> Texture;
-
-    fn position(&mut self) -> Float2;
     fn resolution(&mut self) -> Float2;
 }
 
 pub trait ShaderDataWriter {
+    fn resolution(&self) -> (f32, f32);
+
     fn write_float(&mut self, id: &str, x: f32);
     fn write_int(&mut self, id: &str, x: i32);
 }
@@ -220,10 +220,6 @@ impl<'a> ShaderVars for ShaderVarsPrefix<'a> {
         self.0.texture(tex)
     }
 
-    fn position(&mut self) -> Float2 {
-        self.0.position()
-    }
-
     fn resolution(&mut self) -> Float2 {
         self.0.resolution()
     }
@@ -236,5 +232,9 @@ impl<'a> ShaderDataWriter for ShaderWriterPrefix<'a> {
 
     fn write_int(&mut self, id: &str, x: i32) {
         self.0.write_int(&format!("{}/{}", self.1, id), x);
+    }
+
+    fn resolution(&self) -> (f32, f32) {
+        self.0.resolution()
     }
 }

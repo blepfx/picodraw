@@ -125,10 +125,6 @@ impl ShaderVars for InputCollector {
         Texture::input_raw(id)
     }
 
-    fn position(&mut self) -> Float2 {
-        Float2::input_raw("@pos".to_owned())
-    }
-
     fn resolution(&mut self) -> Float2 {
         Float2::input_raw("@res".to_owned())
     }
@@ -160,6 +156,7 @@ fn take_offset(bitmap: &mut Vec<bool>, size: u32, align: u32) -> u32 {
 }
 
 pub struct InputEncoder<'a> {
+    resolution: (f32, f32),
     data: &'a mut [[u32; 4]],
     structure: &'a InputStructure,
 }
@@ -215,6 +212,10 @@ impl<'a> ShaderDataWriter for InputEncoder<'a> {
             _ => panic!("wrong type for '{}'", location),
         }
     }
+
+    fn resolution(&self) -> (f32, f32) {
+        self.resolution
+    }
 }
 
 pub struct QuadEncoder {
@@ -247,14 +248,14 @@ impl QuadEncoder {
         shader_id: u32,
         bounds: Bounds,
         input: &InputStructure,
-        width: u32,
-        height: u32,
+        width: f32,
+        height: f32,
     ) {
         let bounds = [
-            (bounds.left / width as f32 * 65535.0).round() as u16,
-            (bounds.top / height as f32 * 65535.0).round() as u16,
-            (bounds.right / width as f32 * 65535.0).round() as u16,
-            (bounds.bottom / height as f32 * 65535.0).round() as u16,
+            (bounds.left / width * 65535.0).round() as u16,
+            (bounds.top / height * 65535.0).round() as u16,
+            (bounds.right / width * 65535.0).round() as u16,
+            (bounds.bottom / height * 65535.0).round() as u16,
         ];
 
         if bounds[0] != bounds[2] && bounds[1] != bounds[3] {
@@ -265,6 +266,7 @@ impl QuadEncoder {
             draw.write(&mut InputEncoder {
                 data: &mut self.data[data_start..],
                 structure: input,
+                resolution: (width, height),
             });
 
             self.quads.push(QuadEncoded {

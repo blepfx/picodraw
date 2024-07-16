@@ -99,7 +99,14 @@ impl ShaderMap {
             .get(&shader_id::<T>())
             .unwrap_or_else(|| panic!("register the drawable first ({})", type_name::<T>()));
 
-        encoder.push(value, data.id, bounds, &data.input, width, height);
+        encoder.push(
+            value,
+            data.id,
+            bounds,
+            &data.input,
+            width as f32,
+            height as f32,
+        );
     }
 }
 
