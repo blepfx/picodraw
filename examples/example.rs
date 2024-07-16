@@ -60,7 +60,7 @@ impl WindowHandler for App {
             let context = window.gl_context().unwrap();
             context.make_current();
 
-            self.gl.render(
+            let stats = self.gl.render(
                 self.size.width.ceil() as u32,
                 self.size.height.ceil() as u32,
                 |mut render| {
@@ -97,6 +97,8 @@ impl WindowHandler for App {
                     );
                 },
             );
+
+            println!("{:?}", stats);
 
             context.swap_buffers();
             context.make_not_current();

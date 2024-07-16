@@ -8,6 +8,14 @@ use codegen::{QuadEncoder, ShaderMap};
 use gllayer::*;
 use std::ffi::{c_void, CStr};
 
+#[derive(Debug, Clone)]
+pub struct GlStatistics {
+    pub quads: u32,
+    pub drawcalls: u32,
+    pub bytes_sent: u64,
+    pub total_area: u64,
+}
+
 pub struct OpenGl {
     bindings: GlBindings,
     data: GlData,
@@ -62,19 +70,18 @@ impl OpenGl {
         Self { bindings, data }
     }
 
-    pub unsafe fn render<R>(
+    pub unsafe fn render(
         &mut self,
         width: u32,
         height: u32,
-        c: impl for<'a> FnOnce(OpenGlRenderer<'a>) -> R,
-    ) -> R {
+        c: impl for<'a> FnOnce(OpenGlRenderer<'a>),
+    ) -> GlStatistics {
         GlContext::within(&self.bindings, |context| {
             self.data.begin_pass(width, height);
-            let result = c(OpenGlRenderer {
+            c(OpenGlRenderer {
                 data: &mut self.data,
             });
-            self.data.end_pass(context);
-            result
+            self.data.end_pass(context)
         })
     }
 
@@ -90,7 +97,7 @@ impl<'a> OpenGlRenderer<'a> {
         self.data.shaders.register::<T>();
     }
 
-    pub fn draw<T: Shader>(&mut self, drawable: &T, bounds: Bounds) {
+    pub fn draw<T: Shader>(&mut self, drawable: &T, bounds: impl Into<Bounds>) {
         let pass = self
             .data
             .pass_viewport
@@ -99,7 +106,7 @@ impl<'a> OpenGlRenderer<'a> {
 
         self.data.shaders.write(
             &mut self.data.pass_encoding,
-            bounds,
+            bounds.into(),
             drawable,
             pass.width,
             pass.height,
@@ -112,7 +119,7 @@ impl GlData {
         self.pass_viewport = Some(CurrentPass { width, height });
     }
 
-    fn end_pass(&mut self, gl: GlContext) {
+    fn end_pass(&mut self, gl: GlContext) -> GlStatistics {
         if self.shaders.is_dirty() {
             let (fragment_src, atlas) = self.shaders.recompile(self.info.max_texture_size as u32);
 
@@ -166,6 +173,9 @@ impl GlData {
             [pass.width as f32, pass.height as f32],
         );
 
+        let mut stats_drawcalls = 0;
+        let mut stats_quads = 0;
+
         let mut quads = 0;
         while quads < self.pass_encoding.quads.len() {
             let quads_start = quads;
@@ -200,6 +210,9 @@ impl GlData {
             });
 
             if quads != quads_start {
+                stats_quads += (quads - quads_start) as u32;
+                stats_drawcalls += 1;
+
                 gl_uniform_1i(
                     gl,
                     program_data.uni_buffer_offset_instance,
@@ -210,8 +223,17 @@ impl GlData {
             }
         }
 
+        let stats = GlStatistics {
+            quads: stats_quads,
+            drawcalls: stats_drawcalls,
+            total_area: self.pass_encoding.total_area(pass.width, pass.height),
+            bytes_sent: (self.pass_encoding.size_texels() * size_of::<[u32; 4]>()) as u64,
+        };
+
         self.pass_viewport = None;
         self.pass_encoding.clear();
+
+        stats
     }
 
     fn delete(self, gl: GlContext) {

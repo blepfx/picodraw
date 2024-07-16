@@ -250,24 +250,44 @@ impl QuadEncoder {
         width: u32,
         height: u32,
     ) {
-        let data_start = self.data.len();
-        self.data
-            .resize(self.data.len() + input.size.div_ceil(16) as usize, [0; 4]);
+        let bounds = [
+            (bounds.left / width as f32 * 65535.0).round() as u16,
+            (bounds.top / height as f32 * 65535.0).round() as u16,
+            (bounds.right / width as f32 * 65535.0).round() as u16,
+            (bounds.bottom / height as f32 * 65535.0).round() as u16,
+        ];
 
-        draw.write(&mut InputEncoder {
-            data: &mut self.data[data_start..],
-            structure: input,
-        });
+        if bounds[0] != bounds[2] && bounds[1] != bounds[3] {
+            let data_start = self.data.len();
+            self.data
+                .resize(self.data.len() + input.size.div_ceil(16) as usize, [0; 4]);
 
-        self.quads.push(QuadEncoded {
-            bounds: [
-                (bounds.left / width as f32 * 65535.0).round() as u16,
-                (bounds.top / height as f32 * 65535.0).round() as u16,
-                (bounds.right / width as f32 * 65535.0).round() as u16,
-                (bounds.bottom / height as f32 * 65535.0).round() as u16,
-            ],
-            shader_id,
-            data_range: data_start..self.data.len(),
-        })
+            draw.write(&mut InputEncoder {
+                data: &mut self.data[data_start..],
+                structure: input,
+            });
+
+            self.quads.push(QuadEncoded {
+                bounds,
+                shader_id,
+                data_range: data_start..self.data.len(),
+            });
+        }
+    }
+
+    pub fn size_texels(&self) -> usize {
+        self.quads.len() + self.data.len()
+    }
+
+    pub fn total_area(&self, width: u32, height: u32) -> u64 {
+        self.quads
+            .iter()
+            .map(|quad| {
+                let quad_width = quad.bounds[2].abs_diff(quad.bounds[0]) as u64;
+                let quad_height = quad.bounds[3].abs_diff(quad.bounds[1]) as u64;
+
+                quad_width * width as u64 * quad_height * height as u64 / 4294836225
+            })
+            .sum()
     }
 }
