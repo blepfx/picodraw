@@ -10,10 +10,11 @@ use std::ffi::{c_void, CStr};
 
 #[derive(Debug, Clone)]
 pub struct GlStatistics {
+    pub gpu_time_msec: f32,
+    pub size_bytes: u64,
+    pub area_pixels: u64,
     pub quads: u32,
     pub drawcalls: u32,
-    pub bytes_sent: u64,
-    pub total_area: u64,
 }
 
 pub struct OpenGl {
@@ -25,11 +26,14 @@ struct GlData {
     program: Option<GlProgramData>,
     buffer: GlTextureBuffer,
     vao: GlVertexArrayObject,
+    query: GlQuery,
     info: GlInfo,
 
     shaders: ShaderMap,
     pass_encoding: QuadEncoder,
     pass_viewport: Option<CurrentPass>,
+
+    gpu_time: u64,
 }
 
 struct GlProgramData {
@@ -48,24 +52,7 @@ pub struct OpenGlRenderer<'a> {
 impl OpenGl {
     pub unsafe fn new(f: &dyn Fn(&CStr) -> *const c_void) -> Self {
         let bindings = GlBindings::load_from(f);
-        let data = GlContext::within(&bindings, |gl| {
-            let info = match GlInfo::get(gl) {
-                Some(info) if info.version >= (3, 3) => info,
-                _ => panic!("gl context is too old. target at least 3.3+"),
-            };
-
-            GlData {
-                program: None,
-                buffer: GlTextureBuffer::new(gl, info.max_texture_buffer_size.min(262144)),
-                vao: GlVertexArrayObject::new(gl),
-                info,
-
-                shaders: ShaderMap::new(),
-
-                pass_encoding: QuadEncoder::new(),
-                pass_viewport: None,
-            }
-        });
+        let data = GlContext::within(&bindings, |gl| GlData::new(gl));
 
         Self { bindings, data }
     }
@@ -176,64 +163,94 @@ impl GlData {
         let mut stats_drawcalls = 0;
         let mut stats_quads = 0;
 
-        let mut quads = 0;
-        while quads < self.pass_encoding.quads.len() {
-            let quads_start = quads;
+        self.gpu_time = self
+            .query
+            .time_elapsed(gl, || {
+                let mut quads = 0;
+                while quads < self.pass_encoding.quads.len() {
+                    let quads_start = quads;
 
-            let (data_start, quad_data_start) = self.buffer.update(gl, |writer| {
-                let data_start = writer.pointer();
-                let local_data_start = self.pass_encoding.quads[quads_start].data_range.start;
-                for quad in &self.pass_encoding.quads[quads_start..] {
-                    if writer.space_left() < quad.data_range.len() + 1 * (quads + 1 - quads_start) {
-                        break;
+                    let (data_start, quad_data_start) = self.buffer.update(gl, |writer| {
+                        let data_start = writer.pointer();
+                        let local_data_start =
+                            self.pass_encoding.quads[quads_start].data_range.start;
+                        for quad in &self.pass_encoding.quads[quads_start..] {
+                            if writer.space_left()
+                                < quad.data_range.len() + 1 * (quads + 1 - quads_start)
+                            {
+                                break;
+                            }
+
+                            writer.write(&self.pass_encoding.data[quad.data_range.clone()]);
+                            quads += 1;
+                        }
+
+                        let quad_data_start = writer.pointer();
+                        if quads != quads_start {
+                            for quad in &self.pass_encoding.quads[quads_start..quads] {
+                                writer.write(&[[
+                                    (quad.bounds[0] as u32) | ((quad.bounds[1] as u32) << 16),
+                                    (quad.bounds[2] as u32) | ((quad.bounds[3] as u32) << 16),
+                                    quad.shader_id,
+                                    (quad.data_range.start - local_data_start) as u32,
+                                ]]);
+                            }
+                        } else {
+                            writer.mark_full();
+                        }
+
+                        (data_start, quad_data_start)
+                    });
+
+                    if quads != quads_start {
+                        stats_quads += (quads - quads_start) as u32;
+                        stats_drawcalls += 1;
+
+                        gl_uniform_1i(
+                            gl,
+                            program_data.uni_buffer_offset_instance,
+                            quad_data_start as i32,
+                        );
+                        gl_uniform_1i(gl, program_data.uni_buffer_offset_data, data_start as i32);
+                        gl_draw_arrays_triangles(gl, (quads - quads_start) * 6);
                     }
-
-                    writer.write(&self.pass_encoding.data[quad.data_range.clone()]);
-                    quads += 1;
                 }
-
-                let quad_data_start = writer.pointer();
-                if quads != quads_start {
-                    for quad in &self.pass_encoding.quads[quads_start..quads] {
-                        writer.write(&[[
-                            (quad.bounds[0] as u32) | ((quad.bounds[1] as u32) << 16),
-                            (quad.bounds[2] as u32) | ((quad.bounds[3] as u32) << 16),
-                            quad.shader_id,
-                            (quad.data_range.start - local_data_start) as u32,
-                        ]]);
-                    }
-                } else {
-                    writer.mark_full();
-                }
-
-                (data_start, quad_data_start)
-            });
-
-            if quads != quads_start {
-                stats_quads += (quads - quads_start) as u32;
-                stats_drawcalls += 1;
-
-                gl_uniform_1i(
-                    gl,
-                    program_data.uni_buffer_offset_instance,
-                    quad_data_start as i32,
-                );
-                gl_uniform_1i(gl, program_data.uni_buffer_offset_data, data_start as i32);
-                gl_draw_arrays_triangles(gl, (quads - quads_start) * 6);
-            }
-        }
+            })
+            .unwrap_or(self.gpu_time);
 
         let stats = GlStatistics {
+            gpu_time_msec: (self.gpu_time as f64 / 1e6) as f32,
             quads: stats_quads,
             drawcalls: stats_drawcalls,
-            total_area: self.pass_encoding.total_area(pass.width, pass.height),
-            bytes_sent: (self.pass_encoding.size_texels() * size_of::<[u32; 4]>()) as u64,
+            area_pixels: self.pass_encoding.total_area(pass.width, pass.height),
+            size_bytes: (self.pass_encoding.size_texels() * size_of::<[u32; 4]>()) as u64,
         };
 
         self.pass_viewport = None;
         self.pass_encoding.clear();
 
         stats
+    }
+
+    fn new(gl: GlContext) -> Self {
+        let info = match GlInfo::get(gl) {
+            Some(info) if info.version >= (3, 3) => info,
+            _ => panic!("gl context is too old. target at least 3.3+"),
+        };
+
+        Self {
+            gpu_time: 0,
+            program: None,
+            buffer: GlTextureBuffer::new(gl, info.max_texture_buffer_size.min(262144)),
+            vao: GlVertexArrayObject::new(gl),
+            query: GlQuery::new(gl),
+            info,
+
+            shaders: ShaderMap::new(),
+
+            pass_encoding: QuadEncoder::new(),
+            pass_viewport: None,
+        }
     }
 
     fn delete(self, gl: GlContext) {
@@ -244,8 +261,10 @@ impl GlData {
 
         self.vao.delete(gl);
         self.buffer.delete(gl);
+        self.query.delete(gl);
     }
 }
+
 struct CurrentPass {
     width: u32,
     height: u32,

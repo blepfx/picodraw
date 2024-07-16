@@ -11,6 +11,7 @@ pub type GLchar = c_char;
 pub type GLintptr = isize;
 pub type GLsizeiptr = isize;
 pub type GLfloat = c_float;
+pub type GLuint64 = u64;
 pub type GLDEBUGPROC = Option<
     extern "system" fn(
         source: GLenum,
@@ -1448,18 +1449,6 @@ generate_bindings! {
         pixels: *const c_void
     ): [glTexImage2D];
 
-    fn tex_sub_image_2d(
-        target: GLenum,
-        level: GLint,
-        xoffset: GLint,
-        yoffset: GLint,
-        width: GLsizei,
-        height: GLsizei,
-        format: GLenum,
-        type_: GLenum,
-        pixels: *const c_void
-    ): [glTexSubImage2D];
-
     fn tex_parameteri(target: GLenum, pname: GLenum, param: GLenum): [glTexParameteri];
     fn tex_buffer(target: GLenum, internalformat: GLenum, buffer: GLuint): [glTexBuffer, glTexBufferARB, glTexBufferEXT, glTexBufferOES];
 
@@ -1488,4 +1477,18 @@ generate_bindings! {
     fn get_uniform_location(program: GLuint, name: *const GLchar) -> GLint: [glGetUniformLocation, glGetUniformLocationARB];
 
     fn draw_arrays(mode: GLenum, first: GLint, count: GLsizei): [glDrawArrays, glDrawArraysEXT];
+
+    fn gen_queries(n: GLsizei, ids: *mut GLuint): [glGenQueries, glGenQueriesARB];
+    fn delete_queries(n: GLsizei, ids: *const GLuint): [glDeleteQueries, glDeleteQueriesARB];
+    fn begin_query(target: GLenum, id: GLuint): [glBeginQuery, glBeginQueryARB];
+    fn end_query(target: GLenum): [glEndQuery, glEndQueryARB];
+    fn get_query_object_ui64v(
+        id: GLuint,
+        pname: GLenum,
+        params: *mut GLuint64
+    ): [glGetQueryObjectui64v];
+    fn get_query_object_iv(
+        id: GLuint, pname: GLenum, params: *mut GLint
+    ): [glGetQueryObjectiv];
+
 }

@@ -380,6 +380,64 @@ impl GlTexture {
     }
 }
 
+pub struct GlQuery {
+    query: GLuint,
+    waiting: Cell<bool>,
+}
+
+impl GlQuery {
+    pub fn new(gl: GlContext) -> Self {
+        unsafe {
+            let mut query = 0;
+            gl.gen_queries(1, &mut query);
+            check_error(gl);
+
+            Self {
+                query,
+                waiting: Cell::new(false),
+            }
+        }
+    }
+
+    pub fn time_elapsed(&self, gl: GlContext, c: impl FnOnce()) -> Option<u64> {
+        unsafe {
+            if self.waiting.get() {
+                c();
+
+                let mut available = 0;
+                gl.get_query_object_iv(self.query, QUERY_RESULT_AVAILABLE, &mut available);
+                check_error(gl);
+
+                if available != 0 {
+                    let mut elapsed = 0;
+                    gl.get_query_object_ui64v(self.query, QUERY_RESULT, &mut elapsed);
+                    check_error(gl);
+
+                    self.waiting.set(false);
+                    Some(elapsed)
+                } else {
+                    None
+                }
+            } else {
+                gl.begin_query(TIME_ELAPSED, self.query);
+                check_error(gl);
+                c();
+                gl.end_query(TIME_ELAPSED);
+                check_error(gl);
+
+                self.waiting.set(true);
+                None
+            }
+        }
+    }
+
+    pub fn delete(self, gl: GlContext) {
+        unsafe {
+            gl.delete_queries(1, &self.query);
+        }
+    }
+}
+
 pub struct GlInfo {
     pub version: (i32, i32),
     pub max_texture_size: usize,
