@@ -30,8 +30,8 @@ void main() {
     int quadId = triangleId >> 1;
     int cornerId = (triangleId & 1) + vertexId;
     uvec4 packedData = texelFetch(uBuffer, uBufferOffsetInstance + quadId);
-    vec2 topLeft = vec2(float(packedData.x & 65535u) / 65535.0, float((packedData.x >> 16) & 65535u) / 65535.0);
-    vec2 bottomRight = vec2(float(packedData.y & 65535u) / 65535.0, float((packedData.y >> 16) & 65535u) / 65535.0);
+    vec2 topLeft = vec2(float(packedData.x & 65535u), float((packedData.x >> 16) & 65535u)) / uResolution;
+    vec2 bottomRight = vec2(float(packedData.y & 65535u), float((packedData.y >> 16) & 65535u)) / uResolution;
     vec2 pos = vec2(float(cornerId >> 1), float(cornerId & 1)) * (bottomRight - topLeft) + topLeft;
     gl_Position = vec4((2.0 * pos - 1.0) * vec2(1.0, -1.0), 0.0, 1.0);
     fragPosition = pos * uResolution;

@@ -222,7 +222,7 @@ impl GlData {
             gpu_time_msec: (self.gpu_time as f64 / 1e6) as f32,
             quads: stats_quads,
             drawcalls: stats_drawcalls,
-            area_pixels: self.pass_encoding.total_area(pass.width, pass.height),
+            area_pixels: self.pass_encoding.total_area(),
             size_bytes: (self.pass_encoding.size_texels() * size_of::<[u32; 4]>()) as u64,
         };
 

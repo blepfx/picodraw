@@ -249,10 +249,10 @@ impl QuadEncoder {
         height: f32,
     ) {
         let bounds = [
-            (bounds.left / width * 65535.0).round() as u16,
-            (bounds.top / height * 65535.0).round() as u16,
-            (bounds.right / width * 65535.0).round() as u16,
-            (bounds.bottom / height * 65535.0).round() as u16,
+            bounds.left.min(width.ceil() as u16),
+            bounds.top.min(height.ceil() as u16),
+            bounds.right.min(width.ceil() as u16),
+            bounds.bottom.min(height.ceil() as u16),
         ];
 
         if bounds[0] != bounds[2] && bounds[1] != bounds[3] {
@@ -279,14 +279,13 @@ impl QuadEncoder {
         self.quads.len() + self.data.len()
     }
 
-    pub fn total_area(&self, width: u32, height: u32) -> u64 {
+    pub fn total_area(&self) -> u64 {
         self.quads
             .iter()
             .map(|quad| {
                 let quad_width = quad.bounds[2].abs_diff(quad.bounds[0]) as u64;
                 let quad_height = quad.bounds[3].abs_diff(quad.bounds[1]) as u64;
-
-                quad_width * width as u64 * quad_height * height as u64 / 4294836225
+                quad_width * quad_height
             })
             .sum()
     }

@@ -73,10 +73,10 @@ impl WindowHandler for App {
                             alpha: 0.5,
                         },
                         Bounds {
-                            left: 256.0 - 100.0,
-                            top: 256.0 - 100.0,
-                            bottom: 256.0 + 100.0,
-                            right: 256.0 + 100.0,
+                            left: (256.0 - 100.0) as u16,
+                            top: (256.0 - 100.0) as u16,
+                            bottom: (256.0 + 100.0) as u16,
+                            right: (256.0 + 100.0) as u16,
                         },
                     );
 
@@ -89,10 +89,10 @@ impl WindowHandler for App {
                             alpha: 0.5,
                         },
                         Bounds {
-                            left: 320.0 - 50.0,
-                            top: 320.0 - 50.0,
-                            bottom: 320.0 + 50.0,
-                            right: 320.0 + 50.0,
+                            left: (320.0 - 50.0) as u16,
+                            top: (320.0 - 50.0) as u16,
+                            bottom: (320.0 + 50.0) as u16,
+                            right: (320.0 + 50.0) as u16,
                         },
                     );
                 },

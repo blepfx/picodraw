@@ -1,5 +1,8 @@
 use crate::{Float2, Float4, ShaderData};
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    u16,
+};
 
 #[non_exhaustive]
 pub struct ShaderContext<T> {
@@ -11,19 +14,19 @@ pub struct ShaderContext<T> {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Bounds {
-    pub top: f32,
-    pub left: f32,
-    pub bottom: f32,
-    pub right: f32,
+    pub top: u16,
+    pub left: u16,
+    pub bottom: u16,
+    pub right: u16,
 }
 
 impl Bounds {
     pub fn infinite() -> Self {
         Self {
-            top: f32::NEG_INFINITY,
-            left: f32::NEG_INFINITY,
-            bottom: f32::INFINITY,
-            right: f32::INFINITY,
+            top: 0,
+            left: 0,
+            bottom: u16::MAX,
+            right: u16::MAX,
         }
     }
 }

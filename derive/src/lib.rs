@@ -44,7 +44,6 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 .iter()
                 .map(|x| {
                     let ident = x.ident.as_ref().unwrap();
-                    let ident_str = ident.to_string();
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
                     quote! { #ident: <#ty as picodraw::ShaderData>::shader_vars(vars) }
                 })
@@ -54,7 +53,6 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 .iter()
                 .map(|x| {
                     let ident = x.ident.as_ref().unwrap();
-                    let ident_str = ident.to_string();
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
 
                     if x.ty_encoder.is_some() {
@@ -97,7 +95,6 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             let shader_collect_fields = fields
                 .iter()
                 .map(|x| {
-                    let id = x.index;
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
                     quote! { <#ty as picodraw::ShaderData>::shader_vars(vars) }
                 })
