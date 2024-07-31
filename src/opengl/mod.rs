@@ -107,7 +107,7 @@ impl GlData {
     }
 
     fn end_pass(&mut self, gl: GlContext) -> GlStatistics {
-        if self.shaders.is_dirty() {
+        if self.shaders.is_dirty() || self.program.is_none() {
             let (fragment_src, atlas) = self.shaders.recompile(self.info.max_texture_size as u32);
 
             if let Some(program) = self.program.take() {
