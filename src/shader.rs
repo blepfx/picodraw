@@ -1,5 +1,6 @@
 use crate::{Float2, Float4, ShaderData};
 use std::{
+    any::TypeId,
     ops::{Deref, DerefMut},
     u16,
 };
@@ -45,5 +46,13 @@ impl<T> DerefMut for ShaderContext<T> {
 }
 
 pub trait Shader: ShaderData {
+    fn id() -> TypeId {
+        fn id<T: 'static>(_: T) -> TypeId {
+            TypeId::of::<T>()
+        }
+
+        id(|x| Self::draw(x))
+    }
+
     fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4;
 }

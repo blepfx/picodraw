@@ -31,6 +31,11 @@ impl ShaderMap {
     }
 
     pub fn register<T: Shader>(&mut self) {
+        let id = T::id();
+        if self.shaders.contains_key(&id) {
+            return;
+        }
+
         let mut input = None;
         let graph = ShaderGraph::collect(|| {
             let (structure, vars) = InputStructure::of::<T>();
@@ -42,11 +47,6 @@ impl ShaderMap {
                 bounds: Float4::input_raw(BUILTIN_BOUNDS),
             })
         });
-
-        let id = shader_id::<T>();
-        if self.shaders.contains_key(&id) {
-            return;
-        }
 
         self.dirty = true;
         self.shaders.insert(
@@ -97,7 +97,7 @@ impl ShaderMap {
     ) {
         let data = self
             .shaders
-            .get(&shader_id::<T>())
+            .get(&T::id())
             .unwrap_or_else(|| panic!("register the drawable first ({})", type_name::<T>()));
 
         encoder.push(
@@ -109,12 +109,4 @@ impl ShaderMap {
             height as f32,
         );
     }
-}
-
-fn shader_id<S: Shader>() -> TypeId {
-    fn id<T: 'static>(_: T) -> TypeId {
-        TypeId::of::<T>()
-    }
-
-    id(|x| S::draw(x))
 }
