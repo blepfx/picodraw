@@ -80,6 +80,12 @@ impl OpenGl {
 }
 
 impl<'a> OpenGlRenderer<'a> {
+    pub fn reborrow(&mut self) -> OpenGlRenderer<'_> {
+        OpenGlRenderer {
+            data: &mut self.data,
+        }
+    }
+
     pub fn register<T: Shader>(&mut self) {
         self.data.shaders.register::<T>();
     }
