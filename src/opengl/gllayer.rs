@@ -54,9 +54,12 @@ impl GlProgram {
 
                     let mut success = 0;
                     gl.get_shader_iv(shader, COMPILE_STATUS, &mut success);
+                    check_error(gl);
+
                     if success == 0 {
                         let mut max_length = 0;
                         gl.get_shader_iv(shader, INFO_LOG_LENGTH, &mut max_length);
+                        check_error(gl);
 
                         let mut buffer = vec![0u8; max_length as usize];
                         gl.get_shader_info_log(
@@ -65,6 +68,7 @@ impl GlProgram {
                             &mut max_length,
                             buffer.as_mut_ptr() as *mut _,
                         );
+                        check_error(gl);
 
                         panic!(
                             "picodraw opengl internal error ({} shader compilation)\n {}",
@@ -77,7 +81,6 @@ impl GlProgram {
                         );
                     }
 
-                    check_error(gl);
                     forget(shader_drop);
                     shader
                 }
