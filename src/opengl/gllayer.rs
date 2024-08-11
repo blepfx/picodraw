@@ -545,6 +545,7 @@ pub fn gl_clear_color(gl: GlContext) {
     check_error(gl);
 }
 
+#[track_caller]
 fn check_error(gl: GlContext) {
     unsafe {
         let err = match gl.get_error() {
