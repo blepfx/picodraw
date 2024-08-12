@@ -2,6 +2,7 @@ use super::bindings::*;
 use std::{
     cell::Cell,
     ffi::CString,
+    marker::PhantomData,
     mem::{forget, size_of},
     ops::Deref,
     ptr::{copy_nonoverlapping, null},
@@ -385,7 +386,8 @@ impl GlTexture {
 
 pub struct GlQuery {
     query: GLuint,
-    waiting: Cell<bool>,
+    waiting: Cell<u8>,
+    phantom: PhantomData<*const ()>,
 }
 
 impl GlQuery {
@@ -397,14 +399,24 @@ impl GlQuery {
 
             Self {
                 query,
-                waiting: Cell::new(false),
+                waiting: Cell::new(255),
+                phantom: PhantomData,
             }
         }
     }
 
     pub fn time_elapsed(&self, gl: GlContext, c: impl FnOnce()) -> Option<u64> {
         unsafe {
-            if self.waiting.get() {
+            if self.waiting.get() == 255 {
+                gl.begin_query(TIME_ELAPSED, self.query);
+                check_error(gl);
+                c();
+                gl.end_query(TIME_ELAPSED);
+                check_error(gl);
+
+                self.waiting.set(3);
+                None
+            } else if self.waiting.get() == 0 {
                 c();
 
                 let mut available = 0;
@@ -414,21 +426,16 @@ impl GlQuery {
                 if available != 0 {
                     let mut elapsed = 0;
                     gl.get_query_object_ui64v(self.query, QUERY_RESULT, &mut elapsed);
-                    check_error(gl);
+                    gl.get_error();
 
-                    self.waiting.set(false);
+                    self.waiting.set(255);
                     Some(elapsed)
                 } else {
                     None
                 }
             } else {
-                gl.begin_query(TIME_ELAPSED, self.query);
-                check_error(gl);
                 c();
-                gl.end_query(TIME_ELAPSED);
-                check_error(gl);
-
-                self.waiting.set(true);
+                self.waiting.set(self.waiting.get() - 1);
                 None
             }
         }
