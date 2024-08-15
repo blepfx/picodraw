@@ -2,7 +2,7 @@ use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use syn::{
     parse2, parse_macro_input, parse_quote, Attribute, DeriveInput, Field, GenericParam, Generics,
-    Ident, Meta, Type, Visibility,
+    Ident, LitInt, Meta, Type, Visibility,
 };
 
 #[proc_macro_derive(ShaderData, attributes(shader))]
@@ -103,7 +103,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
             let shader_write_fields = fields
                 .iter()
                 .map(|x| {
-                    let id = x.index;
+                    let id = LitInt::new(&x.index.to_string(), Span::call_site());
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
                     if x.ty_encoder.is_some() {
                         quote! { <#ty as picodraw::ShaderData>::write(&self.#id.into(), writer); }
@@ -128,7 +128,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
         syn::Fields::Unit => (
             quote! { #vis struct #shader_vars_name; },
-            quote! { let _ = vars; () },
+            quote! { let _ = vars; #shader_vars_name },
             quote! { let _ = writer; },
         ),
     };

@@ -124,6 +124,12 @@ impl WindowHandler for App {
 }
 
 #[derive(ShaderData)]
+pub struct Unit;
+
+#[derive(ShaderData)]
+pub struct Tuple(pub f32);
+
+#[derive(ShaderData)]
 pub struct Circle {
     pub center: [f32; 2],
     pub radius: f32,
