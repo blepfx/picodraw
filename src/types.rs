@@ -487,7 +487,7 @@ macro_rules! impl_float {
 
             fn select(self, other: impl Into<Self>, cond: impl Into<Bool>) -> Self {
                 Self(push_op(
-                    ValueSource::Lerp(cond.into().0, self.0, other.into().0),
+                    ValueSource::Select(cond.into().0, self.0, other.into().0),
                     ValueType::$vtype,
                 ))
             }

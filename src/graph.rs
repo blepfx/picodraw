@@ -113,6 +113,7 @@ pub enum ValueSource {
     Lerp(Value, Value, Value),
     Smoothstep(Value, Value, Value),
     Step(Value, Value),
+    Select(Value, Value, Value),
 
     LitFloat(f32),
     LitInt(i32),
@@ -231,6 +232,11 @@ impl ValueSource {
             ValueSource::Sign(a) => v(*a),
             ValueSource::Floor(a) => v(*a),
             ValueSource::Fract(a) => v(*a),
+            ValueSource::Select(a, b, c) => {
+                v(*a);
+                v(*b);
+                v(*c);
+            }
             ValueSource::Lerp(a, b, c) => {
                 v(*a);
                 v(*b);
