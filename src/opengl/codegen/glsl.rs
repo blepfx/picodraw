@@ -458,12 +458,12 @@ fn emit_graph_atom<'a>(
             write!(f, ")")?;
         }
         ValueSource::Select(x, tru, fls) => {
-            write!(f, "mix(")?;
-            dep(f, fls)?;
-            write!(f, ",")?;
-            dep(f, tru)?;
-            write!(f, ",")?;
+            write!(f, "(")?;
             dep(f, x)?;
+            write!(f, "?")?;
+            dep(f, tru)?;
+            write!(f, ":")?;
+            dep(f, fls)?;
             write!(f, ")")?;
         }
         ValueSource::Smoothstep(x, min, max) => {

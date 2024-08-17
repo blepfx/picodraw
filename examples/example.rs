@@ -147,7 +147,7 @@ impl Shader for Circle {
         let mask =
             1.0 - ((center - shader.position).len() - shader.radius).smoothstep(-0.707, 0.707);
 
-        Float4::from(shader.alpha) * mask
+        Float4::from(shader.alpha) * mask * Float::select(Float::from(1.0), Float::from(0.0), true)
     }
 }
 
