@@ -23,6 +23,8 @@ pub struct OpenGl {
 }
 
 struct GlData {
+    config: OpenGlConfig,
+
     program: Option<GlProgramData>,
     buffer: GlTextureBuffer,
     vao: GlVertexArrayObject,
@@ -45,14 +47,25 @@ struct GlProgramData {
     uni_resolution: GlUniformLoc,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OpenGlConfig {
+    pub srgb: bool,
+}
+
+impl Default for OpenGlConfig {
+    fn default() -> Self {
+        Self { srgb: true }
+    }
+}
+
 pub struct OpenGlRenderer<'a> {
     data: &'a mut GlData,
 }
 
 impl OpenGl {
-    pub unsafe fn new(f: &dyn Fn(&CStr) -> *const c_void) -> Self {
+    pub unsafe fn new(f: &dyn Fn(&CStr) -> *const c_void, config: OpenGlConfig) -> Self {
         let bindings = GlBindings::load_from(f);
-        let data = GlContext::within(&bindings, |gl| GlData::new(gl));
+        let data = GlContext::within(&bindings, |gl| GlData::new(gl, config));
 
         Self { bindings, data }
     }
@@ -158,7 +171,13 @@ impl GlData {
 
         gl_clear_color(gl);
         gl_enable_blend_normal(gl);
-        gl_enable_framebuffer_srgb(gl);
+
+        if self.config.srgb {
+            gl_enable_framebuffer_srgb(gl);
+        } else {
+            gl_disable_framebuffer_srgb(gl);
+        }
+
         gl_viewport(gl, 0, 0, pass.width, pass.height);
         gl_uniform_2f(
             gl,
@@ -238,13 +257,14 @@ impl GlData {
         stats
     }
 
-    fn new(gl: GlContext) -> Self {
+    fn new(gl: GlContext, config: OpenGlConfig) -> Self {
         let info = match GlInfo::get(gl) {
             Some(info) if info.version >= (3, 3) => info,
             _ => panic!("gl context is too old. target at least 3.3+"),
         };
 
         Self {
+            config,
             gpu_time: 0,
             program: None,
             buffer: GlTextureBuffer::new(gl, info.max_texture_buffer_size.min(262144)),

@@ -545,6 +545,13 @@ pub fn gl_enable_framebuffer_srgb(gl: GlContext) {
     check_error(gl);
 }
 
+pub fn gl_disable_framebuffer_srgb(gl: GlContext) {
+    unsafe {
+        gl.disable(FRAMEBUFFER_SRGB);
+    }
+    check_error(gl);
+}
+
 pub fn gl_clear_color(gl: GlContext) {
     unsafe {
         gl.clear(COLOR_BUFFER_BIT);

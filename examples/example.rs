@@ -3,7 +3,8 @@ use baseview::{
     WindowScalePolicy,
 };
 use picodraw::{
-    opengl::OpenGl, Bounds, Float, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData,
+    opengl::{OpenGl, OpenGlConfig},
+    Bounds, Float, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData,
 };
 use std::time::Instant;
 
@@ -36,7 +37,10 @@ impl App {
             let context = window.gl_context().unwrap();
             context.make_current();
 
-            let mut gl = OpenGl::new(&|c| context.get_proc_address(c.to_str().unwrap()));
+            let mut gl = OpenGl::new(
+                &|c| context.get_proc_address(c.to_str().unwrap()),
+                OpenGlConfig::default(),
+            );
             gl.render(0, 0, |mut x| {
                 x.register::<Circle>();
             });
