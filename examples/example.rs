@@ -4,7 +4,7 @@ use baseview::{
 };
 use picodraw::{
     opengl::{OpenGl, OpenGlConfig},
-    Bounds, Float, Float2, Float4, GlFloat, Shader, ShaderContext, ShaderData,
+    Bounds, Float, Float2, Float4, GlFloat, GlLoopVars, Int, Shader, ShaderContext, ShaderData,
 };
 use std::time::Instant;
 
@@ -39,7 +39,7 @@ impl App {
 
             let mut gl = OpenGl::new(
                 &|c| context.get_proc_address(c.to_str().unwrap()),
-                OpenGlConfig::default(),
+                OpenGlConfig { srgb: true },
             );
             gl.render(0, 0, |mut x| {
                 x.register::<Circle>();
@@ -151,7 +151,14 @@ impl Shader for Circle {
         let mask =
             1.0 - ((center - shader.position).len() - shader.radius).smoothstep(-0.707, 0.707);
 
-        Float4::from(shader.alpha) * mask * Float::select(Float::from(1.0), Float::from(0.0), true)
+        let i = Int::from(0);
+        let f = Float::from(0.0);
+        let (_, f) = (i, f).run_loop(|(i, _)| i.lt(10), |(i, f)| (i + 1, f + 0.05));
+
+        Float4::from(shader.alpha)
+            * mask
+            * f
+            * Float::select(Float::from(1.0), Float::from(0.0), true)
     }
 }
 

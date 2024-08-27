@@ -54,7 +54,7 @@ pub struct OpenGlConfig {
 
 impl Default for OpenGlConfig {
     fn default() -> Self {
-        Self { srgb: true }
+        Self { srgb: false }
     }
 }
 

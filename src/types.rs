@@ -1,13 +1,13 @@
-use crate::graph::{push_op, Swizzle, Value, ValueSource, ValueType};
+use crate::graph::{push_op, Op, OpAddr, Swizzle, ValueType};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Sub};
 
 pub trait GlType: Copy + 'static {
     const TYPE: ValueType;
-    fn wrap(value: Value) -> Self;
-    fn unwrap(self) -> Value;
+    fn wrap(value: OpAddr) -> Self;
+    fn unwrap(self) -> OpAddr;
 
     fn input_raw(id: usize) -> Self {
-        Self::wrap(push_op(ValueSource::Input(id), Self::TYPE))
+        Self::wrap(push_op(Op::Input(id), Self::TYPE))
     }
 }
 
@@ -63,160 +63,121 @@ pub trait GlFloat:
 }
 
 #[derive(Clone, Copy)]
-pub struct Float(pub(crate) Value);
+pub struct Float(pub(crate) OpAddr);
 
 impl Float {
     pub fn atan2(self, x: impl Into<Self>) -> Self {
-        Self(push_op(
-            ValueSource::Atan2(self.0, x.into().0),
-            ValueType::Float1,
-        ))
+        Self(push_op(Op::Atan2(self.0, x.into().0), ValueType::Float1))
     }
 
     pub fn le(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Le(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Le(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn lt(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Lt(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Lt(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn ge(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Ge(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Ge(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn gt(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Gt(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Gt(self.0, rhs.into().0), ValueType::Bool1))
     }
 }
 
 impl From<f32> for Float {
     fn from(value: f32) -> Self {
-        Self(push_op(ValueSource::LitFloat(value), ValueType::Float1))
+        Self(push_op(Op::LitFloat(value), ValueType::Float1))
     }
 }
 
 impl From<Int> for Float {
     fn from(value: Int) -> Self {
-        Self(push_op(ValueSource::CastFloat(value.0), ValueType::Float1))
+        Self(push_op(Op::CastFloat(value.0), ValueType::Float1))
     }
 }
 
 impl From<Bool> for Float {
     fn from(value: Bool) -> Self {
-        Self(push_op(ValueSource::CastFloat(value.0), ValueType::Float1))
+        Self(push_op(Op::CastFloat(value.0), ValueType::Float1))
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct Int(pub(crate) Value);
+pub struct Int(pub(crate) OpAddr);
 
 impl Int {
     pub fn le(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Le(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Le(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn lt(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Lt(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Lt(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn ge(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Ge(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Ge(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn gt(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Gt(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Gt(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn eq(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Eq(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Eq(self.0, rhs.into().0), ValueType::Bool1))
     }
 
     pub fn neq(self, rhs: impl Into<Self>) -> Bool {
-        Bool(push_op(
-            ValueSource::Ne(self.0, rhs.into().0),
-            ValueType::Bool1,
-        ))
+        Bool(push_op(Op::Ne(self.0, rhs.into().0), ValueType::Bool1))
     }
 }
 
 impl From<i32> for Int {
     fn from(value: i32) -> Self {
-        Self(push_op(ValueSource::LitInt(value), ValueType::Int1))
+        Self(push_op(Op::LitInt(value), ValueType::Int1))
     }
 }
 
 impl From<Bool> for Int {
     fn from(value: Bool) -> Self {
-        Self(push_op(ValueSource::CastInt(value.0), ValueType::Int1))
+        Self(push_op(Op::CastInt(value.0), ValueType::Int1))
     }
 }
 
 impl From<Float> for Int {
     fn from(value: Float) -> Self {
-        Self(push_op(ValueSource::CastInt(value.0), ValueType::Int1))
+        Self(push_op(Op::CastInt(value.0), ValueType::Int1))
     }
 }
 
 #[derive(Clone, Copy)]
-pub struct Bool(pub(crate) Value);
+pub struct Bool(pub(crate) OpAddr);
 
 #[derive(Clone, Copy)]
-pub struct Float2(pub(crate) Value);
+pub struct Float2(pub(crate) OpAddr);
 
 impl Float2 {
     pub fn new(x: impl Into<Float>, y: impl Into<Float>) -> Self {
         Self(push_op(
-            ValueSource::NewVec2(x.into().0, y.into().0),
+            Op::NewVec2(x.into().0, y.into().0),
             ValueType::Float2,
         ))
     }
 
     pub fn x(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::X),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::X), ValueType::Float1))
     }
 
     pub fn y(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::Y),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::Y), ValueType::Float1))
     }
 }
 
 impl From<Float> for Float2 {
     fn from(value: Float) -> Self {
-        Self(push_op(ValueSource::SplatVec2(value.0), ValueType::Float2))
+        Self(push_op(Op::SplatVec2(value.0), ValueType::Float2))
     }
 }
 
@@ -227,48 +188,36 @@ impl From<f32> for Float2 {
 }
 
 #[derive(Clone, Copy)]
-pub struct Float3(pub(crate) Value);
+pub struct Float3(pub(crate) OpAddr);
 
 impl Float3 {
     pub fn new(x: impl Into<Float>, y: impl Into<Float>, z: impl Into<Float>) -> Self {
         Self(push_op(
-            ValueSource::NewVec3(x.into().0, y.into().0, z.into().0),
+            Op::NewVec3(x.into().0, y.into().0, z.into().0),
             ValueType::Float3,
         ))
     }
 
     pub fn x(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::X),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::X), ValueType::Float1))
     }
 
     pub fn y(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::Y),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::Y), ValueType::Float1))
     }
 
     pub fn z(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::Z),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::Z), ValueType::Float1))
     }
 
     pub fn cross(self, rhs: impl Into<Self>) -> Self {
-        Self(push_op(
-            ValueSource::Cross(self.0, rhs.into().0),
-            ValueType::Float3,
-        ))
+        Self(push_op(Op::Cross(self.0, rhs.into().0), ValueType::Float3))
     }
 }
 
 impl From<Float> for Float3 {
     fn from(value: Float) -> Self {
-        Self(push_op(ValueSource::SplatVec3(value.0), ValueType::Float3))
+        Self(push_op(Op::SplatVec3(value.0), ValueType::Float3))
     }
 }
 
@@ -279,7 +228,7 @@ impl From<f32> for Float3 {
 }
 
 #[derive(Clone, Copy)]
-pub struct Float4(pub(crate) Value);
+pub struct Float4(pub(crate) OpAddr);
 
 impl Float4 {
     pub fn new(
@@ -289,43 +238,31 @@ impl Float4 {
         w: impl Into<Float>,
     ) -> Self {
         Self(push_op(
-            ValueSource::NewVec4(x.into().0, y.into().0, z.into().0, w.into().0),
+            Op::NewVec4(x.into().0, y.into().0, z.into().0, w.into().0),
             ValueType::Float4,
         ))
     }
 
     pub fn x(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::X),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::X), ValueType::Float1))
     }
 
     pub fn y(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::Y),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::Y), ValueType::Float1))
     }
 
     pub fn z(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::Z),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::Z), ValueType::Float1))
     }
 
     pub fn w(self) -> Float {
-        Float(push_op(
-            ValueSource::Swizzle1(self.0, Swizzle::W),
-            ValueType::Float1,
-        ))
+        Float(push_op(Op::Swizzle1(self.0, Swizzle::W), ValueType::Float1))
     }
 }
 
 impl From<Float> for Float4 {
     fn from(value: Float) -> Self {
-        Self(push_op(ValueSource::SplatVec4(value.0), ValueType::Float4))
+        Self(push_op(Op::SplatVec4(value.0), ValueType::Float4))
     }
 }
 
@@ -336,16 +273,16 @@ impl From<f32> for Float4 {
 }
 
 #[derive(Copy, Clone)]
-pub struct Texture(Value);
+pub struct Texture(OpAddr);
 
 impl GlType for Texture {
     const TYPE: ValueType = ValueType::Texture;
 
-    fn wrap(value: Value) -> Self {
+    fn wrap(value: OpAddr) -> Self {
         Self(value)
     }
 
-    fn unwrap(self) -> Value {
+    fn unwrap(self) -> OpAddr {
         self.0
     }
 }
@@ -353,227 +290,213 @@ impl GlType for Texture {
 impl Texture {
     pub fn linear(&self, pos: impl Into<Float2>) -> Float4 {
         Float4(push_op(
-            ValueSource::TextureSampleLinear(self.0, pos.into().0),
+            Op::TextureSampleLinear(self.0, pos.into().0),
             ValueType::Float4,
         ))
     }
 
     pub fn nearest(&self, pos: impl Into<Float2>) -> Float4 {
         Float4(push_op(
-            ValueSource::TextureSampleNearest(self.0, pos.into().0),
+            Op::TextureSampleNearest(self.0, pos.into().0),
             ValueType::Float4,
         ))
     }
 
     pub fn size(&self) -> Float2 {
-        Float2(push_op(ValueSource::TextureSize(self.0), ValueType::Float2))
+        Float2(push_op(Op::TextureSize(self.0), ValueType::Float2))
     }
+}
+
+pub trait GlLoopVars: Sized {
+    fn run_loop(self, condition: impl Fn(Self) -> Bool, body: impl FnOnce(Self) -> Self) -> Self;
 }
 
 macro_rules! impl_float {
     ($type:ty, $vtype:ident) => {
         impl GlType for $type {
             const TYPE: ValueType = ValueType::$vtype;
-            fn wrap(value: Value) -> Self {
+            fn wrap(value: OpAddr) -> Self {
                 Self(value)
             }
 
-            fn unwrap(self) -> Value {
+            fn unwrap(self) -> OpAddr {
                 self.0
             }
         }
 
         impl GlFloat for $type {
             fn sin(self) -> Self {
-                Self(push_op(ValueSource::Sin(self.0), ValueType::$vtype))
+                Self(push_op(Op::Sin(self.0), ValueType::$vtype))
             }
 
             fn cos(self) -> Self {
-                Self(push_op(ValueSource::Cos(self.0), ValueType::$vtype))
+                Self(push_op(Op::Cos(self.0), ValueType::$vtype))
             }
 
             fn tan(self) -> Self {
-                Self(push_op(ValueSource::Tan(self.0), ValueType::$vtype))
+                Self(push_op(Op::Tan(self.0), ValueType::$vtype))
             }
 
             fn asin(self) -> Self {
-                Self(push_op(ValueSource::Asin(self.0), ValueType::$vtype))
+                Self(push_op(Op::Asin(self.0), ValueType::$vtype))
             }
 
             fn acos(self) -> Self {
-                Self(push_op(ValueSource::Acos(self.0), ValueType::$vtype))
+                Self(push_op(Op::Acos(self.0), ValueType::$vtype))
             }
 
             fn atan(self) -> Self {
-                Self(push_op(ValueSource::Atan(self.0), ValueType::$vtype))
+                Self(push_op(Op::Atan(self.0), ValueType::$vtype))
             }
 
             fn sqrt(self) -> Self {
-                Self(push_op(ValueSource::Sqrt(self.0), ValueType::$vtype))
+                Self(push_op(Op::Sqrt(self.0), ValueType::$vtype))
             }
 
             fn pow(self, power: impl Into<Self>) -> Self {
-                Self(push_op(
-                    ValueSource::Pow(self.0, power.into().0),
-                    ValueType::$vtype,
-                ))
+                Self(push_op(Op::Pow(self.0, power.into().0), ValueType::$vtype))
             }
 
             fn exp(self) -> Self {
-                Self(push_op(ValueSource::Exp(self.0), ValueType::$vtype))
+                Self(push_op(Op::Exp(self.0), ValueType::$vtype))
             }
 
             fn ln(self) -> Self {
-                Self(push_op(ValueSource::Ln(self.0), ValueType::$vtype))
+                Self(push_op(Op::Ln(self.0), ValueType::$vtype))
             }
 
             fn floor(self) -> Self {
-                Self(push_op(ValueSource::Floor(self.0), ValueType::$vtype))
+                Self(push_op(Op::Floor(self.0), ValueType::$vtype))
             }
 
             fn fract(self) -> Self {
-                Self(push_op(ValueSource::Fract(self.0), ValueType::$vtype))
+                Self(push_op(Op::Fract(self.0), ValueType::$vtype))
             }
 
             fn abs(self) -> Self {
-                Self(push_op(ValueSource::Abs(self.0), ValueType::$vtype))
+                Self(push_op(Op::Abs(self.0), ValueType::$vtype))
             }
 
             fn sign(self) -> Self {
-                Self(push_op(ValueSource::Sign(self.0), ValueType::$vtype))
+                Self(push_op(Op::Sign(self.0), ValueType::$vtype))
             }
 
             fn min(self, x: impl Into<Self>) -> Self {
-                Self(push_op(
-                    ValueSource::Min(self.0, x.into().0),
-                    ValueType::$vtype,
-                ))
+                Self(push_op(Op::Min(self.0, x.into().0), ValueType::$vtype))
             }
 
             fn max(self, x: impl Into<Self>) -> Self {
-                Self(push_op(
-                    ValueSource::Max(self.0, x.into().0),
-                    ValueType::$vtype,
-                ))
+                Self(push_op(Op::Max(self.0, x.into().0), ValueType::$vtype))
             }
 
             fn clamp(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
                 Self(push_op(
-                    ValueSource::Clamp(self.0, min.into().0, max.into().0),
+                    Op::Clamp(self.0, min.into().0, max.into().0),
                     ValueType::$vtype,
                 ))
             }
 
             fn step(self, edge: impl Into<Self>) -> Self {
-                Self(push_op(
-                    ValueSource::Step(self.0, edge.into().0),
-                    ValueType::$vtype,
-                ))
+                Self(push_op(Op::Step(self.0, edge.into().0), ValueType::$vtype))
             }
 
             fn smoothstep(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
                 Self(push_op(
-                    ValueSource::Smoothstep(self.0, min.into().0, max.into().0),
+                    Op::Smoothstep(self.0, min.into().0, max.into().0),
                     ValueType::$vtype,
                 ))
             }
 
             fn lerp(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
                 Self(push_op(
-                    ValueSource::Lerp(self.0, min.into().0, max.into().0),
+                    Op::Lerp(self.0, min.into().0, max.into().0),
                     ValueType::$vtype,
                 ))
             }
 
             fn select(self, other: impl Into<Self>, cond: impl Into<Bool>) -> Self {
                 Self(push_op(
-                    ValueSource::Select(cond.into().0, self.0, other.into().0),
+                    Op::Select(cond.into().0, self.0, other.into().0),
                     ValueType::$vtype,
                 ))
             }
 
             fn norm(self) -> Self {
                 if ValueType::$vtype == ValueType::Float1 {
-                    Self(push_op(ValueSource::Sign(self.0), ValueType::Float1))
+                    Self(push_op(Op::Sign(self.0), ValueType::Float1))
                 } else {
-                    Self(push_op(ValueSource::Normalize(self.0), ValueType::$vtype))
+                    Self(push_op(Op::Normalize(self.0), ValueType::$vtype))
                 }
             }
 
             fn len(self) -> Float {
                 if ValueType::$vtype == ValueType::Float1 {
-                    Float(push_op(ValueSource::Abs(self.0), ValueType::Float1))
+                    Float(push_op(Op::Abs(self.0), ValueType::Float1))
                 } else {
-                    Float(push_op(ValueSource::Length(self.0), ValueType::Float1))
+                    Float(push_op(Op::Length(self.0), ValueType::Float1))
                 }
             }
 
             fn dot(self, rhs: impl Into<Self>) -> Float {
                 if ValueType::$vtype == ValueType::Float1 {
-                    Float(push_op(
-                        ValueSource::Mul(self.0, rhs.into().0),
-                        ValueType::Float1,
-                    ))
+                    Float(push_op(Op::Mul(self.0, rhs.into().0), ValueType::Float1))
                 } else {
-                    Float(push_op(
-                        ValueSource::Dot(self.0, rhs.into().0),
-                        ValueType::Float1,
-                    ))
+                    Float(push_op(Op::Dot(self.0, rhs.into().0), ValueType::Float1))
                 }
             }
 
             fn dfdx(self) -> Self {
-                Self(push_op(ValueSource::DerivX(self.0), ValueType::Float1))
+                Self(push_op(Op::DerivX(self.0), ValueType::Float1))
             }
 
             fn dfdy(self) -> Self {
-                Self(push_op(ValueSource::DerivY(self.0), ValueType::Float1))
+                Self(push_op(Op::DerivY(self.0), ValueType::Float1))
             }
 
             fn fwidth(self) -> Self {
-                Self(push_op(ValueSource::DerivWidth(self.0), ValueType::Float1))
+                Self(push_op(Op::DerivWidth(self.0), ValueType::Float1))
             }
         }
 
         impl Add<$type> for $type {
             type Output = $type;
             fn add(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Add(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Add(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Sub<$type> for $type {
             type Output = $type;
             fn sub(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Sub(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Sub(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Mul<$type> for $type {
             type Output = $type;
             fn mul(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Mul(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Mul(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Div<$type> for $type {
             type Output = $type;
             fn div(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Div(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Div(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Rem<$type> for $type {
             type Output = $type;
             fn rem(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Rem(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Rem(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Neg for $type {
             type Output = $type;
             fn neg(self) -> Self::Output {
-                Self(push_op(ValueSource::Neg(self.0), ValueType::$vtype))
+                Self(push_op(Op::Neg(self.0), ValueType::$vtype))
             }
         }
 
@@ -653,33 +576,27 @@ macro_rules! impl_int {
     ($type:ty, $vtype:ident) => {
         impl GlType for $type {
             const TYPE: ValueType = ValueType::$vtype;
-            fn wrap(value: Value) -> Self {
+            fn wrap(value: OpAddr) -> Self {
                 Self(value)
             }
 
-            fn unwrap(self) -> Value {
+            fn unwrap(self) -> OpAddr {
                 self.0
             }
         }
 
         impl $type {
             pub fn min(self, x: impl Into<Self>) -> Self {
-                Self(push_op(
-                    ValueSource::Min(self.0, x.into().0),
-                    ValueType::$vtype,
-                ))
+                Self(push_op(Op::Min(self.0, x.into().0), ValueType::$vtype))
             }
 
             pub fn max(self, x: impl Into<Self>) -> Self {
-                Self(push_op(
-                    ValueSource::Max(self.0, x.into().0),
-                    ValueType::$vtype,
-                ))
+                Self(push_op(Op::Max(self.0, x.into().0), ValueType::$vtype))
             }
 
             pub fn clamp(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
                 Self(push_op(
-                    ValueSource::Clamp(self.0, min.into().0, max.into().0),
+                    Op::Clamp(self.0, min.into().0, max.into().0),
                     ValueType::$vtype,
                 ))
             }
@@ -688,42 +605,42 @@ macro_rules! impl_int {
         impl Add<$type> for $type {
             type Output = $type;
             fn add(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Add(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Add(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Sub<$type> for $type {
             type Output = $type;
             fn sub(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Sub(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Sub(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Mul<$type> for $type {
             type Output = $type;
             fn mul(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Mul(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Mul(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Div<$type> for $type {
             type Output = $type;
             fn div(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Div(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Div(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Rem<$type> for $type {
             type Output = $type;
             fn rem(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Rem(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Rem(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Neg for $type {
             type Output = $type;
             fn neg(self) -> Self::Output {
-                Self(push_op(ValueSource::Neg(self.0), ValueType::$vtype))
+                Self(push_op(Op::Neg(self.0), ValueType::$vtype))
             }
         }
 
@@ -803,46 +720,46 @@ macro_rules! impl_bool {
     ($type:ty, $vtype:ident) => {
         impl GlType for $type {
             const TYPE: ValueType = ValueType::$vtype;
-            fn wrap(value: Value) -> Self {
+            fn wrap(value: OpAddr) -> Self {
                 Self(value)
             }
 
-            fn unwrap(self) -> Value {
+            fn unwrap(self) -> OpAddr {
                 self.0
             }
         }
 
         impl From<bool> for $type {
             fn from(value: bool) -> Self {
-                Self(push_op(ValueSource::LitBool(value), ValueType::$vtype))
+                Self(push_op(Op::LitBool(value), ValueType::$vtype))
             }
         }
 
         impl BitAnd<$type> for $type {
             type Output = Self;
             fn bitand(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::And(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::And(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl BitOr<$type> for $type {
             type Output = Self;
             fn bitor(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Or(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Or(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl BitXor<$type> for $type {
             type Output = Self;
             fn bitxor(self, rhs: $type) -> Self::Output {
-                Self(push_op(ValueSource::Xor(self.0, rhs.0), ValueType::$vtype))
+                Self(push_op(Op::Xor(self.0, rhs.0), ValueType::$vtype))
             }
         }
 
         impl Not for $type {
             type Output = Self;
             fn not(self) -> Self::Output {
-                Self(push_op(ValueSource::Not(self.0), ValueType::$vtype))
+                Self(push_op(Op::Not(self.0), ValueType::$vtype))
             }
         }
 
@@ -957,9 +874,40 @@ macro_rules! impl_float_vec {
     };
 }
 
+macro_rules! impl_loop_vars {
+    ($($x:ident: $y:ident),*) => {
+        impl<$($x: GlType),*> GlLoopVars for ($($x,)*) {
+
+            #[allow(non_snake_case)]
+            fn run_loop(self, condition: impl Fn(Self) -> Bool, body: impl FnOnce(Self) -> Self) -> Self {
+                let ($($x,)*) = self;
+                let ($($x,)*) = ($($x::wrap(push_op(Op::SlotCreate($x.unwrap()), $x::TYPE)),)*);
+                let _cond = push_op(Op::SlotCreate((condition)(($($x,)*)).unwrap()), ValueType::Bool1);
+
+                push_op(Op::LoopPush(_cond), ValueType::Bool1);
+                {
+                    let ($($y,)*) = (body)(($($x,)*));
+                    $(
+                        push_op(Op::SlotUpdate($x.unwrap(), $y.unwrap()), $x::TYPE);
+                    )*
+                    push_op(Op::SlotUpdate(_cond, (condition)(($($x,)*)).unwrap()), ValueType::Bool1);
+                }
+                push_op(Op::LoopPop, ValueType::Bool1);
+
+                ($($x,)*)
+            }
+        }
+    };
+}
+
 impl_float!(Float, Float1);
 impl_float_vec!(Float2, Float2);
 impl_float_vec!(Float3, Float3);
 impl_float_vec!(Float4, Float4);
 impl_int!(Int, Int1);
 impl_bool!(Bool, Bool1);
+
+impl_loop_vars!(A: A1);
+impl_loop_vars!(A: A1, B: B1);
+impl_loop_vars!(A: A1, B: B1, C: C1);
+impl_loop_vars!(A: A1, B: B1, C: C1, D: D1);
