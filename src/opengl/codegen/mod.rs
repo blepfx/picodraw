@@ -95,10 +95,13 @@ impl ShaderMap {
         width: u32,
         height: u32,
     ) {
-        let data = self
-            .shaders
-            .get(&T::id())
-            .unwrap_or_else(|| panic!("register the drawable first ({})", type_name::<T>()));
+        let data = self.shaders.get(&T::id()).unwrap_or_else(|| {
+            if cfg!(debug_assertions) {
+                panic!("register the drawable first ({})", type_name::<T>())
+            } else {
+                panic!("register the drawable first")
+            }
+        });
 
         encoder.push(
             value,
