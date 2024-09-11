@@ -5,7 +5,6 @@ use std::{
     u16,
 };
 
-#[non_exhaustive]
 pub struct ShaderContext<T> {
     pub vars: T,
     pub position: Float2,
