@@ -1,12 +1,8 @@
 use crate::{Float2, Float4, ShaderData};
-use std::{
-    any::TypeId,
-    ops::{Deref, DerefMut},
-    u16,
-};
+use std::{any::TypeId, ops::Deref, u16};
 
-pub struct ShaderContext<T> {
-    pub vars: T,
+pub struct ShaderContext<'a, T> {
+    pub vars: &'a T,
     pub position: Float2,
     pub resolution: Float2,
     pub bounds: Float4,
@@ -31,16 +27,10 @@ impl Bounds {
     }
 }
 
-impl<T> Deref for ShaderContext<T> {
+impl<'a, T> Deref for ShaderContext<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.vars
-    }
-}
-
-impl<T> DerefMut for ShaderContext<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.vars
     }
 }
 

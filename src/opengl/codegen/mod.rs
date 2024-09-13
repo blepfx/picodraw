@@ -41,7 +41,7 @@ impl ShaderMap {
             let (structure, vars) = InputStructure::of::<T>();
             input = Some(structure);
             T::draw(ShaderContext {
-                vars,
+                vars: &vars,
                 position: Float2::input_raw(BUILTIN_POSITION),
                 resolution: Float2::input_raw(BUILTIN_RESOLUTION),
                 bounds: Float4::input_raw(BUILTIN_BOUNDS),
