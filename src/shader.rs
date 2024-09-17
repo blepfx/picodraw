@@ -45,3 +45,13 @@ pub trait Shader: ShaderData {
 
     fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4;
 }
+
+impl<'a, T: Shader> Shader for &'a T {
+    fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4 {
+        T::draw(shader)
+    }
+
+    fn id() -> TypeId {
+        T::id()
+    }
+}
