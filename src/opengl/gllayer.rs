@@ -135,6 +135,7 @@ impl GlProgram {
     pub fn bind(&self, gl: GlContext) {
         unsafe {
             gl.use_program(self.program);
+            check_error(gl);
         }
     }
 
@@ -169,6 +170,7 @@ impl GlVertexArrayObject {
     pub fn bind(&self, gl: GlContext) {
         unsafe {
             gl.bind_vertex_array(self.vao);
+            check_error(gl);
         }
     }
 
@@ -502,35 +504,35 @@ impl GlInfo {
     }
 }
 
-pub fn gl_draw_arrays_triangles(gl: GlContext, count: usize) {
+pub fn draw_arrays_triangles(gl: GlContext, count: usize) {
     unsafe {
         gl.draw_arrays(TRIANGLES, 0, count as _);
     }
     check_error(gl);
 }
 
-pub fn gl_uniform_1i(gl: GlContext, uni: GlUniformLoc, value: i32) {
+pub fn uniform_1i(gl: GlContext, uni: GlUniformLoc, value: i32) {
     unsafe {
         gl.uniform_1i(uni.0, value);
     }
     check_error(gl);
 }
 
-pub fn gl_uniform_2f(gl: GlContext, uni: GlUniformLoc, value: [f32; 2]) {
+pub fn uniform_2f(gl: GlContext, uni: GlUniformLoc, value: [f32; 2]) {
     unsafe {
         gl.uniform_2f(uni.0, value[0], value[1]);
     }
     check_error(gl);
 }
 
-pub fn gl_viewport(gl: GlContext, x: i32, y: i32, w: u32, h: u32) {
+pub fn viewport(gl: GlContext, x: i32, y: i32, w: u32, h: u32) {
     unsafe {
         gl.viewport(x as _, y as _, w as _, h as _);
     }
     check_error(gl);
 }
 
-pub fn gl_enable_blend_normal(gl: GlContext) {
+pub fn enable_blend_normal(gl: GlContext) {
     unsafe {
         gl.enable(BLEND);
         gl.blend_func_separate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA);
@@ -538,23 +540,30 @@ pub fn gl_enable_blend_normal(gl: GlContext) {
     check_error(gl);
 }
 
-pub fn gl_enable_framebuffer_srgb(gl: GlContext) {
+pub fn enable_framebuffer_srgb(gl: GlContext) {
     unsafe {
         gl.enable(FRAMEBUFFER_SRGB);
     }
     check_error(gl);
 }
 
-pub fn gl_disable_framebuffer_srgb(gl: GlContext) {
+pub fn disable_framebuffer_srgb(gl: GlContext) {
     unsafe {
         gl.disable(FRAMEBUFFER_SRGB);
     }
     check_error(gl);
 }
 
-pub fn gl_clear_color(gl: GlContext) {
+pub fn clear_color(gl: GlContext) {
     unsafe {
         gl.clear(COLOR_BUFFER_BIT);
+    }
+    check_error(gl);
+}
+
+pub fn bind_default_framebuffer(gl: GlContext) {
+    unsafe {
+        gl.bind_framebuffer(FRAMEBUFFER, 0);
     }
     check_error(gl);
 }

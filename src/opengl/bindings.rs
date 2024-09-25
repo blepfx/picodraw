@@ -1422,6 +1422,7 @@ generate_bindings! {
     fn disable(cap: GLenum): [glDisable];
     fn blend_func_separate(srgb: GLenum, drgb: GLenum, salpha: GLenum, dalpha: GLenum): [glBlendFuncSeparate];
 
+    fn bind_framebuffer(target: GLenum, framebuffer: GLuint): [glBindFramebuffer];
 
     fn gen_buffers(n: GLsizei, buffers: *mut GLuint): [glGenBuffers, glGenBuffersARB];
     fn delete_buffers(n: GLsizei, buffers: *const GLuint): [glDeleteBuffers, glDeleteBuffersARB];

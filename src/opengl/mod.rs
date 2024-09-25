@@ -137,13 +137,13 @@ impl GlData {
             let program = GlProgram::new(gl, codegen::VERTEX_SHADER, &fragment_src);
             program.bind(gl);
 
-            gl_uniform_1i(
+            uniform_1i(
                 gl,
                 program.get_uniform_loc(gl, "uBuffer"),
                 0, //texture location 0
             );
 
-            gl_uniform_1i(
+            uniform_1i(
                 gl,
                 program.get_uniform_loc(gl, "uAtlas"),
                 1, //texture location 0
@@ -169,21 +169,23 @@ impl GlData {
         self.vao.bind(gl);
         self.buffer.bind_texture(gl, 0);
 
-        gl_clear_color(gl);
-        gl_enable_blend_normal(gl);
+        bind_default_framebuffer(gl);
+        enable_blend_normal(gl);
 
-        if self.config.srgb {
-            gl_enable_framebuffer_srgb(gl);
-        } else {
-            gl_disable_framebuffer_srgb(gl);
-        }
-
-        gl_viewport(gl, 0, 0, pass.width, pass.height);
-        gl_uniform_2f(
+        viewport(gl, 0, 0, pass.width, pass.height);
+        uniform_2f(
             gl,
             program_data.uni_resolution,
             [pass.width as f32, pass.height as f32],
         );
+
+        if self.config.srgb {
+            enable_framebuffer_srgb(gl);
+        } else {
+            disable_framebuffer_srgb(gl);
+        }
+
+        clear_color(gl);
 
         let mut stats_drawcalls = 0;
         let mut stats_quads = 0;
@@ -231,13 +233,13 @@ impl GlData {
                         stats_quads += (quads - quads_start) as u32;
                         stats_drawcalls += 1;
 
-                        gl_uniform_1i(
+                        uniform_1i(
                             gl,
                             program_data.uni_buffer_offset_instance,
                             quad_data_start as i32,
                         );
-                        gl_uniform_1i(gl, program_data.uni_buffer_offset_data, data_start as i32);
-                        gl_draw_arrays_triangles(gl, (quads - quads_start) * 6);
+                        uniform_1i(gl, program_data.uni_buffer_offset_data, data_start as i32);
+                        draw_arrays_triangles(gl, (quads - quads_start) * 6);
                     }
                 }
             })
