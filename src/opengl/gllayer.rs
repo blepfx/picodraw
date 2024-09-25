@@ -142,13 +142,16 @@ impl GlProgram {
     pub fn get_uniform_loc(&self, gl: GlContext, name: &str) -> GlUniformLoc {
         unsafe {
             let cname = CString::new(name).unwrap();
-            GlUniformLoc(gl.get_uniform_location(self.program, cname.as_ptr() as _))
+            let loc = gl.get_uniform_location(self.program, cname.as_ptr() as _);
+            check_error(gl);
+            GlUniformLoc(loc)
         }
     }
 
     pub fn delete(self, gl: GlContext) {
         unsafe {
             gl.delete_program(self.program);
+            check_error(gl);
         }
     }
 }
@@ -177,6 +180,7 @@ impl GlVertexArrayObject {
     pub fn delete(self, gl: GlContext) {
         unsafe {
             gl.delete_vertex_arrays(1, &self.vao);
+            check_error(gl);
         }
     }
 }
@@ -233,6 +237,8 @@ impl GlTextureBuffer {
     pub fn bind_texture(&self, gl: GlContext, id: u32) {
         unsafe {
             gl.active_texture(TEXTURE0 + id);
+            check_error(gl);
+
             gl.bind_texture(TEXTURE_BUFFER, self.tbo_texture);
             check_error(gl);
         }
@@ -293,7 +299,10 @@ impl GlTextureBuffer {
     pub fn delete(self, gl: GlContext) {
         unsafe {
             gl.delete_textures(1, &self.tbo_texture);
+            check_error(gl);
+
             gl.delete_buffers(1, &self.tbo_buffer);
+            check_error(gl);
         }
     }
 }
@@ -342,14 +351,17 @@ impl GlTexture {
     pub fn new(gl: GlContext, width: u32, height: u32, data: &[u8]) -> Self {
         unsafe {
             let mut texture = 0;
+
             gl.gen_textures(1, &mut texture);
             check_error(gl);
+
             let texture_drop = Defer(move || gl.delete_textures(1, &texture));
 
             gl.bind_texture(TEXTURE_2D, texture);
+            check_error(gl);
+
             gl.tex_parameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR);
             gl.tex_parameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
-
             check_error(gl);
 
             gl.tex_image_2d(
@@ -382,6 +394,7 @@ impl GlTexture {
     pub fn delete(self, gl: GlContext) {
         unsafe {
             gl.delete_textures(1, &self.texture);
+            check_error(gl);
         }
     }
 }
@@ -412,7 +425,9 @@ impl GlQuery {
             if self.waiting.get() == 255 {
                 gl.begin_query(TIME_ELAPSED, self.query);
                 check_error(gl);
+
                 c();
+
                 gl.end_query(TIME_ELAPSED);
                 check_error(gl);
 
@@ -422,11 +437,13 @@ impl GlQuery {
                 c();
 
                 let mut available = 0;
+
                 gl.get_query_object_iv(self.query, QUERY_RESULT_AVAILABLE, &mut available);
                 check_error(gl);
 
                 if available != 0 {
                     let mut elapsed = 0;
+
                     gl.get_query_object_ui64v(self.query, QUERY_RESULT, &mut elapsed);
                     gl.get_error();
 
@@ -446,6 +463,7 @@ impl GlQuery {
     pub fn delete(self, gl: GlContext) {
         unsafe {
             gl.delete_queries(1, &self.query);
+            check_error(gl);
         }
     }
 }
@@ -485,6 +503,7 @@ impl GlInfo {
                 MAX_COMBINED_TEXTURE_IMAGE_UNITS,
                 &mut max_texture_image_units_combined,
             );
+            check_error(gl);
 
             // sanity checks
             if max_texture_image_units <= 0
@@ -568,8 +587,18 @@ pub fn bind_default_framebuffer(gl: GlContext) {
     check_error(gl);
 }
 
+pub fn clear_error(gl: GlContext) {
+    unsafe {
+        gl.get_error();
+    }
+}
+
 #[track_caller]
-fn check_error(gl: GlContext) {
+pub fn check_error(gl: GlContext) {
+    if cfg!(not(debug_assertions)) {
+        return;
+    }
+
     unsafe {
         let err = match gl.get_error() {
             NO_ERROR => return,

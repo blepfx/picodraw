@@ -6,7 +6,10 @@ use crate::{Bounds, Shader};
 use bindings::GlBindings;
 use codegen::{QuadEncoder, ShaderMap};
 use gllayer::*;
-use std::ffi::{c_void, CStr};
+use std::{
+    ffi::{c_void, CStr},
+    mem::size_of,
+};
 
 #[derive(Debug, Clone)]
 pub struct GlStatistics {
@@ -126,6 +129,8 @@ impl GlData {
     }
 
     fn end_pass(&mut self, gl: GlContext) -> GlStatistics {
+        clear_error(gl);
+
         if self.shaders.is_dirty() || self.program.is_none() {
             let (fragment_src, atlas) = self.shaders.recompile(self.info.max_texture_size as u32);
 
@@ -158,11 +163,12 @@ impl GlData {
                 uni_resolution: program.get_uniform_loc(gl, "uResolution"),
                 program,
                 atlas,
-            })
+            });
         }
 
         let pass = self.pass_viewport.as_ref().unwrap();
         let program_data = self.program.as_ref().unwrap();
+
         program_data.program.bind(gl);
         program_data.atlas.bind(gl, 1);
 
@@ -244,6 +250,8 @@ impl GlData {
                 }
             })
             .unwrap_or(self.gpu_time);
+
+        check_error(gl);
 
         let stats = GlStatistics {
             gpu_time_msec: (self.gpu_time as f64 / 1e6) as f32,
