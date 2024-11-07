@@ -12,6 +12,7 @@ pub type GLintptr = isize;
 pub type GLsizeiptr = isize;
 pub type GLfloat = c_float;
 pub type GLuint64 = u64;
+pub type GLubyte = u8;
 pub type GLDEBUGPROC = Option<
     extern "system" fn(
         source: GLenum,
@@ -1415,6 +1416,7 @@ macro_rules! generate_bindings {
 generate_bindings! {
     fn get_error() -> GLenum: [glGetError];
     fn get_integer_v(name: GLenum, data: *mut GLint): [glGetIntegerv];
+    fn get_string_i(name: GLenum, index: GLint) -> *const GLubyte: [glGetStringi];
 
     fn clear(mask: GLbitfield): [glClear];
     fn viewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei): [glViewport];
@@ -1491,5 +1493,10 @@ generate_bindings! {
     fn get_query_object_iv(
         id: GLuint, pname: GLenum, params: *mut GLint
     ): [glGetQueryObjectiv];
+
+    fn debug_message_callback(
+        callback: GLDEBUGPROC,
+        user_param: *const c_void
+    ): [glDebugMessageCallback, glDebugMessageCallbackARB, glDebugMessageCallbackKHR];
 
 }

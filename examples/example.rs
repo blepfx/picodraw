@@ -15,7 +15,7 @@ fn main() {
         scale: WindowScalePolicy::SystemScaleFactor,
 
         gl_config: Some(GlConfig {
-            version: (3, 3),
+            version: (3, 0),
             alpha_bits: 0,
             depth_bits: 0,
             ..GlConfig::default()

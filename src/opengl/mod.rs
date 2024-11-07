@@ -129,8 +129,6 @@ impl GlData {
     }
 
     fn end_pass(&mut self, gl: GlContext) -> GlStatistics {
-        clear_error(gl);
-
         if self.shaders.is_dirty() || self.program.is_none() {
             let (fragment_src, atlas) = self.shaders.recompile(self.info.max_texture_size as u32);
 
@@ -251,8 +249,6 @@ impl GlData {
             })
             .unwrap_or(self.gpu_time);
 
-        check_error(gl);
-
         let stats = GlStatistics {
             gpu_time_msec: (self.gpu_time as f64 / 1e6) as f32,
             quads: stats_quads,
@@ -272,6 +268,10 @@ impl GlData {
             Some(info) if info.version >= (3, 3) => info,
             _ => panic!("gl context is too old. target at least 3.3+"),
         };
+
+        if (info.version >= (4, 3) || info.ext_khr_debug) && cfg!(debug_assertions) {
+            enable_debug_panics(gl);
+        }
 
         Self {
             config,
