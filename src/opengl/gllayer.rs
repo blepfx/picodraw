@@ -478,7 +478,6 @@ impl GlInfo {
     pub fn get(gl: GlContext) -> Option<Self> {
         unsafe {
             let mut version = (0, 0);
-            gl.get_error(); //clear errors
             gl.get_integer_v(MAJOR_VERSION, &mut version.0);
             gl.get_integer_v(MINOR_VERSION, &mut version.1);
             if gl.get_error() != NO_ERROR {
@@ -588,9 +587,7 @@ pub fn bind_default_framebuffer(gl: GlContext) {
 }
 
 pub fn clear_error(gl: GlContext) {
-    unsafe {
-        gl.get_error();
-    }
+    unsafe { while gl.get_error() != NO_ERROR {} }
 }
 
 #[track_caller]
