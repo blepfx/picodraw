@@ -477,15 +477,13 @@ pub struct GlInfo {
 impl GlInfo {
     pub fn get(gl: GlContext) -> Option<Self> {
         unsafe {
+            gl.get_error();
+
             let mut version = (0, 0);
             gl.get_integer_v(MAJOR_VERSION, &mut version.0);
             gl.get_integer_v(MINOR_VERSION, &mut version.1);
             if gl.get_error() != NO_ERROR {
                 // failed to get the current opengl version??
-                return None;
-            }
-
-            if version <= (3, 0) {
                 return None;
             }
 

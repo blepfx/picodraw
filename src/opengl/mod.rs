@@ -270,6 +270,10 @@ impl GlData {
     fn new(gl: GlContext, config: OpenGlConfig) -> Self {
         let info = match GlInfo::get(gl) {
             Some(info) if info.version >= (3, 3) => info,
+            Some(info) => panic!(
+                "gl context is too old ({}.{}). target at least 3.3+",
+                info.version.0, info.version.1
+            ),
             _ => panic!("gl context is too old. target at least 3.3+"),
         };
 
