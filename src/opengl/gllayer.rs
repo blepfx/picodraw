@@ -477,7 +477,7 @@ pub struct GlInfo {
 impl GlInfo {
     pub fn get(gl: GlContext) -> Option<Self> {
         unsafe {
-            gl.get_error();
+            clear_error(gl);
 
             let mut version = (0, 0);
             gl.get_integer_v(MAJOR_VERSION, &mut version.0);
