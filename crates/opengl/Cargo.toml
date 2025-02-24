@@ -1,0 +1,8 @@
+[package]
+name = "picodraw-opengl"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+picodraw-core = { path = "../core" }
+slotmap = { workspace = true }

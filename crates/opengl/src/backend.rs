@@ -1,0 +1,524 @@
+use crate::{compiler, raw::*};
+use picodraw_core::*;
+use slotmap::{DefaultKey, Key, KeyData, SecondaryMap, SlotMap};
+use std::ffi::{CStr, c_void};
+
+unsafe impl Send for OpenGlBackend {}
+
+pub struct OpenGlBackend {
+    shaders: SlotMap<DefaultKey, ResourceShader>,
+    textures: SlotMap<DefaultKey, ResourceTexture>,
+    framebuffers: SlotMap<DefaultKey, ResourceFramebuffer>,
+    program: Option<CompiledProgram>,
+
+    gl_bindings: GlBindings,
+    gl_buffer: GlTextureBuffer,
+    gl_vao: GlVertexArrayObject,
+    gl_info: GlInfo,
+
+    scratch_quads: Vec<compiler::serialize::QuadDescriptorStruct>,
+    scratch_textures: compiler::serialize::ShaderTextureAllocator,
+}
+
+pub struct OpenGlContext<'a>(&'a mut OpenGlBackend);
+
+#[derive(Debug, Clone, Copy)]
+pub enum OpenGlError {
+    InvalidBinding { name: &'static CStr },
+    InvalidVersion { major: i32, minor: i32 },
+    InvalidInfo,
+}
+
+impl OpenGlBackend {
+    pub unsafe fn new(f: &dyn Fn(&CStr) -> *const c_void) -> Result<Self, OpenGlError> {
+        unsafe {
+            let gl_bindings = GlBindings::load_from(f).map_err(|name| OpenGlError::InvalidBinding { name })?;
+            let (gl_info, gl_buffer, gl_vao) = GlContext::within(&gl_bindings, |gl| {
+                clear_error(gl);
+
+                let gl_info = GlInfo::get(gl).ok_or(OpenGlError::InvalidInfo)?;
+                let supported = {
+                    let buffer_texture = gl_info.version >= (3, 1)
+                        || gl_info.extensions.contains("ARB_texture_buffer_object")
+                        || gl_info.extensions.contains("EXT_texture_buffer");
+                    let shader_bit_encoding =
+                        gl_info.version >= (3, 3) || gl_info.extensions.contains("ARB_shader_bit_encoding");
+
+                    buffer_texture && shader_bit_encoding && gl_info.version >= (3, 0)
+                };
+
+                if !supported {
+                    return Err(OpenGlError::InvalidVersion {
+                        major: gl_info.version.0,
+                        minor: gl_info.version.1,
+                    });
+                }
+
+                let gl_buffer = GlTextureBuffer::new(gl, gl_info.max_texture_buffer_size.min(262144));
+                let gl_vao = GlVertexArrayObject::new(gl);
+
+                Ok((gl_info, gl_buffer, gl_vao))
+            })?;
+
+            Ok(Self {
+                scratch_quads: vec![],
+                scratch_textures: compiler::serialize::ShaderTextureAllocator::new(
+                    (gl_info.max_texture_image_units - 1) as u32,
+                ),
+
+                shaders: SlotMap::new(),
+                framebuffers: SlotMap::new(),
+                textures: SlotMap::new(),
+                program: None,
+
+                gl_bindings,
+                gl_buffer,
+                gl_info,
+                gl_vao,
+            })
+        }
+    }
+
+    pub unsafe fn open(&mut self) -> OpenGlContext {
+        OpenGlContext(self)
+    }
+
+    pub unsafe fn delete(self) {
+        unsafe {
+            GlContext::within(&self.gl_bindings, |gl| {
+                self.gl_buffer.delete(gl);
+                self.gl_vao.delete(gl);
+
+                for (_, fb) in self.framebuffers.into_iter() {
+                    fb.framebuffer.delete(gl);
+                }
+
+                for (_, tx) in self.textures.into_iter() {
+                    tx.texture.delete(gl);
+                }
+
+                if let Some(program) = self.program {
+                    program.program.delete(gl);
+                }
+            });
+        }
+    }
+}
+
+impl<'a> OpenGlContext<'a> {
+    pub fn screenshot(&self, bounds: impl Into<Bounds>) -> Vec<u32> {
+        let bounds = bounds.into();
+
+        unsafe {
+            GlContext::within(&self.0.gl_bindings, |gl| {
+                GlFramebuffer::bind_default(gl);
+                screenshot_rect(
+                    gl,
+                    bounds.left as _,
+                    bounds.top as _,
+                    bounds.width() as _,
+                    bounds.height() as _,
+                )
+            })
+        }
+    }
+}
+
+impl<'a> Context for OpenGlContext<'a> {
+    fn create_texture_render(&mut self) -> RenderTexture {
+        unsafe {
+            GlContext::within(&self.0.gl_bindings, |gl| {
+                let id = self.0.framebuffers.insert(ResourceFramebuffer {
+                    framebuffer: GlFramebuffer::new(gl, 1, 1),
+                    width: 1,
+                    height: 1,
+                });
+
+                RenderTexture(id.data().as_ffi())
+            })
+        }
+    }
+
+    fn create_texture_static(&mut self, data: ImageData) -> Texture {
+        unsafe {
+            GlContext::within(&self.0.gl_bindings, |gl| {
+                let id = self.0.textures.insert(ResourceTexture {
+                    texture: GlTexture::new(gl, data),
+                });
+
+                Texture(id.data().as_ffi())
+            })
+        }
+    }
+
+    fn create_shader(&mut self, graph: Graph) -> Shader {
+        unsafe {
+            GlContext::within(&self.0.gl_bindings, |gl| {
+                if let Some(program) = self.0.program.take() {
+                    program.program.delete(gl);
+                }
+            })
+        }
+
+        let id = self.0.shaders.insert(ResourceShader { graph });
+        Shader(id.data().as_ffi())
+    }
+
+    fn delete_texture_render(&mut self, id: RenderTexture) -> bool {
+        unsafe {
+            GlContext::within(&self.0.gl_bindings, |gl| {
+                match self.0.framebuffers.remove(KeyData::from_ffi(id.0).into()) {
+                    Some(fb) => {
+                        fb.framebuffer.delete(gl);
+                        true
+                    }
+                    _ => false,
+                }
+            })
+        }
+    }
+
+    fn delete_texture_static(&mut self, id: Texture) -> bool {
+        unsafe {
+            GlContext::within(&self.0.gl_bindings, |gl| {
+                match self.0.textures.remove(KeyData::from_ffi(id.0).into()) {
+                    Some(tx) => {
+                        tx.texture.delete(gl);
+                        true
+                    }
+                    _ => false,
+                }
+            })
+        }
+    }
+
+    fn delete_shader(&mut self, id: Shader) -> bool {
+        match self.0.shaders.remove(KeyData::from_ffi(id.0).into()) {
+            Some(_) => true,
+            _ => false,
+        }
+    }
+
+    fn draw(&mut self, buffer: &CommandBuffer) {
+        unsafe {
+            GlContext::within(&self.0.gl_bindings, |gl| {
+                clear_error(gl);
+
+                let program = self.0.program.get_or_insert_with(|| {
+                    let compiled = {
+                        let mut compiler = compiler::Compiler::new(compiler::CompilerOptions {
+                            glsl_version: self.0.gl_info.glsl_version(),
+                            texture_units: self.0.gl_info.max_texture_image_units as u32,
+                        });
+
+                        for (id, shader) in self.0.shaders.iter() {
+                            compiler.put_shader(Shader(id.data().as_ffi()), &shader.graph);
+                        }
+
+                        compiler.compile()
+                    };
+
+                    let program = GlProgram::new(gl, &compiled.shader_vertex, &compiled.shader_fragment);
+                    program.bind(gl);
+
+                    uniform_1i(
+                        gl,
+                        program.get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OBJECT),
+                        0, //texture location 0
+                    );
+
+                    for i in 1..self.0.gl_info.max_texture_image_units {
+                        uniform_1i(
+                            gl,
+                            program.get_uniform_loc_array(gl, compiler::UNIFORM_TEXTURE_SAMPLERS, i - 1),
+                            i as _,
+                        );
+                    }
+
+                    CompiledProgram {
+                        uni_buffer_offset_instance: program
+                            .get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_INSTANCE),
+                        uni_buffer_offset_data: program.get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_DATA),
+                        uni_frame_resolution: program.get_uniform_loc(gl, compiler::UNIFORM_FRAME_RESOLUTION),
+                        uni_frame_screen: program.get_uniform_loc(gl, compiler::UNIFORM_FRAME_SCREEN),
+
+                        program,
+                        layouts: compiled
+                            .shader_layout
+                            .into_iter()
+                            .map(|(shader, layout)| (DefaultKey::from(KeyData::from_ffi(shader.0)), layout))
+                            .collect(),
+                    }
+                });
+
+                program.program.bind(gl);
+                self.0.gl_vao.bind(gl);
+                self.0.gl_buffer.bind_texture(gl, 0);
+                enable_blend_normal(gl);
+
+                self.0.scratch_quads.clear();
+                self.0.scratch_textures.clear();
+
+                let mut state_size = Size { width: 0, height: 0 };
+                let mut state_screen = false;
+                let mut commands = CommandStream(buffer.list_commands());
+                while commands.peek().is_some() {
+                    let quads_to_draw = self.0.gl_buffer.update(gl, |writer| {
+                        let offset_data_start = writer.pointer();
+                        let mut buffer_full = false;
+
+                        'main: while let Some(cmd) = commands.peek() {
+                            match cmd {
+                                Command::SetRenderTarget { texture: None, size } => {
+                                    if !self.0.scratch_quads.is_empty() {
+                                        break 'main;
+                                    }
+
+                                    GlFramebuffer::bind_default(gl);
+                                    viewport(gl, 0, 0, size.width as u32, size.height as u32);
+                                    uniform_1i(gl, program.uni_frame_screen, 1);
+                                    uniform_2f(gl, program.uni_frame_resolution, [
+                                        size.width as f32,
+                                        size.height as f32,
+                                    ]);
+
+                                    state_screen = true;
+                                    state_size = size;
+                                    commands.pop();
+                                }
+
+                                Command::SetRenderTarget {
+                                    texture: Some(texture),
+                                    size,
+                                } => {
+                                    if !self.0.scratch_quads.is_empty() {
+                                        break 'main;
+                                    }
+
+                                    let fb_data = self
+                                        .0
+                                        .framebuffers
+                                        .get_mut(KeyData::from_ffi(texture.0).into())
+                                        .expect("invalid id");
+
+                                    if size.width != fb_data.width || size.height != fb_data.height {
+                                        std::mem::replace(
+                                            &mut fb_data.framebuffer,
+                                            GlFramebuffer::new(gl, size.width, size.height),
+                                        )
+                                        .delete(gl);
+
+                                        fb_data.width = size.width;
+                                        fb_data.height = size.height;
+                                    }
+
+                                    fb_data.framebuffer.bind(gl);
+                                    viewport(gl, 0, 0, size.width as u32, size.height as u32);
+                                    uniform_1i(gl, program.uni_frame_screen, 0);
+                                    uniform_2f(gl, program.uni_frame_resolution, [
+                                        size.width as f32,
+                                        size.height as f32,
+                                    ]);
+
+                                    state_screen = false;
+                                    state_size = size;
+                                    commands.pop();
+                                }
+
+                                Command::ClearBuffer { bounds } => {
+                                    if !self.0.scratch_quads.is_empty() {
+                                        break 'main;
+                                    }
+
+                                    if state_screen {
+                                        clear_rect(
+                                            gl,
+                                            bounds.left as _,
+                                            (state_size.height as i32 - bounds.bottom as i32) as _,
+                                            bounds.width() as _,
+                                            bounds.height() as _,
+                                        );
+                                    } else {
+                                        clear_rect(
+                                            gl,
+                                            bounds.left as _,
+                                            bounds.top as _,
+                                            bounds.width() as _,
+                                            bounds.height() as _,
+                                        );
+                                    }
+
+                                    commands.pop();
+                                }
+
+                                Command::BeginQuad { shader, bounds } => {
+                                    let layout = program
+                                        .layouts
+                                        .get(KeyData::from_ffi(shader.0).into())
+                                        .expect("invalid id");
+
+                                    {
+                                        let mut range = layout.textures.iter().copied();
+                                        for cmd in commands.peek_quad() {
+                                            let slot = match cmd {
+                                                Command::WriteStaticTexture(x) => {
+                                                    compiler::serialize::ShaderTextureSlot::Static(*x)
+                                                }
+                                                Command::WriteRenderTexture(x) => {
+                                                    compiler::serialize::ShaderTextureSlot::Render(*x)
+                                                }
+                                                _ => continue,
+                                            };
+
+                                            let index = range.next().expect("malformed command stream");
+                                            match self.0.scratch_textures.try_allocate(index, slot) {
+                                                Ok(true) => match slot {
+                                                    compiler::serialize::ShaderTextureSlot::Static(x) => {
+                                                        self.0
+                                                            .textures
+                                                            .get(KeyData::from_ffi(x.0).into())
+                                                            .expect("invalid id")
+                                                            .texture
+                                                            .bind_texture(gl, index + 1);
+                                                    }
+                                                    compiler::serialize::ShaderTextureSlot::Render(x) => {
+                                                        self.0
+                                                            .framebuffers
+                                                            .get(KeyData::from_ffi(x.0).into())
+                                                            .expect("invalid id")
+                                                            .framebuffer
+                                                            .bind_texture(gl, index + 1);
+                                                    }
+                                                },
+                                                Ok(false) => {}
+                                                Err(_) => break 'main,
+                                            }
+                                        }
+
+                                        if range.next().is_some() {
+                                            panic!("malformed command stream")
+                                        }
+                                    }
+
+                                    if (self.0.scratch_quads.len() + 1) * GlTextureBuffer::TEXEL_SIZE_BYTES
+                                        + (layout.size as usize)
+                                        > writer.space_left()
+                                    {
+                                        buffer_full = true;
+                                        break 'main;
+                                    }
+
+                                    let offset_quad_start = writer.pointer();
+                                    let mut encoder = compiler::serialize::ShaderDataEncoder::new(
+                                        &layout,
+                                        writer.request(layout.size as usize),
+                                    );
+
+                                    commands.pop();
+                                    loop {
+                                        match commands.pop() {
+                                            Some(Command::WriteF32(x)) => encoder.write_f32(x),
+                                            Some(Command::WriteI32(x)) => encoder.write_i32(x),
+
+                                            Some(Command::WriteRenderTexture(_)) => {}
+                                            Some(Command::WriteStaticTexture(_)) => {}
+
+                                            Some(Command::EndQuad) => break,
+                                            _ => panic!("malformed command stream"),
+                                        }
+                                    }
+
+                                    encoder.finish();
+
+                                    self.0.scratch_quads.push(compiler::serialize::QuadDescriptorStruct {
+                                        left: bounds.left.try_into().unwrap_or(u16::MAX),
+                                        top: bounds.top.try_into().unwrap_or(u16::MAX),
+                                        right: bounds.right.try_into().unwrap_or(u16::MAX),
+                                        bottom: bounds.bottom.try_into().unwrap_or(u16::MAX),
+                                        shader: layout.branch_id,
+                                        offset: (offset_quad_start - offset_data_start) as u32,
+                                    });
+                                }
+
+                                _ => panic!("malformed command stream"),
+                            }
+                        }
+
+                        if !self.0.scratch_quads.is_empty() {
+                            let offset_quads_start = writer.pointer();
+                            let quads_count = self.0.scratch_quads.len();
+
+                            self.0.scratch_textures.clear();
+
+                            for quad in self.0.scratch_quads.drain(..) {
+                                let slice = quad.as_bytes();
+                                writer.request(slice.len()).copy_from_slice(slice);
+                            }
+
+                            if buffer_full {
+                                writer.mark_full();
+                            }
+
+                            uniform_1i(gl, program.uni_buffer_offset_instance, offset_quads_start as i32);
+                            uniform_1i(gl, program.uni_buffer_offset_data, offset_data_start as i32);
+
+                            quads_count
+                        } else {
+                            0
+                        }
+                    });
+
+                    if quads_to_draw != 0 {
+                        draw_arrays_triangles(gl, quads_to_draw * 6);
+                    }
+                }
+
+                check_error(gl);
+            });
+        }
+    }
+}
+
+struct CompiledProgram {
+    program: GlProgram,
+    layouts: SecondaryMap<DefaultKey, compiler::serialize::ShaderDataLayout>,
+
+    uni_buffer_offset_instance: GlUniformLoc,
+    uni_buffer_offset_data: GlUniformLoc,
+    uni_frame_resolution: GlUniformLoc,
+    uni_frame_screen: GlUniformLoc,
+}
+
+struct ResourceShader {
+    graph: Graph,
+}
+
+struct ResourceTexture {
+    texture: GlTexture,
+}
+
+struct ResourceFramebuffer {
+    framebuffer: GlFramebuffer,
+    width: u32,
+    height: u32,
+}
+
+struct CommandStream<'a>(&'a [Command]);
+impl<'a> CommandStream<'a> {
+    fn peek(&self) -> Option<Command> {
+        self.0.first().copied()
+    }
+
+    fn pop(&mut self) -> Option<Command> {
+        let next = self.0.first().copied()?;
+        self.0 = &self.0[1..];
+        Some(next)
+    }
+
+    fn peek_quad(&self) -> &[Command] {
+        match self.0.iter().position(|x| matches!(x, Command::EndQuad)) {
+            Some(p) => &self.0[..p],
+            None => &self.0,
+        }
+    }
+}

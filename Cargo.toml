@@ -1,22 +1,40 @@
+[workspace]
+members = [
+    ".",
+    "crates/core",
+    "crates/derive",
+    "crates/opengl"
+]
+
+[workspace.dependencies]
+bmp = "0.5.0"
+slotmap = "1.0.7"
+proc-macro2 = "1"
+quote = "1"
+syn = "2"
+
+
 [package]
 name = "picodraw"
-version = "0.1.0"
-edition = "2021"
+version = "1.0.0"
+edition = "2024"
 description = "A smol gpu graphics library"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-bytemuck = "1"
-rustc-hash = "2"
-crunch = "0.5"
-image = { version = "0.25", default-features = false }
-picodraw-derive = { path = "derive", version = "0.1.0" }
+picodraw-core = { path = "crates/core" }
+picodraw-derive = { path = "crates/derive", optional = true }
+picodraw-opengl = { path = "crates/opengl", optional = true }
 
 [dev-dependencies]
-baseview = { git = "https://github.com/RustAudio/baseview", features = ["opengl"] }
+pugl-rs = { git = "https://github.com/blepfx/pugl-rs", features = ["opengl"] }
+bmp = { workspace = true }
 
-[workspace]
-members = [
-    ".",
-    "derive"
-]
+[features]
+default = ["derive"]
+derive = ["dep:picodraw-derive"]
+opengl = ["dep:picodraw-opengl"]
+
+[[example]]
+name = "opengl"
+required-features = ["opengl", "derive"]

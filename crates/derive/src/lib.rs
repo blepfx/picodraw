@@ -1,8 +1,8 @@
 use proc_macro2::Span;
 use quote::{quote, quote_spanned};
 use syn::{
-    parse2, parse_macro_input, parse_quote, Attribute, DeriveInput, Field, GenericParam, Generics,
-    Ident, LitInt, Meta, Type, Visibility,
+    parse2, parse_macro_input, parse_quote, Attribute, DeriveInput, Field, GenericParam, Generics, Ident, LitInt, Meta,
+    Type, Visibility,
 };
 
 #[proc_macro_derive(ShaderData, attributes(shader))]
@@ -25,7 +25,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         }
     };
 
-    let shader_vars_name = Ident::new(&format!("{}__ShaderVars", name), name.span());
+    let shader_vars_name = Ident::new(&format!("{}__ShaderData", name), name.span());
     let (shader_vars, shader_collect, shader_write) = match struct_data.fields {
         syn::Fields::Named(fields) => {
             let fields = ShaderField::extract(fields.named.into_iter());
@@ -36,7 +36,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                     let vis = &x.vis;
                     let ident = x.ident.as_ref().unwrap();
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
-                    quote! { #vis #ident: <#ty as picodraw::ShaderData>::ShaderVars }
+                    quote! { #vis #ident: <#ty as picodraw::ShaderData>::Data }
                 })
                 .collect::<Vec<_>>();
 
@@ -45,7 +45,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 .map(|x| {
                     let ident = x.ident.as_ref().unwrap();
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
-                    quote! { #ident: <#ty as picodraw::ShaderData>::shader_vars(vars) }
+                    quote! { #ident: <#ty as picodraw::ShaderData>::read() }
                 })
                 .collect::<Vec<_>>();
 
@@ -88,7 +88,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 .map(|x| {
                     let vis = &x.vis;
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
-                    quote! { #vis <#ty as picodraw::ShaderData>::ShaderVars }
+                    quote! { #vis <#ty as picodraw::ShaderData>::Data }
                 })
                 .collect::<Vec<_>>();
 
@@ -96,7 +96,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
                 .iter()
                 .map(|x| {
                     let ty = x.ty_encoder.as_ref().unwrap_or(&x.ty);
-                    quote! { <#ty as picodraw::ShaderData>::shader_vars(vars) }
+                    quote! { <#ty as picodraw::ShaderData>::read() }
                 })
                 .collect::<Vec<_>>();
 
@@ -128,7 +128,7 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
 
         syn::Fields::Unit => (
             quote! { #vis struct #shader_vars_name; },
-            quote! { let _ = vars; #shader_vars_name },
+            quote! { #shader_vars_name },
             quote! { let _ = writer; },
         ),
     };
@@ -139,8 +139,8 @@ pub fn derive_shader_data(input: proc_macro::TokenStream) -> proc_macro::TokenSt
         #shader_vars
 
         impl #impl_generics picodraw::ShaderData for #name #ty_generics #where_clause {
-            type ShaderVars = #shader_vars_name #ty_generics;
-            fn shader_vars(vars: &mut dyn picodraw::ShaderVars) -> Self::ShaderVars {
+            type Data = #shader_vars_name #ty_generics;
+            fn read() -> Self::Data {
                 #shader_collect
             }
             fn write(&self, writer: &mut dyn picodraw::ShaderDataWriter) {
@@ -182,9 +182,9 @@ impl ShaderAttribute {
                     if meta.tokens.to_string() == "ignore" {
                         shader_attr = Some(ShaderAttribute::Ignore);
                     } else {
-                        shader_attr = Some(Self::EncoderType(parse2(meta.tokens).expect(
-                            "invalid shader attribute structure, should be #[shader(Type)]",
-                        )));
+                        shader_attr = Some(Self::EncoderType(
+                            parse2(meta.tokens).expect("invalid shader attribute structure, should be #[shader(Type)]"),
+                        ));
                     }
 
                     break;
@@ -200,25 +200,23 @@ impl ShaderField {
         fields
             .into_iter()
             .enumerate()
-            .filter_map(
-                |(index, field)| match ShaderAttribute::extract(field.attrs) {
-                    Some(ShaderAttribute::Ignore) => None,
-                    Some(ShaderAttribute::EncoderType(ty_encoder)) => Some(ShaderField {
-                        vis: field.vis,
-                        index,
-                        ident: field.ident,
-                        ty: field.ty,
-                        ty_encoder: Some(ty_encoder),
-                    }),
-                    None => Some(ShaderField {
-                        vis: field.vis,
-                        index,
-                        ident: field.ident,
-                        ty: field.ty,
-                        ty_encoder: None,
-                    }),
-                },
-            )
+            .filter_map(|(index, field)| match ShaderAttribute::extract(field.attrs) {
+                Some(ShaderAttribute::Ignore) => None,
+                Some(ShaderAttribute::EncoderType(ty_encoder)) => Some(ShaderField {
+                    vis: field.vis,
+                    index,
+                    ident: field.ident,
+                    ty: field.ty,
+                    ty_encoder: Some(ty_encoder),
+                }),
+                None => Some(ShaderField {
+                    vis: field.vis,
+                    index,
+                    ident: field.ident,
+                    ty: field.ty,
+                    ty_encoder: None,
+                }),
+            })
             .collect()
     }
 }

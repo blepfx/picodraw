@@ -1,21 +1,21 @@
-use super::bindings::*;
+mod bindings;
+
+use bindings::*;
 use std::{
     cell::Cell,
-    ffi::CString,
-    marker::PhantomData,
+    collections::HashSet,
+    ffi::{CStr, CString},
     mem::{forget, size_of},
     ops::Deref,
-    ptr::{copy_nonoverlapping, null},
+    ptr::{null, write_bytes},
 };
+
+pub use bindings::GlBindings;
 
 #[derive(Clone, Copy)]
 pub struct GlContext<'a>(&'a GlBindings);
-
 impl<'a> GlContext<'a> {
-    pub unsafe fn within<R>(
-        bindings: &'a GlBindings,
-        c: impl for<'x> FnOnce(GlContext<'x>) -> R,
-    ) -> R {
+    pub unsafe fn within<R>(bindings: &'a GlBindings, c: impl for<'x> FnOnce(GlContext<'x>) -> R) -> R {
         c(GlContext(bindings))
     }
 }
@@ -42,12 +42,7 @@ impl GlProgram {
                     check_error(gl);
                     let shader_drop = Defer(|| gl.delete_shader(shader));
 
-                    gl.shader_source(
-                        shader,
-                        1,
-                        &(source.as_ptr() as *const GLchar),
-                        &(source.len() as GLint),
-                    );
+                    gl.shader_source(shader, 1, &(source.as_ptr() as *const GLchar), &(source.len() as GLint));
                     check_error(gl);
 
                     gl.compile_shader(shader);
@@ -63,21 +58,12 @@ impl GlProgram {
                         check_error(gl);
 
                         let mut buffer = vec![0u8; max_length as usize];
-                        gl.get_shader_info_log(
-                            shader,
-                            max_length,
-                            &mut max_length,
-                            buffer.as_mut_ptr() as *mut _,
-                        );
+                        gl.get_shader_info_log(shader, max_length, &mut max_length, buffer.as_mut_ptr() as *mut _);
                         check_error(gl);
 
                         panic!(
                             "picodraw opengl internal error ({} shader compilation)\n {}",
-                            if type_ == VERTEX_SHADER {
-                                "vertex"
-                            } else {
-                                "fragment"
-                            },
+                            if type_ == VERTEX_SHADER { "vertex" } else { "fragment" },
                             String::from_utf8_lossy(&buffer)
                         );
                     }
@@ -113,12 +99,7 @@ impl GlProgram {
                 gl.get_program_iv(program, INFO_LOG_LENGTH, &mut max_length);
 
                 let mut buffer = vec![0u8; max_length as usize];
-                gl.get_program_info_log(
-                    program,
-                    max_length,
-                    &mut max_length,
-                    buffer.as_mut_ptr() as *mut _,
-                );
+                gl.get_program_info_log(program, max_length, &mut max_length, buffer.as_mut_ptr() as *mut _);
 
                 panic!(
                     "picodraw opengl internal error (shader linking)\n {}",
@@ -142,6 +123,15 @@ impl GlProgram {
     pub fn get_uniform_loc(&self, gl: GlContext, name: &str) -> GlUniformLoc {
         unsafe {
             let cname = CString::new(name).unwrap();
+            let loc = gl.get_uniform_location(self.program, cname.as_ptr() as _);
+            check_error(gl);
+            GlUniformLoc(loc)
+        }
+    }
+
+    pub fn get_uniform_loc_array(&self, gl: GlContext, name: &str, index: usize) -> GlUniformLoc {
+        unsafe {
+            let cname = CString::new(format!("{}[{}]", name, index)).unwrap();
             let loc = gl.get_uniform_location(self.program, cname.as_ptr() as _);
             check_error(gl);
             GlUniformLoc(loc)
@@ -208,7 +198,7 @@ impl GlTextureBuffer {
                 TEXTURE_BUFFER,
                 (Self::TEXEL_SIZE_BYTES * size) as _,
                 null(),
-                STREAM_DRAW,
+                DYNAMIC_DRAW,
             );
             check_error(gl);
 
@@ -229,7 +219,7 @@ impl GlTextureBuffer {
                 tbo_buffer,
                 tbo_texture,
                 size,
-                ptr: Cell::new(0),
+                ptr: Cell::new(size),
             }
         }
     }
@@ -244,11 +234,7 @@ impl GlTextureBuffer {
         }
     }
 
-    pub fn update<R>(
-        &self,
-        gl: GlContext,
-        c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R,
-    ) -> R {
+    pub fn update<R>(&mut self, gl: GlContext, c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R) -> R {
         unsafe {
             gl.bind_buffer(TEXTURE_BUFFER, self.tbo_buffer);
             check_error(gl);
@@ -266,12 +252,11 @@ impl GlTextureBuffer {
                 (range_start * Self::TEXEL_SIZE_BYTES) as _,
                 ((self.size - range_start) * Self::TEXEL_SIZE_BYTES) as _,
                 MAP_WRITE_BIT
-                    | MAP_UNSYNCHRONIZED_BIT
                     | MAP_FLUSH_EXPLICIT_BIT
                     | (if needs_invalidation {
                         MAP_INVALIDATE_BUFFER_BIT
                     } else {
-                        0
+                        MAP_UNSYNCHRONIZED_BIT
                     }),
             ) as *mut [u32; 4];
             check_error(gl);
@@ -319,24 +304,23 @@ impl<'a> GlTextureBufferWriter<'a> {
     }
 
     pub fn space_left(&self) -> usize {
-        self.owner.size - self.owner.ptr.get()
+        (self.owner.size - self.owner.ptr.get()) * GlTextureBuffer::TEXEL_SIZE_BYTES
     }
 
     pub fn mark_full(&self) {
         self.owner.ptr.set(self.owner.size);
     }
 
-    pub fn write(&self, data: &[[u32; 4]]) {
-        if self.owner.ptr.get() + data.len() <= self.owner.size {
+    pub fn request(&self, byte_size: usize) -> &mut [u8] {
+        let texel_size = byte_size.div_ceil(GlTextureBuffer::TEXEL_SIZE_BYTES);
+        if self.space_left() >= texel_size {
             unsafe {
-                copy_nonoverlapping(
-                    data.as_ptr(),
-                    self.buffer.add(self.owner.ptr.get() - self.start),
-                    data.len(),
-                );
-            }
+                let ptr = self.buffer.add(self.owner.ptr.get() - self.start);
+                self.owner.ptr.set(self.owner.ptr.get() + texel_size);
 
-            self.owner.ptr.set(self.owner.ptr.get() + data.len());
+                write_bytes(ptr as *mut u8, 0, byte_size);
+                std::slice::from_raw_parts_mut(ptr as *mut u8, byte_size)
+            }
         } else {
             panic!("overwrite");
         }
@@ -348,7 +332,7 @@ pub struct GlTexture {
 }
 
 impl GlTexture {
-    pub fn new(gl: GlContext, width: u32, height: u32, data: &[u8]) -> Self {
+    pub fn new(gl: GlContext, data: picodraw_core::ImageData) -> Self {
         unsafe {
             let mut texture = 0;
 
@@ -367,13 +351,21 @@ impl GlTexture {
             gl.tex_image_2d(
                 TEXTURE_2D,
                 0,
-                RGBA8,
-                width as _,
-                height as _,
+                match data.format {
+                    picodraw_core::ImageFormat::R8 => R8,
+                    picodraw_core::ImageFormat::RGB8 => RGB8,
+                    picodraw_core::ImageFormat::RGBA8 => RGBA8,
+                },
+                data.width as _,
+                data.height as _,
                 0,
-                RGBA,
+                match data.format {
+                    picodraw_core::ImageFormat::R8 => RED,
+                    picodraw_core::ImageFormat::RGB8 => RGB,
+                    picodraw_core::ImageFormat::RGBA8 => RGBA,
+                },
                 UNSIGNED_BYTE,
-                data.as_ptr() as *const _,
+                data.data.as_ptr() as *const _,
             );
 
             check_error(gl);
@@ -383,7 +375,7 @@ impl GlTexture {
         }
     }
 
-    pub fn bind(&self, gl: GlContext, id: u32) {
+    pub fn bind_texture(&self, gl: GlContext, id: u32) {
         unsafe {
             gl.active_texture(TEXTURE0 + id);
             gl.bind_texture(TEXTURE_2D, self.texture);
@@ -399,93 +391,150 @@ impl GlTexture {
     }
 }
 
-pub struct GlQuery {
-    query: GLuint,
-    waiting: Cell<u8>,
-    phantom: PhantomData<*const ()>,
+pub struct GlFramebuffer {
+    framebuffer: GLuint,
+    texture: GLuint,
 }
 
-impl GlQuery {
-    pub fn new(gl: GlContext) -> Self {
+impl GlFramebuffer {
+    pub fn new(gl: GlContext, width: u32, height: u32) -> Self {
         unsafe {
-            let mut query = 0;
-            gl.gen_queries(1, &mut query);
+            let mut texture = 0;
+            let mut framebuffer = 0;
+
+            gl.gen_textures(1, &mut texture);
             check_error(gl);
 
-            Self {
-                query,
-                waiting: Cell::new(255),
-                phantom: PhantomData,
+            let texture_drop = Defer(move || gl.delete_textures(1, &texture));
+
+            gl.gen_framebuffers(1, &mut framebuffer);
+            check_error(gl);
+
+            let framebuffer_drop = Defer(move || gl.delete_framebuffers(1, &framebuffer));
+
+            gl.bind_texture(TEXTURE_2D, texture);
+            check_error(gl);
+
+            gl.tex_parameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR);
+            gl.tex_parameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+            check_error(gl);
+
+            gl.tex_image_2d(
+                TEXTURE_2D,
+                0,
+                RGBA8,
+                width as _,
+                height as _,
+                0,
+                RGBA,
+                UNSIGNED_BYTE,
+                null(),
+            );
+            check_error(gl);
+
+            gl.bind_framebuffer(FRAMEBUFFER, framebuffer);
+            check_error(gl);
+
+            gl.framebuffer_texture_2d(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, texture, 0);
+            check_error(gl);
+
+            if gl.check_framebuffer_status(FRAMEBUFFER) != FRAMEBUFFER_COMPLETE {
+                panic!("picodraw internal error: framebuffer incomplete");
             }
+
+            gl.bind_framebuffer(FRAMEBUFFER, 0);
+            check_error(gl);
+
+            forget(texture_drop);
+            forget(framebuffer_drop);
+
+            Self { texture, framebuffer }
         }
     }
 
-    pub fn time_elapsed(&self, gl: GlContext, c: impl FnOnce()) -> Option<u64> {
+    pub fn bind(&self, gl: GlContext) {
         unsafe {
-            if self.waiting.get() == 255 {
-                gl.begin_query(TIME_ELAPSED, self.query);
-                check_error(gl);
-
-                c();
-
-                gl.end_query(TIME_ELAPSED);
-                check_error(gl);
-
-                self.waiting.set(3);
-                None
-            } else if self.waiting.get() == 0 {
-                c();
-
-                let mut available = 0;
-
-                gl.get_query_object_iv(self.query, QUERY_RESULT_AVAILABLE, &mut available);
-                check_error(gl);
-
-                if available != 0 {
-                    let mut elapsed = 0;
-
-                    gl.get_query_object_ui64v(self.query, QUERY_RESULT, &mut elapsed);
-                    gl.get_error();
-
-                    self.waiting.set(255);
-                    Some(elapsed)
-                } else {
-                    None
-                }
-            } else {
-                c();
-                self.waiting.set(self.waiting.get() - 1);
-                None
-            }
+            gl.bind_framebuffer(FRAMEBUFFER, self.framebuffer);
         }
+        check_error(gl);
+    }
+
+    pub fn bind_texture(&self, gl: GlContext, id: u32) {
+        unsafe {
+            gl.active_texture(TEXTURE0 + id);
+            check_error(gl);
+
+            gl.bind_texture(TEXTURE_2D, self.texture);
+            check_error(gl);
+        }
+    }
+
+    pub fn bind_default(gl: GlContext) {
+        unsafe {
+            gl.bind_framebuffer(FRAMEBUFFER, 0);
+        }
+        check_error(gl);
     }
 
     pub fn delete(self, gl: GlContext) {
         unsafe {
-            gl.delete_queries(1, &self.query);
-            check_error(gl);
+            gl.delete_framebuffers(1, &self.framebuffer);
+            gl.delete_textures(1, &self.texture);
         }
     }
 }
 
 pub struct GlInfo {
     pub version: (i32, i32),
-    pub max_texture_size: usize,
+    pub extensions: HashSet<String>,
     pub max_texture_buffer_size: usize,
+    pub max_texture_image_units: usize,
 }
 
 impl GlInfo {
     pub fn get(gl: GlContext) -> Option<Self> {
         unsafe {
-            clear_error(gl);
+            let version = {
+                let mut version = (0, 0);
+                gl.get_integer_v(MAJOR_VERSION, &mut version.0);
+                gl.get_integer_v(MINOR_VERSION, &mut version.1);
 
-            let mut version = (0, 0);
-            gl.get_integer_v(MAJOR_VERSION, &mut version.0);
-            gl.get_integer_v(MINOR_VERSION, &mut version.1);
-            if gl.get_error() != NO_ERROR {
-                // failed to get the current opengl version??
-                return None;
-            }
+                if gl.get_error() != NO_ERROR {
+                    let vstr = CStr::from_ptr(gl.get_string(VERSION) as *const _).to_string_lossy();
+                    let mut vstr = vstr.split(&[' ', '.']);
+
+                    version.0 = vstr.next().and_then(|x| x.parse::<i32>().ok()).unwrap_or(1);
+                    version.1 = vstr.next().and_then(|x| x.parse::<i32>().ok()).unwrap_or(0);
+                }
+
+                if version.0 < 1 {
+                    return None;
+                }
+
+                version
+            };
+
+            let extensions = if version >= (3, 0) {
+                let mut extensions = HashSet::new();
+                let mut ext_num = 0;
+
+                gl.get_integer_v(NUM_EXTENSIONS, &mut ext_num);
+                for i in 0..ext_num {
+                    extensions.insert(
+                        CStr::from_ptr(gl.get_stringi(EXTENSIONS, i as u32) as *const _)
+                            .to_string_lossy()
+                            .to_string(),
+                    );
+                }
+
+                extensions
+            } else {
+                CStr::from_ptr(gl.get_string(EXTENSIONS) as *const _)
+                    .to_string_lossy()
+                    .split(' ')
+                    .map(|x| x.to_string())
+                    .collect()
+            };
 
             // all of this is probably not necessary because of opengls min guarantees but its nice to have
             let mut max_texture_size = 0;
@@ -496,10 +545,7 @@ impl GlInfo {
             gl.get_integer_v(MAX_TEXTURE_BUFFER_SIZE, &mut max_texture_buffer_size);
             gl.get_integer_v(MAX_TEXTURE_SIZE, &mut max_texture_size);
             gl.get_integer_v(MAX_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units);
-            gl.get_integer_v(
-                MAX_COMBINED_TEXTURE_IMAGE_UNITS,
-                &mut max_texture_image_units_combined,
-            );
+            gl.get_integer_v(MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units_combined);
             check_error(gl);
 
             // sanity checks
@@ -513,9 +559,28 @@ impl GlInfo {
 
             Some(Self {
                 version,
+                extensions,
+                max_texture_image_units: max_texture_image_units as usize,
                 max_texture_buffer_size: max_texture_buffer_size as usize,
-                max_texture_size: max_texture_size as usize,
             })
+        }
+    }
+
+    pub fn glsl_version(&self) -> u32 {
+        if self.version >= (3, 3) {
+            (self.version.0 * 100 + self.version.1 * 10) as u32
+        } else if self.version >= (3, 2) {
+            150
+        } else if self.version >= (3, 1) {
+            140
+        } else if self.version >= (3, 0) {
+            130
+        } else if self.version >= (2, 1) {
+            120
+        } else if self.version >= (2, 0) {
+            110
+        } else {
+            100
         }
     }
 }
@@ -544,6 +609,7 @@ pub fn uniform_2f(gl: GlContext, uni: GlUniformLoc, value: [f32; 2]) {
 pub fn viewport(gl: GlContext, x: i32, y: i32, w: u32, h: u32) {
     unsafe {
         gl.viewport(x as _, y as _, w as _, h as _);
+        gl.scissor(x as _, y as _, w as _, h as _);
     }
     check_error(gl);
 }
@@ -556,32 +622,31 @@ pub fn enable_blend_normal(gl: GlContext) {
     check_error(gl);
 }
 
-pub fn enable_framebuffer_srgb(gl: GlContext) {
+pub fn clear_rect(gl: GlContext, x: i32, y: i32, w: u32, h: u32) {
     unsafe {
-        gl.enable(FRAMEBUFFER_SRGB);
-    }
-    check_error(gl);
-}
-
-pub fn disable_framebuffer_srgb(gl: GlContext) {
-    unsafe {
-        gl.disable(FRAMEBUFFER_SRGB);
-    }
-    check_error(gl);
-}
-
-pub fn clear_color(gl: GlContext) {
-    unsafe {
+        gl.enable(SCISSOR_TEST);
+        gl.scissor(x as _, y as _, w as _, h as _);
+        gl.clear_color(0.0, 0.0, 0.0, 0.0);
         gl.clear(COLOR_BUFFER_BIT);
+        gl.disable(SCISSOR_TEST);
     }
     check_error(gl);
 }
 
-pub fn bind_default_framebuffer(gl: GlContext) {
+pub fn screenshot_rect(gl: GlContext, x: i32, y: i32, w: u32, h: u32) -> Vec<u32> {
     unsafe {
-        gl.bind_framebuffer(FRAMEBUFFER, 0);
+        let mut data = vec![0; (w * h) as usize];
+        gl.read_pixels(
+            x as _,
+            y as _,
+            w as _,
+            h as _,
+            RGBA,
+            UNSIGNED_BYTE,
+            data.as_mut_ptr() as *mut _,
+        );
+        data
     }
-    check_error(gl);
 }
 
 pub fn clear_error(gl: GlContext) {

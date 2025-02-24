@@ -1,0 +1,7 @@
+[package]
+name = "picodraw-core"
+version = "1.0.0"
+edition = "2024"
+description = "picodraw core"
+license = "MIT OR Apache-2.0"
+

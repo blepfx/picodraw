@@ -1,5 +1,6 @@
 #![allow(dead_code)]
-use std::ffi::{c_char, c_float, c_int, c_uchar, c_uint, c_void, CStr};
+
+use std::ffi::{CStr, c_char, c_float, c_int, c_uchar, c_uint, c_void};
 
 pub type GLenum = c_uint;
 pub type GLboolean = c_uchar;
@@ -12,6 +13,7 @@ pub type GLintptr = isize;
 pub type GLsizeiptr = isize;
 pub type GLfloat = c_float;
 pub type GLuint64 = u64;
+pub type GLubyte = c_uchar;
 pub type GLDEBUGPROC = Option<
     extern "system" fn(
         source: GLenum,
@@ -1370,6 +1372,10 @@ pub const XOR: GLenum = 0x1506;
 pub const ZERO: GLenum = 0;
 pub const ZERO_TO_ONE: GLenum = 0x935F;
 
+pub fn is_null<T>(ptr: *const T) -> bool {
+    (ptr as usize) < 8 || (ptr as usize) == usize::MAX
+}
+
 macro_rules! generate_bindings {
     ($(fn $name:ident($($argn:ident: $arg:ty),*) $(-> $return:ty)?: [$($binding:ident),*];)*) => {
         pub struct GlBindings {
@@ -1377,29 +1383,30 @@ macro_rules! generate_bindings {
         }
 
         impl GlBindings {
-            unsafe fn load_fn<T>(f: &dyn Fn(&CStr) -> *const c_void, fallbacks: &[&CStr], panic: T) -> T {
-                for fallback in fallbacks {
-                    let ptr = f(fallback);
-                    if (ptr as usize) < 8 || (ptr as usize) == usize::MAX {
-                        continue;
-                    } else {
-                        return std::mem::transmute_copy::<*const c_void, T>(&ptr);
+            unsafe fn load_fn<T>(f: &dyn Fn(&CStr) -> *const c_void, fallbacks: &[&'static CStr]) -> Result<T, &'static CStr> {
+                unsafe {
+                    for fallback in fallbacks {
+                        let ptr = f(fallback);
+                        if is_null(ptr) {
+                            continue;
+                        } else {
+                            return Ok(std::mem::transmute_copy::<*const c_void, T>(&ptr));
+                        }
                     }
                 }
 
-               panic
+                Err(fallbacks[0])
             }
 
-            pub unsafe fn load_from(f: &dyn Fn(&CStr) -> *const c_void) -> Self {
-                Self {
-                    $(
-                        $name: Self::load_fn(f, &[$(CStr::from_bytes_with_nul_unchecked(concat!(stringify!($binding), "\0").as_bytes()),)*], {
-                            extern "system" fn panic($(_: $arg,)*) $(-> $return)? {
-                                panic!("called an unloaded opengl function");
-                            }
-                            panic
-                        }),
-                    )*
+            pub unsafe fn load_from(f: &dyn Fn(&CStr) -> *const c_void) -> Result<Self, &'static CStr> {
+                unsafe {
+                    Ok(Self {
+                        $(
+                            $name: {
+                                Self::load_fn(f, &[$(CStr::from_bytes_with_nul_unchecked(concat!(stringify!($binding), "\0").as_bytes()),)*])?
+                            },
+                        )*
+                    })
                 }
             }
 
@@ -1415,14 +1422,29 @@ macro_rules! generate_bindings {
 generate_bindings! {
     fn get_error() -> GLenum: [glGetError];
     fn get_integer_v(name: GLenum, data: *mut GLint): [glGetIntegerv];
+    fn get_string(name: GLenum) -> *const GLubyte: [glGetString];
+    fn get_stringi(name: GLenum, index: GLuint) -> *const GLubyte: [glGetStringi];
 
+    fn clear_color(red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat): [glClearColor];
     fn clear(mask: GLbitfield): [glClear];
     fn viewport(x: GLint, y: GLint, width: GLsizei, height: GLsizei): [glViewport];
+    fn scissor(x: GLint, y: GLint, width: GLsizei, height: GLsizei): [glScissor];
     fn enable(cap: GLenum): [glEnable];
     fn disable(cap: GLenum): [glDisable];
     fn blend_func_separate(srgb: GLenum, drgb: GLenum, salpha: GLenum, dalpha: GLenum): [glBlendFuncSeparate];
+    fn read_pixels(x: GLint, y: GLint, width: GLsizei, height: GLsizei, format: GLenum, ty: GLenum, data: *mut c_void): [glReadPixels];
 
     fn bind_framebuffer(target: GLenum, framebuffer: GLuint): [glBindFramebuffer];
+    fn gen_framebuffers(n: GLsizei, buffers: *mut GLuint): [glGenFramebuffers, glGenFramebuffersEXT];
+    fn delete_framebuffers(n: GLsizei, buffers: *const GLuint): [glDeleteFramebuffers, glDeleteFramebuffersEXT];
+    fn check_framebuffer_status(target: GLenum) -> GLenum: [glCheckFramebufferStatus, glCheckFramebufferStatusEXT];
+    fn framebuffer_texture_2d(
+        target: GLenum,
+        attachment: GLenum,
+        textarget: GLenum,
+        texture: GLuint,
+        level: GLint
+    ): [glFramebufferTexture2D, glFramebufferTexture2DEXT];
 
     fn gen_buffers(n: GLsizei, buffers: *mut GLuint): [glGenBuffers, glGenBuffersARB];
     fn delete_buffers(n: GLsizei, buffers: *const GLuint): [glDeleteBuffers, glDeleteBuffersARB];
@@ -1478,18 +1500,4 @@ generate_bindings! {
     fn get_uniform_location(program: GLuint, name: *const GLchar) -> GLint: [glGetUniformLocation, glGetUniformLocationARB];
 
     fn draw_arrays(mode: GLenum, first: GLint, count: GLsizei): [glDrawArrays, glDrawArraysEXT];
-
-    fn gen_queries(n: GLsizei, ids: *mut GLuint): [glGenQueries, glGenQueriesARB];
-    fn delete_queries(n: GLsizei, ids: *const GLuint): [glDeleteQueries, glDeleteQueriesARB];
-    fn begin_query(target: GLenum, id: GLuint): [glBeginQuery, glBeginQueryARB];
-    fn end_query(target: GLenum): [glEndQuery, glEndQueryARB];
-    fn get_query_object_ui64v(
-        id: GLuint,
-        pname: GLenum,
-        params: *mut GLuint64
-    ): [glGetQueryObjectui64v];
-    fn get_query_object_iv(
-        id: GLuint, pname: GLenum, params: *mut GLint
-    ): [glGetQueryObjectiv];
-
 }
