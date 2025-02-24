@@ -5,6 +5,7 @@ use std::ffi::{CStr, c_void};
 
 unsafe impl Send for OpenGlBackend {}
 
+/// A `picodraw` backend that uses OpenGL.
 pub struct OpenGlBackend {
     shaders: SlotMap<DefaultKey, ResourceShader>,
     textures: SlotMap<DefaultKey, ResourceTexture>,
@@ -30,9 +31,28 @@ pub enum OpenGlError {
 }
 
 impl OpenGlBackend {
-    pub unsafe fn new(f: &dyn Fn(&CStr) -> *const c_void) -> Result<Self, OpenGlError> {
+    /// Creates a new OpenGL backend.
+    ///
+    /// The `proc_addr` function is used to load a pointer to an OpenGL procedure given it's name.
+    ///
+    /// #### Requirements
+    /// `picodraw` requires at least OpenGL v3.3.
+    /// It is possible that the backend can be created with an OpenGL v3.0 if the following extensions are present:
+    /// - `ARB_texture_buffer_object` or `EXT_texture_buffer`
+    /// - `ARB_shader_bit_encoding`
+    ///
+    /// #### Error Conditions
+    /// - If the version is not supported [`OpenGlError::InvalidVersion`] is returned.
+    /// - If one of the required procedure pointers is not valid [`OpenGlError::InvalidBinding`] is returned.
+    /// - If querying the current OpenGL version, extensions or limits fails [`OpenGlError::InvalidInfo`] is returned.
+    /// - If the OpenGL context is not active for the current thread, the behavior is undefined.
+    ///
+    /// #### Safety
+    /// This function should be called only if the OpenGL context is currently active for the current thread.
+    pub unsafe fn new(proc_addr: &dyn Fn(&CStr) -> *const c_void) -> Result<Self, OpenGlError> {
         unsafe {
-            let gl_bindings = GlBindings::load_from(f).map_err(|name| OpenGlError::InvalidBinding { name })?;
+            let gl_bindings = GlBindings::load_from(proc_addr)
+                .map_err(|name| OpenGlError::InvalidBinding { name })?;
             let (gl_info, gl_buffer, gl_vao) = GlContext::within(&gl_bindings, |gl| {
                 clear_error(gl);
 
@@ -41,8 +61,8 @@ impl OpenGlBackend {
                     let buffer_texture = gl_info.version >= (3, 1)
                         || gl_info.extensions.contains("ARB_texture_buffer_object")
                         || gl_info.extensions.contains("EXT_texture_buffer");
-                    let shader_bit_encoding =
-                        gl_info.version >= (3, 3) || gl_info.extensions.contains("ARB_shader_bit_encoding");
+                    let shader_bit_encoding = gl_info.version >= (3, 3)
+                        || gl_info.extensions.contains("ARB_shader_bit_encoding");
 
                     buffer_texture && shader_bit_encoding && gl_info.version >= (3, 0)
                 };
@@ -54,7 +74,8 @@ impl OpenGlBackend {
                     });
                 }
 
-                let gl_buffer = GlTextureBuffer::new(gl, gl_info.max_texture_buffer_size.min(262144));
+                let gl_buffer =
+                    GlTextureBuffer::new(gl, gl_info.max_texture_buffer_size.min(262144));
                 let gl_vao = GlVertexArrayObject::new(gl);
 
                 Ok((gl_info, gl_buffer, gl_vao))
@@ -79,10 +100,18 @@ impl OpenGlBackend {
         }
     }
 
+    /// Get a [`Context`](picodraw_core::Context) for the OpenGL backend.
+    ///
+    /// #### Safety
+    /// This function should be called only if the OpenGL context is currently active for the current thread.
     pub unsafe fn open(&mut self) -> OpenGlContext {
         OpenGlContext(self)
     }
 
+    /// Delete all the resources associated with the OpenGL backend.
+    ///
+    /// #### Safety
+    /// This function should be called only if the OpenGL context is currently active for the current thread.
     pub unsafe fn delete(self) {
         unsafe {
             GlContext::within(&self.gl_bindings, |gl| {
@@ -106,6 +135,8 @@ impl OpenGlBackend {
 }
 
 impl<'a> OpenGlContext<'a> {
+    /// Take a screenshot of a region of a current back buffer.
+    /// Useful for debugging and testing.
     pub fn screenshot(&self, bounds: impl Into<Bounds>) -> Vec<u32> {
         let bounds = bounds.into();
 
@@ -218,7 +249,8 @@ impl<'a> Context for OpenGlContext<'a> {
                         compiler.compile()
                     };
 
-                    let program = GlProgram::new(gl, &compiled.shader_vertex, &compiled.shader_fragment);
+                    let program =
+                        GlProgram::new(gl, &compiled.shader_vertex, &compiled.shader_fragment);
                     program.bind(gl);
 
                     uniform_1i(
@@ -230,7 +262,11 @@ impl<'a> Context for OpenGlContext<'a> {
                     for i in 1..self.0.gl_info.max_texture_image_units {
                         uniform_1i(
                             gl,
-                            program.get_uniform_loc_array(gl, compiler::UNIFORM_TEXTURE_SAMPLERS, i - 1),
+                            program.get_uniform_loc_array(
+                                gl,
+                                compiler::UNIFORM_TEXTURE_SAMPLERS,
+                                i - 1,
+                            ),
                             i as _,
                         );
                     }
@@ -238,15 +274,20 @@ impl<'a> Context for OpenGlContext<'a> {
                     CompiledProgram {
                         uni_buffer_offset_instance: program
                             .get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_INSTANCE),
-                        uni_buffer_offset_data: program.get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_DATA),
-                        uni_frame_resolution: program.get_uniform_loc(gl, compiler::UNIFORM_FRAME_RESOLUTION),
-                        uni_frame_screen: program.get_uniform_loc(gl, compiler::UNIFORM_FRAME_SCREEN),
+                        uni_buffer_offset_data: program
+                            .get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_DATA),
+                        uni_frame_resolution: program
+                            .get_uniform_loc(gl, compiler::UNIFORM_FRAME_RESOLUTION),
+                        uni_frame_screen: program
+                            .get_uniform_loc(gl, compiler::UNIFORM_FRAME_SCREEN),
 
                         program,
                         layouts: compiled
                             .shader_layout
                             .into_iter()
-                            .map(|(shader, layout)| (DefaultKey::from(KeyData::from_ffi(shader.0)), layout))
+                            .map(|(shader, layout)| {
+                                (DefaultKey::from(KeyData::from_ffi(shader.0)), layout)
+                            })
                             .collect(),
                     }
                 });
@@ -259,7 +300,10 @@ impl<'a> Context for OpenGlContext<'a> {
                 self.0.scratch_quads.clear();
                 self.0.scratch_textures.clear();
 
-                let mut state_size = Size { width: 0, height: 0 };
+                let mut state_size = Size {
+                    width: 0,
+                    height: 0,
+                };
                 let mut state_screen = false;
                 let mut commands = CommandStream(buffer.list_commands());
                 while commands.peek().is_some() {
@@ -417,8 +461,8 @@ impl<'a> Context for OpenGlContext<'a> {
                                     commands.pop();
                                     loop {
                                         match commands.pop() {
-                                            Some(Command::WriteF32(x)) => encoder.write_f32(x),
-                                            Some(Command::WriteI32(x)) => encoder.write_i32(x),
+                                            Some(Command::WriteFloat(x)) => encoder.write_f32(x),
+                                            Some(Command::WriteInt(x)) => encoder.write_i32(x),
 
                                             Some(Command::WriteRenderTexture(_)) => {}
                                             Some(Command::WriteStaticTexture(_)) => {}

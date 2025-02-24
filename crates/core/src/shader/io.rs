@@ -2,23 +2,30 @@ use crate::graph::*;
 use crate::shader::*;
 use crate::*;
 
+/// Read the shader data.
+///
+/// Should be called inside of [`Graph::collect`]
 pub fn read<T: ShaderData>() -> T::Data {
     T::read()
 }
 
 /// Write a value to the shader output.
+///
+/// Should be called inside of [`Graph::collect`]
 pub fn write_color(color: float4) {
     Graph::push_collect(Op::Output(color.0));
 }
 
 /// Get the current fragment position in physical pixels
+///
+/// Should be called inside of [`Graph::collect`]
 pub fn position() -> float2 {
     types::float2(Graph::push_collect(Op::Position))
 }
 
 /// Get the current frame resolution in physical pixels.
 ///
-/// Should be called inside of `ShaderGraph::collect`
+/// Should be called inside of [`Graph::collect`]
 pub fn resolution() -> float2 {
     types::float2(Graph::push_collect(Op::Resolution))
 }
@@ -26,7 +33,7 @@ pub fn resolution() -> float2 {
 /// Get the current quad bounds in physical pixels.
 /// Returns the position of the top left and bottom right corners.
 ///
-/// Should be called inside of `ShaderGraph::collect`
+/// Should be called inside of [`Graph::collect`]
 pub fn bounds() -> (float2, float2) {
     let start = types::float2(Graph::push_collect(Op::QuadStart));
     let end = types::float2(Graph::push_collect(Op::QuadEnd));
@@ -44,10 +51,22 @@ pub trait ShaderDataWriter {
     fn quad_bounds(&self) -> Bounds;
 }
 
+/// Arbitrary data that is serializable and readable by a shader.
+/// Shader data can be different per each rendered quad.
+///
+/// Use [`CommandBufferQuad`] (which implements [`ShaderDataWriter`]) to write data to the shader
+/// that can be read in the shader graph context by [`io::read`] or [`ShaderData::read`].
 pub trait ShaderData {
     type Data;
 
+    /// Read the data in the shader graph context.
+    ///
+    /// The data should be read in the same order as it was written, failure to do so may result in backend implementation defined behavior (reading garbage data or panics, it shoult NOT cause _undefined behavior_)
     fn read() -> Self::Data;
+
+    /// Serialize the object to a given [`ShaderDataWriter`].
+    ///
+    /// The data should be read in the same order as it was written, failure to do so may result in backend implementation defined behavior (reading garbage data or panics, it shoult NOT cause _undefined behavior_)
     fn write(&self, writer: &mut dyn ShaderDataWriter);
 }
 
@@ -242,3 +261,5 @@ impl_tuple!(A, B, C);
 impl_tuple!(A, B, C, D);
 impl_tuple!(A, B, C, D, E);
 impl_tuple!(A, B, C, D, E, F);
+impl_tuple!(A, B, C, D, E, F, G);
+impl_tuple!(A, B, C, D, E, F, G, H);
