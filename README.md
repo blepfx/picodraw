@@ -7,7 +7,7 @@ To install `picodraw` add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-picodraw = { git = "https://github.com/blepfx/picodraw", features = ["derive", "opengl"] }
+picodraw = { git = "https://github.com/blepfx/picodraw", features = ["derive", "opengl"], branch = "rewrite" }
 ```
 
 ## License
