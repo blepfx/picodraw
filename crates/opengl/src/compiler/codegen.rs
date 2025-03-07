@@ -272,7 +272,7 @@ impl FragmentCodegen {
             Asin(x) => emit!("asin({})", x),
             Acos(x) => emit!("acos({})", x),
             Atan(x) => emit!("atan({})", x),
-            Atan2(x, y) => emit!("atan2({},{})", x, y),
+            Atan2(x, y) => emit!("atan({},{})", x, y),
             Sqrt(x) => emit!("sqrt({})", x),
             Pow(x, y) => emit!("pow({},{})", x, y),
             Exp(x) => emit!("exp({})", x),

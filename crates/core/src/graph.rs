@@ -9,6 +9,10 @@ thread_local! {
     static COLLECT_GRAPH: RefCell<Option<Graph>> = RefCell::new(None);
 }
 
+/// A shader graph.
+///
+/// Defines a computation graph for pixel color computation based on pixel position, arbitrary dynamic data and other information.
+/// The graph is represented by a list of operations ([`Op`]) that each define a value computed based on other operations ([`OpAddr`]).
 pub struct Graph {
     ops: Vec<Op>,
     hash: DefaultHasher,
@@ -169,14 +173,17 @@ impl Graph {
     pub fn push_collect(op: Op) -> OpAddr {
         COLLECT_GRAPH.with(|graph| {
             let mut graph = graph.borrow_mut();
-            let graph = graph.as_mut().expect("not executing in a shader graph context");
+            let graph = graph
+                .as_mut()
+                .expect("not executing in a shader graph context");
 
             graph.push(op)
         })
     }
 
     pub fn collect(f: impl FnOnce()) -> Self {
-        let prev = COLLECT_GRAPH.with(|engine| replace(&mut *engine.borrow_mut(), Some(Self::empty())));
+        let prev =
+            COLLECT_GRAPH.with(|engine| replace(&mut *engine.borrow_mut(), Some(Self::empty())));
         f();
         COLLECT_GRAPH
             .with(|engine| replace(&mut *engine.borrow_mut(), prev))
@@ -206,7 +213,10 @@ impl Graph {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (OpAddr, Op)> + '_ {
-        self.ops.iter().enumerate().map(|(id, op)| (OpAddr(id as u32), *op))
+        self.ops
+            .iter()
+            .enumerate()
+            .map(|(id, op)| (OpAddr(id as u32), *op))
     }
 
     pub fn hash(&self) -> u64 {
@@ -271,16 +281,21 @@ impl Op {
                 dependents: vec![],
             },
 
-            Op::Input(OpInput::I32 | OpInput::I16 | OpInput::I8 | OpInput::U32 | OpInput::U16 | OpInput::U8) => {
-                OpInfo {
-                    addr,
-                    value,
-                    ty: I1,
-                    dynamic: PerObject,
-                    dependencies: vec![],
-                    dependents: vec![],
-                }
-            }
+            Op::Input(
+                OpInput::I32
+                | OpInput::I16
+                | OpInput::I8
+                | OpInput::U32
+                | OpInput::U16
+                | OpInput::U8,
+            ) => OpInfo {
+                addr,
+                value,
+                ty: I1,
+                dynamic: PerObject,
+                dependencies: vec![],
+                dependents: vec![],
+            },
 
             Op::Input(OpInput::TextureStatic) => OpInfo {
                 addr,
@@ -532,7 +547,8 @@ impl Op {
                 let arg1 = get(y);
                 let arg2 = get(z);
 
-                if arg0.ty != arg1.ty || arg0.ty != arg2.ty || !matches!(arg0.ty, F1 | F2 | F3 | F4) {
+                if arg0.ty != arg1.ty || arg0.ty != arg2.ty || !matches!(arg0.ty, F1 | F2 | F3 | F4)
+                {
                     panic!("type check");
                 }
 
@@ -546,7 +562,12 @@ impl Op {
                 }
             }
 
-            Op::Eq(x, y) | Op::Ne(x, y) | Op::Lt(x, y) | Op::Le(x, y) | Op::Gt(x, y) | Op::Ge(x, y) => {
+            Op::Eq(x, y)
+            | Op::Ne(x, y)
+            | Op::Lt(x, y)
+            | Op::Le(x, y)
+            | Op::Gt(x, y)
+            | Op::Ge(x, y) => {
                 let arg0 = get(x);
                 let arg1 = get(y);
 

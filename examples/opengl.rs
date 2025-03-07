@@ -10,6 +10,8 @@ use std::time::Instant;
 struct Data {
     gl: OpenGlBackend,
     shader: Shader,
+    width: u32,
+    height: u32,
     scroll: f32,
     avg_time: f32,
 }
@@ -19,10 +21,11 @@ struct ShaderDataCircle {
     x: f32,
     y: f32,
     radius: f32,
+    alpha: f32,
 }
 
 fn main() {
-    let mut data = None;
+    let mut data: Option<Data> = None;
     let mut world = World::new_program().unwrap();
     let view = world
         .new_view(OpenGl {
@@ -34,7 +37,15 @@ fn main() {
         })
         .with_title("picodraw opengl example")
         .with_size(512, 512)
+        .with_resizable(true)
         .with_event_handler(move |view, event| match event {
+            Event::Configure { rect, .. } => {
+                if let Some(data) = data.as_mut() {
+                    data.width = rect.w;
+                    data.height = rect.h;
+                }
+            }
+
             Event::Expose { backend, .. } => {
                 let start = Instant::now();
 
@@ -49,32 +60,43 @@ fn main() {
                         let circle = ShaderDataCircle::read();
                         let mask =
                             sdf_circle(io::position(), float2((circle.x, circle.y)), circle.radius);
-                        io::write_color(float4((1.0, 0.5, 1.0, mask * 0.2)));
+                        io::write_color(float4((1.0, 0.5, 1.0, mask * circle.alpha)));
                     }));
 
                     Data {
                         gl,
                         shader,
+                        width: 512,
+                        height: 512,
                         scroll: 0.0,
                         avg_time: 0.0,
                     }
                 });
 
                 let mut commands = CommandBuffer::default();
-                let mut frame = commands.begin_screen([512, 512]);
-                frame.clear([0, 0, 512, 512]);
+                let mut frame = commands.begin_screen([data.width, data.height]);
+                frame.clear([0, 0, data.width, data.height]);
 
-                for i in 0..10 {
-                    let angle = (i as f32 * 0.1 + data.scroll * 0.05) * std::f32::consts::PI * 2.0;
-                    let x = 256.0 + angle.cos() * 200.0;
-                    let y = 256.0 + angle.sin() * 200.0;
+                let n = (data.scroll * 0.2).sin() * 14.0 + 20.0;
+                let alpha = 1.0 / n as f32;
+
+                for i in 0..(n as i32) {
+                    let angle =
+                        (i as f32 / (n - 1.0) + data.scroll * 0.05) * std::f32::consts::PI * 2.0;
+                    let x = data.width as f32 * 0.5 + angle.cos() * 200.0;
+                    let y = data.height as f32 * 0.5 + angle.sin() * 200.0;
 
                     frame
-                        .begin_quad(data.shader, [0, 0, 512, 512])
+                        .begin_quad(data.shader, [0, 0, data.width, data.height])
                         .write_data(ShaderDataCircle {
                             x,
                             y,
                             radius: 200.0,
+                            alpha: if i + 1 == (n as i32) {
+                                alpha * n.fract()
+                            } else {
+                                alpha
+                            },
                         });
                 }
 
