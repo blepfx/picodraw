@@ -16,28 +16,28 @@ pub mod types {
         fn from_addr(addr: OpAddr) -> Self;
     }
 
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct float1(pub(crate) OpAddr);
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct float2(pub(crate) OpAddr);
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct float3(pub(crate) OpAddr);
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct float4(pub(crate) OpAddr);
 
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct int1(pub(crate) OpAddr);
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct int2(pub(crate) OpAddr);
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct int3(pub(crate) OpAddr);
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct int4(pub(crate) OpAddr);
 
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct boolean(pub(crate) OpAddr);
 
-    #[derive(Clone, Copy)]
+    #[derive(Debug, Clone, Copy)]
     pub struct texture(pub(crate) OpAddr);
 
     macro_rules! impl_binop {
@@ -210,11 +210,19 @@ pub mod types {
                 }
 
                 pub fn clamp(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Clamp(self.0, min.into().0, max.into().0)))
+                    Self(Graph::push_collect(Op::Clamp(
+                        self.0,
+                        min.into().0,
+                        max.into().0,
+                    )))
                 }
 
                 pub fn lerp(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Lerp(self.0, min.into().0, max.into().0)))
+                    Self(Graph::push_collect(Op::Lerp(
+                        self.0,
+                        min.into().0,
+                        max.into().0,
+                    )))
                 }
 
                 pub fn smoothstep(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
@@ -235,38 +243,6 @@ pub mod types {
             impl From<$type> for $int {
                 fn from(x: $type) -> Self {
                     Self(Graph::push_collect(Op::CastInt(x.0)))
-                }
-            }
-        };
-    }
-
-    macro_rules! impl_boolean {
-        ($type:ty) => {
-            impl BitAnd for $type {
-                type Output = $type;
-                fn bitand(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(Op::And(self.0, rhs.0)))
-                }
-            }
-
-            impl BitOr for $type {
-                type Output = $type;
-                fn bitor(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(Op::Or(self.0, rhs.0)))
-                }
-            }
-
-            impl BitXor for $type {
-                type Output = $type;
-                fn bitxor(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(Op::Xor(self.0, rhs.0)))
-                }
-            }
-
-            impl Not for $type {
-                type Output = $type;
-                fn not(self) -> Self::Output {
-                    Self(Graph::push_collect(Op::Not(self.0)))
                 }
             }
         };
@@ -479,7 +455,9 @@ pub mod types {
                 }
             }
 
-            impl<X: Into<$scalar>, Y: Into<$scalar>, Z: Into<$scalar>, W: Into<$scalar>> From<(X, Y, Z, W)> for $type {
+            impl<X: Into<$scalar>, Y: Into<$scalar>, Z: Into<$scalar>, W: Into<$scalar>>
+                From<(X, Y, Z, W)> for $type
+            {
                 fn from((x, y, z, w): (X, Y, Z, W)) -> Self {
                     Self(Graph::push_collect(Op::Vec4(
                         Into::<$scalar>::into(x).0,
@@ -492,12 +470,42 @@ pub mod types {
         };
     }
 
+    macro_rules! impl_bit_ops {
+        ($type:ty) => {
+            impl BitAnd for $type {
+                type Output = $type;
+                fn bitand(self, rhs: Self) -> Self::Output {
+                    Self(Graph::push_collect(Op::And(self.0, rhs.0)))
+                }
+            }
+
+            impl BitOr for $type {
+                type Output = $type;
+                fn bitor(self, rhs: Self) -> Self::Output {
+                    Self(Graph::push_collect(Op::Or(self.0, rhs.0)))
+                }
+            }
+
+            impl BitXor for $type {
+                type Output = $type;
+                fn bitxor(self, rhs: Self) -> Self::Output {
+                    Self(Graph::push_collect(Op::Xor(self.0, rhs.0)))
+                }
+            }
+
+            impl Not for $type {
+                type Output = $type;
+                fn not(self) -> Self::Output {
+                    Self(Graph::push_collect(Op::Not(self.0)))
+                }
+            }
+        };
+    }
+
     impl_float!(float1, int1);
     impl_float!(float2, int2);
     impl_float!(float3, int3);
     impl_float!(float4, int4);
-
-    impl_boolean!(boolean);
 
     impl_num_vec!(float1, f32, float1, 1);
     impl_num_vec!(float2, f32, float1, 2);
@@ -508,6 +516,11 @@ pub mod types {
     impl_num_vec!(int2, i32, int1, 2);
     impl_num_vec!(int3, i32, int1, 3);
     impl_num_vec!(int4, i32, int1, 4);
+
+    impl_bit_ops!(boolean);
+    impl_bit_ops!(int1);
+    impl_bit_ops!(int2);
+    impl_bit_ops!(int3);
 
     impl float3 {
         pub fn cross(self, rhs: Self) -> Self {
@@ -531,7 +544,10 @@ pub mod types {
         }
 
         pub fn sample_nearest(&self, pos: impl Into<float2>) -> float4 {
-            float4(Graph::push_collect(Op::TextureNearest(self.0, pos.into().0)))
+            float4(Graph::push_collect(Op::TextureNearest(
+                self.0,
+                pos.into().0,
+            )))
         }
     }
 
@@ -570,4 +586,6 @@ macro_rules! impl_constructor {
     };
 }
 
-impl_constructor!(float1, float2, float3, float4, int1, int2, int3, int4, boolean);
+impl_constructor!(
+    float1, float2, float3, float4, int1, int2, int3, int4, boolean
+);

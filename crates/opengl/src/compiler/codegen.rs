@@ -263,6 +263,11 @@ impl FragmentCodegen {
             Mul(x, y) => emit!("({}*{})", x, y),
             Div(x, y) => emit!("({}/{})", x, y),
             Rem(x, y) => emit!("mod({},{})", x, y),
+
+            Dot(x, y) if self.graph_atoms.get(&x).expect("codegen error").1 == F1 => {
+                emit!("({}*{})", x, y)
+            }
+
             Dot(x, y) => emit!("dot({},{})", x, y),
             Cross(x, y) => emit!("cross({},{})", x, y),
             Neg(x) => emit!("(-{})", x),
@@ -284,7 +289,12 @@ impl FragmentCodegen {
             Sign(x) => emit!("sign({})", x),
             Floor(x) => emit!("floor({})", x),
             Lerp(x, y, z) => emit!("mix({},{},{})", y, z, x),
-            Select(x, y, z) => emit!("mix({},{},{})", z, y, x),
+
+            Select(x, y, z) if ty.size() == 1 => emit!("mix({},{},{})", z, y, x),
+            Select(x, y, z) if ty.size() == 2 => emit!("mix({},{},bvec2({}))", z, y, x),
+            Select(x, y, z) if ty.size() == 3 => emit!("mix({},{},bvec3({}))", z, y, x),
+            Select(x, y, z) if ty.size() == 4 => emit!("mix({},{},bvec4({}))", z, y, x),
+
             Smoothstep(x, y, z) => emit!("smoothstep({},{},{})", y, z, x),
             Step(x, y) => emit!("step({},{})", y, x),
             Eq(x, y) => emit!("({}=={})", x, y),
@@ -296,7 +306,9 @@ impl FragmentCodegen {
             And(x, y) => emit!("({}&{})", x, y),
             Or(x, y) => emit!("({}|{})", x, y),
             Xor(x, y) => emit!("({}^{})", x, y),
-            Not(x) => emit!("(!{})", x),
+
+            Not(x) if ty == Boolean => emit!("(!{})", x),
+            Not(x) => emit!("(~{})", x),
 
             Vec2(x, y) if ty == F2 => emit!("vec2({},{})", x, y),
             Vec2(x, y) if ty == I2 => emit!("ivec2({},{})", x, y),

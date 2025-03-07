@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
     mem::replace,
     ops::BitAnd,
@@ -66,7 +67,7 @@ pub enum OpDynamic {
     PerPixel,
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct OpAddr(pub u32);
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -166,7 +167,7 @@ pub enum Swizzle {
     W,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct Float(u32);
 
 impl Graph {
@@ -185,9 +186,11 @@ impl Graph {
         let prev =
             COLLECT_GRAPH.with(|engine| replace(&mut *engine.borrow_mut(), Some(Self::empty())));
         f();
-        COLLECT_GRAPH
-            .with(|engine| replace(&mut *engine.borrow_mut(), prev))
-            .unwrap()
+        dbg!(
+            COLLECT_GRAPH
+                .with(|engine| replace(&mut *engine.borrow_mut(), prev))
+                .unwrap()
+        )
     }
 
     pub fn empty() -> Self {
@@ -230,10 +233,34 @@ impl Graph {
     }
 }
 
+impl Debug for Graph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Graph {{")?;
+        for (addr, op) in self.ops.iter().enumerate() {
+            writeln!(f, "\t{:?} = {:?}", OpAddr(addr as u32), op)?;
+        }
+        writeln!(f, "}}")?;
+
+        Ok(())
+    }
+}
+
 impl OpType {
     pub fn is_numeric(self) -> bool {
         use OpType::*;
         matches!(self, F1 | F2 | F3 | F4 | I1 | I2 | I3 | I4)
+    }
+
+    pub fn size(self) -> usize {
+        use OpType::*;
+        match self {
+            F1 | I1 | Boolean => 1,
+            F2 | I2 => 2,
+            F3 | I3 => 3,
+            F4 | I4 => 4,
+            TextureStatic | TextureRender => 1,
+            Void => 0,
+        }
     }
 }
 
@@ -453,7 +480,7 @@ impl Op {
                 let arg0 = get(x);
                 let arg1 = get(y);
 
-                if arg0.ty != arg1.ty || !matches!(arg0.ty, F2 | F3 | F4) {
+                if arg0.ty != arg1.ty || !matches!(arg0.ty, F1 | F2 | F3 | F4) {
                     panic!("type check");
                 }
 
@@ -529,7 +556,7 @@ impl Op {
                 let arg2 = get(z);
 
                 if arg0.ty != Boolean || arg1.ty != arg2.ty {
-                    panic!("type check");
+                    panic!("type check {:?}", (arg0, arg1, arg2));
                 }
 
                 OpInfo {
@@ -606,7 +633,7 @@ impl Op {
             Op::Not(x) => {
                 let arg0 = get(x);
 
-                if !matches!(arg0.ty, Boolean) {
+                if !matches!(arg0.ty, Boolean | I1 | I2 | I3 | I4) {
                     panic!("type check");
                 }
 
@@ -949,5 +976,17 @@ impl From<f32> for Float {
 impl From<Float> for f32 {
     fn from(value: Float) -> Self {
         f32::from_bits(value.0)
+    }
+}
+
+impl Debug for Float {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", f32::from(*self))
+    }
+}
+
+impl Debug for OpAddr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "${:0>4x}", self.0)
     }
 }

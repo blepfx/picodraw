@@ -1,8 +1,10 @@
-use bmp::{Image, open};
+use image::{DynamicImage, GenericImageView, Rgba, open};
 use picodraw::{
     CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData, Texture,
-    shader::{boolean, float1, float2, float4, io},
+    shader::{boolean, float1, float2, float3, float4, int1, int2, int3, int4, io},
 };
+
+const CANVAS_SIZE: u32 = 512;
 
 /// a basic test that draws a single full screen solid colored quad
 /// - tests that dispatching even works
@@ -15,8 +17,8 @@ fn fill_purple() {
 
         let mut commands = CommandBuffer::default();
         commands
-            .begin_screen([512, 512])
-            .begin_quad(shader, [0, 0, 512, 512]);
+            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
+            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
         context.draw(&commands);
     });
 }
@@ -37,8 +39,8 @@ fn fill_checker() {
 
         let mut commands = CommandBuffer::default();
         commands
-            .begin_screen([512, 512])
-            .begin_quad(shader, [0, 0, 512, 512]);
+            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
+            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
         context.draw(&commands);
     });
 }
@@ -88,13 +90,13 @@ fn blurry_semicircle() {
         let mut commands = CommandBuffer::default();
 
         commands
-            .begin_buffer(buffer, [512, 512])
-            .begin_quad(shader_circle, [300, 0, 512, 512])
+            .begin_buffer(buffer, [CANVAS_SIZE, CANVAS_SIZE])
+            .begin_quad(shader_circle, [300, 0, CANVAS_SIZE, CANVAS_SIZE])
             .write_data([300.0, 200.0]);
 
         commands
-            .begin_screen([512, 512])
-            .begin_quad(shader_boxblur, [0, 0, 512, 512])
+            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
+            .begin_quad(shader_boxblur, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
             .write_data(buffer);
 
         context.draw(&commands);
@@ -111,19 +113,19 @@ fn blurry_semicircle() {
 #[test]
 fn msdf_text() {
     let (width, height, data) = {
-        let msdf = open("./tests/drawtest/msdf.bmp").unwrap();
-        let mut data = vec![0u8; (4 * msdf.get_width() * msdf.get_height()) as usize];
-        for i in 0..msdf.get_width() {
-            for j in 0..msdf.get_height() {
-                let p = msdf.get_pixel(i, j);
-                data[((i + j * msdf.get_width()) * 4 + 0) as usize] = p.r;
-                data[((i + j * msdf.get_width()) * 4 + 1) as usize] = p.g;
-                data[((i + j * msdf.get_width()) * 4 + 2) as usize] = p.b;
-                data[((i + j * msdf.get_width()) * 4 + 3) as usize] = 255;
+        let msdf = open("./tests/drawtest/msdf.webp").unwrap();
+        let mut data = vec![0u8; (4 * msdf.width() * msdf.height()) as usize];
+        for i in 0..msdf.width() {
+            for j in 0..msdf.height() {
+                let Rgba([r, g, b, _]) = msdf.get_pixel(i, j);
+                data[((i + j * msdf.width()) * 4 + 0) as usize] = r;
+                data[((i + j * msdf.width()) * 4 + 1) as usize] = g;
+                data[((i + j * msdf.width()) * 4 + 2) as usize] = b;
+                data[((i + j * msdf.width()) * 4 + 3) as usize] = 255;
             }
         }
 
-        (msdf.get_width(), msdf.get_height(), data)
+        (msdf.width(), msdf.height(), data)
     };
 
     run("msdf-text", move |context| {
@@ -151,13 +153,13 @@ fn msdf_text() {
         }));
 
         let mut commands = CommandBuffer::default();
-        let mut frame = commands.begin_screen([512, 512]);
+        let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
 
         let mut x = 10.0;
         let mut scale = 0.5;
         for _ in 0..=10 {
             frame
-                .begin_quad(shader, [0, 0, 512, 512])
+                .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
                 .write_data(texture)
                 .write_data((x, 12.0 + scale * 10.0))
                 .write_data(scale);
@@ -167,7 +169,7 @@ fn msdf_text() {
         }
 
         frame
-            .begin_quad(shader, [0, 0, 512, 512])
+            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
             .write_data(texture)
             .write_data((256.0, 320.0))
             .write_data(20.0);
@@ -192,11 +194,11 @@ fn stress_test() {
 
         for _ in 0..2 {
             let mut commands = CommandBuffer::default();
-            let mut frame = commands.begin_screen([512, 512]);
-            frame.clear([0, 0, 512, 512]);
+            let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
+            frame.clear([0, 0, CANVAS_SIZE, CANVAS_SIZE]);
 
-            for i in 0..512 {
-                for j in 0..512 {
+            for i in 0..CANVAS_SIZE {
+                for j in 0..CANVAS_SIZE {
                     frame
                         .begin_quad(shader, [i, j, i + 1, j + 1])
                         .write_data(if (i + j) % 2 == 0 {
@@ -317,8 +319,8 @@ fn serialize_test() {
 
         let mut commands = CommandBuffer::default();
         commands
-            .begin_screen([512, 512])
-            .begin_quad(shader, [0, 0, 512, 512])
+            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
+            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
             .write_data(Circle {
                 x: 256.0,
                 y: 256.0,
@@ -372,7 +374,7 @@ fn resource_mgmt() {
         // frame 0 draw
         let mut commands = CommandBuffer::default();
         commands
-            .begin_buffer(buffer_0, [512, 512])
+            .begin_buffer(buffer_0, [CANVAS_SIZE, CANVAS_SIZE])
             .begin_quad(shader_1, [0, 0, 10, 10])
             .write_data(texture_0);
         context.draw(&commands);
@@ -398,7 +400,7 @@ fn resource_mgmt() {
 
         // frame 1 draw
         let mut commands = CommandBuffer::default();
-        let mut frame = commands.begin_buffer(buffer_0, [512, 512]);
+        let mut frame = commands.begin_buffer(buffer_0, [CANVAS_SIZE, CANVAS_SIZE]);
         frame.clear([5, 5, 10, 10]);
         frame
             .begin_quad(shader_2, [10, 10, 20, 20])
@@ -425,10 +427,10 @@ fn resource_mgmt() {
 
         // frame 2 drawpath
         let mut commands = CommandBuffer::default();
-        let mut frame = commands.begin_screen([512, 512]);
-        frame.begin_quad(shader_4, [0, 0, 512, 512]);
+        let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
+        frame.begin_quad(shader_4, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
         frame
-            .begin_quad(shader_3, [0, 0, 512, 512])
+            .begin_quad(shader_3, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
             .write_data(buffer_0);
         frame.clear([10, 10, 15, 15]);
         context.draw(&commands);
@@ -443,20 +445,152 @@ fn resource_mgmt() {
     });
 }
 
+#[test]
+fn shader_ops() {
+    run("shader-ops", |context| {
+        let shader = context.create_shader(Graph::collect(|| {
+            let i0 = io::read::<f32>();
+            let i1 = io::read::<u8>();
+            let i2 = io::read::<u16>();
+            let i3 = io::read::<u32>();
+            let i4 = io::read::<i8>();
+            let i5 = io::read::<i16>();
+            let i6 = io::read::<i32>();
+            let i7 = io::read::<bool>();
+
+            let blocks = [
+                // input and literal operations
+                {
+                    let pos = io::position();
+                    let res = io::resolution();
+                    let (b0, b1) = io::bounds();
+
+                    float4((
+                        i0 + float1(i3) / 200000.0 + float1(i6) / 200000.0 + float1(i2) / 1000.0,
+                        float1(i1) / 1000.0
+                            + float1(i4) / 1000.0
+                            + float1(i5) / 1000.0
+                            + float1(int1(1)),
+                        (pos / res + float2(0.5) + b0 - b1).len() % 0.2 / 0.2,
+                        i7.select(
+                            float1(0.6),
+                            boolean(true)
+                                .select(float1(0.4), boolean(false).select(float1(0.9), 0.5)),
+                        ),
+                    ))
+                },
+                // swizzle operations
+                {
+                    let x = float2((1.0, 0.2));
+                    let y = float3((0.3, 0.5, 0.7));
+
+                    let z = int2((10, 20));
+                    let w = int3((50, 45, 60));
+                    let u = int4((100, 200, 300, 400));
+
+                    float4((x.y(), y.z(), y.z(), x.x()))
+                        + float4((z.y(), w.z(), w.z(), z.x())) / 200.0
+                        + float4((u.y(), u.z(), u.w(), u.x())) / 500.0
+                },
+                // trigonometric and math operations
+                {
+                    let x = io::position().x() * 0.10;
+                    let y = io::position().y() * 0.10;
+                    let z = io::position().x() % 50.0 * 0.20;
+
+                    let w = float2((x, y));
+                    let u = float3((x, y, z));
+                    let v = float3((z, y, x));
+
+                    float4((
+                        (x.sin() + y.cos() + z.tan() + x.asin() + y.acos() + z.atan()).sin(),
+                        (x.atan2(y)
+                            + y.exp()
+                            + z.ln()
+                            + x.sqrt()
+                            + y.pow(5.0)
+                            + float3::cross(-u, v).len())
+                        .sin(),
+                        (x.sin().abs()
+                            + y.cos().abs()
+                            + z.tan().abs()
+                            + x.sign()
+                            + y.dot(x)
+                            + z.norm()
+                            + w.norm().x())
+                        .sin(),
+                        1.0,
+                    ))
+                },
+                // bitwise and utility operations
+                {
+                    let x = io::position().x() % 20.0 / 20.0;
+                    let y = io::position().y() % 20.0 / 20.0;
+                    let z = float1(0.75);
+
+                    let a = int1(x * 20.0);
+                    let b = int1(y * 20.0);
+                    let c = int1(z * 20.0);
+
+                    (float4((
+                        x.min(y).max(z).clamp(y, z).lerp(x, y),
+                        x.step(y).smoothstep(y, z),
+                        x.gt(y).select(
+                            z.ge(x).select(
+                                z.lt(y).select(float1(0.2), 0.9),
+                                z.eq(y).select(float1(0.1), 0.3),
+                            ),
+                            z.le(x).select(
+                                z.lt(y).select(float1(0.4), 0.8),
+                                z.ne(y).select(float1(0.6), 0.7),
+                            ),
+                        ),
+                        1.0,
+                    )) + float4(((a & b | c), (a ^ c & !b), a ^ b, 1.0)))
+                        * 0.5
+                },
+            ];
+
+            let pos = io::position() / io::resolution();
+            let a = pos.x().gt(0.5);
+            let b = pos.y().lt(0.5);
+
+            io::write_color(a.select(
+                b.select(blocks[0], blocks[1]),
+                b.select(blocks[2], blocks[3]),
+            ));
+        }));
+
+        let mut commands = CommandBuffer::default();
+        commands
+            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
+            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
+            .write_data(1.0 / 3.0)
+            .write_data(200u8)
+            .write_data(699u16)
+            .write_data(100000u32)
+            .write_data(-128i8)
+            .write_data(-327i16)
+            .write_data(-50000i32)
+            .write_data(true);
+        context.draw(&commands);
+    });
+}
+
 #[allow(unused_variables, dead_code)]
 fn run(id: &str, render: impl Fn(&mut dyn Context) + Send + 'static) {
-    fn difference(a: &Image, b: &Image) -> f64 {
+    fn difference(a: &DynamicImage, b: &DynamicImage) -> f64 {
         let mut sum = 0;
-        for i in 0..a.get_width() {
-            for j in 0..b.get_height() {
-                let a = a.get_pixel(i, j);
-                let b = b.get_pixel(i, j);
-                sum += a.r.abs_diff(b.r) as u64;
-                sum += a.g.abs_diff(b.g) as u64;
-                sum += a.b.abs_diff(b.b) as u64;
+        for i in 0..a.width() {
+            for j in 0..a.height() {
+                let Rgba([r0, g0, b0, _]) = a.get_pixel(i, j);
+                let Rgba([r1, g1, b1, _]) = b.get_pixel(i, j);
+                sum += r0.abs_diff(r1) as u64;
+                sum += g0.abs_diff(g1) as u64;
+                sum += b0.abs_diff(b1) as u64;
             }
         }
-        sum as f64 / (a.get_height() * a.get_width()) as f64
+        sum as f64 / (a.height() * a.width()) as f64
     }
 
     if cfg!(miri) {
@@ -466,26 +600,27 @@ fn run(id: &str, render: impl Fn(&mut dyn Context) + Send + 'static) {
     std::fs::create_dir_all("./tests/drawtest/failures").ok();
 
     let expected =
-        open(format!("./tests/drawtest/expected/{}.bmp", id)).expect("no 'expected' image found");
+        open(format!("./tests/drawtest/expected/{}.webp", id)).expect("no 'expected' image found");
 
     #[cfg(feature = "opengl")]
     {
-        let result = opengl::render(expected.get_width(), expected.get_height(), render);
-        let diff = difference(&expected, &result);
+        let result = opengl::render(CANVAS_SIZE, CANVAS_SIZE, render);
+        let diff = difference(&result, &expected);
         if diff > 3.0 {
             result
-                .save(format!("./tests/drawtest/failures/opengl-{}.bmp", id))
+                .save(format!("./tests/drawtest/failures/opengl-{}.webp", id))
                 .unwrap();
             panic!("opengl backend: {:.2} difference", diff);
         } else {
-            std::fs::remove_file(format!("./tests/drawtest/failures/opengl-{}.bmp", id)).ok();
+            std::fs::remove_file(format!("./tests/drawtest/failures/opengl-{}.webp", id)).ok();
         }
     }
 }
 
 #[cfg(feature = "opengl")]
 mod opengl {
-    use bmp::{Image, Pixel};
+    use super::CANVAS_SIZE;
+    use image::{DynamicImage, Rgb, RgbImage};
     use picodraw::{Context, opengl::OpenGlBackend};
     use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
     use std::{
@@ -497,8 +632,8 @@ mod opengl {
         width: u32,
         height: u32,
         render: impl Fn(&mut dyn Context) + Send + 'static,
-    ) -> Image {
-        let (sender, receiver) = sync_channel::<Image>(1);
+    ) -> DynamicImage {
+        let (sender, receiver) = sync_channel::<RgbImage>(1);
         let mut gl_backend = None;
 
         let mut world = World::new_program().unwrap();
@@ -510,7 +645,7 @@ mod opengl {
                 version: OpenGlVersion::Core(3, 3),
                 ..Default::default()
             })
-            .with_size(512, 512)
+            .with_size(CANVAS_SIZE, CANVAS_SIZE)
             .with_event_handler(move |view, event| match event {
                 Event::Expose { backend, .. } => {
                     let mut gl_backend = unsafe {
@@ -525,15 +660,15 @@ mod opengl {
 
                     {
                         let screenshot: Vec<u32> = gl_backend.screenshot([0, 0, width, height]);
-                        let mut image = Image::new(width, height);
+                        let mut image = RgbImage::new(width, height);
                         for i in 0..width {
                             for j in 0..height {
                                 let data = screenshot[(i + j * width) as usize];
-                                image.set_pixel(i, height - 1 - j, Pixel {
-                                    r: ((data >> 0) & 0xFF) as u8,
-                                    g: ((data >> 8) & 0xFF) as u8,
-                                    b: ((data >> 16) & 0xFF) as u8,
-                                });
+                                image.put_pixel(
+                                    i,
+                                    height - 1 - j,
+                                    Rgb([data as u8, (data >> 8) as u8, (data >> 16) as u8]),
+                                );
                             }
                         }
 
@@ -553,7 +688,7 @@ mod opengl {
         loop {
             world.update(Some(Duration::ZERO)).unwrap();
             match receiver.try_recv() {
-                Ok(image) => return image,
+                Ok(image) => return image.into(),
                 Err(TryRecvError::Empty) => continue,
                 Err(TryRecvError::Disconnected) => panic!("receiver disconnected"),
             }
