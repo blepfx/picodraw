@@ -5,7 +5,6 @@ use picodraw::{
 };
 use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
 use std::time::Duration;
-use std::time::Instant;
 
 struct Data {
     gl: OpenGlBackend,
@@ -13,7 +12,6 @@ struct Data {
     width: u32,
     height: u32,
     scroll: f32,
-    avg_time: f32,
 }
 
 #[derive(ShaderData)]
@@ -47,8 +45,6 @@ fn main() {
             }
 
             Event::Expose { backend, .. } => {
-                let start = Instant::now();
-
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 let data = data.get_or_insert_with(|| unsafe {
                     let mut gl = OpenGlBackend::new(&|c| backend.get_proc_address(c)).unwrap();
@@ -69,7 +65,6 @@ fn main() {
                         width: 512,
                         height: 512,
                         scroll: 0.0,
-                        avg_time: 0.0,
                     }
                 });
 
@@ -105,16 +100,7 @@ fn main() {
                     data.gl.open().draw(&commands);
                 }
 
-                let t = start.elapsed();
-                data.avg_time = t.as_secs_f32() * 0.02 + data.avg_time * 0.98;
                 data.scroll += 1.0 / 60.0;
-
-                println!(
-                    "{:?}ms avg, {:?}ms real, {:?}fps",
-                    data.avg_time * 1000.0,
-                    t.as_secs_f32() * 1000.0,
-                    1.0 / data.avg_time
-                );
             }
 
             Event::Scroll { dx, dy, .. } => {
