@@ -142,10 +142,10 @@ pub enum Op {
     CastFloat(OpAddr),
     CastInt(OpAddr),
 
-    Swizzle1(OpAddr, [Swizzle; 1]),
-    Swizzle2(OpAddr, [Swizzle; 2]),
-    Swizzle3(OpAddr, [Swizzle; 3]),
-    Swizzle4(OpAddr, [Swizzle; 4]),
+    ExtractX(OpAddr),
+    ExtractY(OpAddr),
+    ExtractZ(OpAddr),
+    ExtractW(OpAddr),
 
     Length(OpAddr),
     Normalize(OpAddr),
@@ -157,14 +157,6 @@ pub enum Op {
     TextureLinear(OpAddr, OpAddr),
     TextureNearest(OpAddr, OpAddr),
     TextureSize(OpAddr),
-}
-
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub enum Swizzle {
-    X,
-    Y,
-    Z,
-    W,
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
@@ -186,11 +178,9 @@ impl Graph {
         let prev =
             COLLECT_GRAPH.with(|engine| replace(&mut *engine.borrow_mut(), Some(Self::empty())));
         f();
-        dbg!(
-            COLLECT_GRAPH
-                .with(|engine| replace(&mut *engine.borrow_mut(), prev))
-                .unwrap()
-        )
+        COLLECT_GRAPH
+            .with(|engine| replace(&mut *engine.borrow_mut(), prev))
+            .unwrap()
     }
 
     pub fn empty() -> Self {
@@ -230,18 +220,6 @@ impl Graph {
         value.hash(&mut self.hash);
         self.ops.push(value);
         OpAddr((self.ops.len() - 1) as u32)
-    }
-}
-
-impl Debug for Graph {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Graph {{")?;
-        for (addr, op) in self.ops.iter().enumerate() {
-            writeln!(f, "\t{:?} = {:?}", OpAddr(addr as u32), op)?;
-        }
-        writeln!(f, "}}")?;
-
-        Ok(())
     }
 }
 
@@ -821,7 +799,7 @@ impl Op {
                 }
             }
 
-            Op::Swizzle1(x, _) => {
+            Op::ExtractX(x) => {
                 let arg0 = get(x);
 
                 let ty = match arg0.ty {
@@ -840,12 +818,12 @@ impl Op {
                 }
             }
 
-            Op::Swizzle2(x, _) => {
+            Op::ExtractY(x) => {
                 let arg0 = get(x);
 
                 let ty = match arg0.ty {
-                    F2 | F3 | F4 => F2,
-                    I2 | I3 | I4 => I2,
+                    F2 | F3 | F4 => F1,
+                    I2 | I3 | I4 => I1,
                     _ => panic!("type check"),
                 };
 
@@ -859,12 +837,12 @@ impl Op {
                 }
             }
 
-            Op::Swizzle3(x, _) => {
+            Op::ExtractZ(x) => {
                 let arg0 = get(x);
 
                 let ty = match arg0.ty {
-                    F3 | F4 => F3,
-                    I3 | I4 => I3,
+                    F3 | F4 => F1,
+                    I3 | I4 => I1,
                     _ => panic!("type check"),
                 };
 
@@ -878,12 +856,12 @@ impl Op {
                 }
             }
 
-            Op::Swizzle4(x, _) => {
+            Op::ExtractW(x) => {
                 let arg0 = get(x);
 
                 let ty = match arg0.ty {
-                    F4 => F4,
-                    I4 => I4,
+                    F4 => F1,
+                    I4 => I1,
                     _ => panic!("type check"),
                 };
 
@@ -976,6 +954,18 @@ impl From<f32> for Float {
 impl From<Float> for f32 {
     fn from(value: Float) -> Self {
         f32::from_bits(value.0)
+    }
+}
+
+impl Debug for Graph {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "Graph(hash = {:x}) {{", self.hash())?;
+        for (addr, op) in self.iter() {
+            writeln!(f, "\t{:?} = {:?}", addr, op)?;
+        }
+        writeln!(f, "}}")?;
+
+        Ok(())
     }
 }
 

@@ -2,7 +2,7 @@ use super::serialize::ShaderDataLayout;
 use picodraw_core::graph::*;
 use std::{
     collections::{HashMap, VecDeque},
-    fmt::{self, Write},
+    fmt::Write,
 };
 
 const VERTEX_SHADER: &str = r#"
@@ -338,32 +338,10 @@ impl FragmentCodegen {
             CastInt(x) if ty == I3 => emit!("ivec3({})", x),
             CastInt(x) if ty == I4 => emit!("ivec4({})", x),
 
-            Swizzle1(x, [s0]) => format!(
-                "{}.{}",
-                self.graph_atoms.get(&x).expect("codegen error").0,
-                SwizzleDisplay(s0)
-            ),
-            Swizzle2(x, [s0, s1]) => format!(
-                "{}.{}{}",
-                self.graph_atoms.get(&x).expect("codegen error").0,
-                SwizzleDisplay(s0),
-                SwizzleDisplay(s1)
-            ),
-            Swizzle3(x, [s0, s1, s2]) => format!(
-                "{}.{}{}{}",
-                self.graph_atoms.get(&x).expect("codegen error").0,
-                SwizzleDisplay(s0),
-                SwizzleDisplay(s1),
-                SwizzleDisplay(s2)
-            ),
-            Swizzle4(x, [s0, s1, s2, s3]) => format!(
-                "{}.{}{}{}{}",
-                self.graph_atoms.get(&x).expect("codegen error").0,
-                SwizzleDisplay(s0),
-                SwizzleDisplay(s1),
-                SwizzleDisplay(s2),
-                SwizzleDisplay(s3)
-            ),
+            ExtractX(x) => emit!("{}.x", x),
+            ExtractY(x) => emit!("{}.y", x),
+            ExtractZ(x) => emit!("{}.z", x),
+            ExtractW(x) => emit!("{}.w", x),
 
             Normalize(x) if ty == F1 => emit!("sign({})", x),
             Length(x) if self.graph_atoms.get(&x).expect("codegen error").1 == F1 => {
@@ -402,18 +380,6 @@ impl FragmentCodegen {
             format!("_i{:x}.{}", b16, b4)
         } else {
             unreachable!()
-        }
-    }
-}
-
-struct SwizzleDisplay(Swizzle);
-impl fmt::Display for SwizzleDisplay {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Swizzle::X => write!(f, "x"),
-            Swizzle::Y => write!(f, "y"),
-            Swizzle::Z => write!(f, "z"),
-            Swizzle::W => write!(f, "w"),
         }
     }
 }

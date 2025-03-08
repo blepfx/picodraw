@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use picodraw_core::graph::*;
 
 #[derive(Debug)]
@@ -10,7 +12,7 @@ pub struct ShaderDataLayout {
 
 pub struct ShaderDataEncoder<'a> {
     layout: &'a ShaderDataLayout,
-    data: &'a mut [u8],
+    data: &'a mut [MaybeUninit<u8>],
     pointer: usize,
 }
 
@@ -52,7 +54,7 @@ impl ShaderDataLayout {
 }
 
 impl<'a> ShaderDataEncoder<'a> {
-    pub fn new(layout: &'a ShaderDataLayout, data: &'a mut [u8]) -> Self {
+    pub fn new(layout: &'a ShaderDataLayout, data: &'a mut [MaybeUninit<u8>]) -> Self {
         Self {
             layout,
             data,
@@ -61,18 +63,31 @@ impl<'a> ShaderDataEncoder<'a> {
     }
 
     pub fn write_i32(&mut self, value: i32) {
-        let (offset, input) = self.layout.fields.get(self.pointer).expect("malformed write stream");
+        let (offset, input) = self
+            .layout
+            .fields
+            .get(self.pointer)
+            .expect("malformed write stream");
         let offset = *offset as usize;
 
         match input {
             OpInput::I32 | OpInput::U32 => {
-                self.data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+                write_uninit(
+                    &mut self.data[offset..offset + 4],
+                    &(value as u32).to_ne_bytes(),
+                );
             }
             OpInput::I16 | OpInput::U16 => {
-                self.data[offset..offset + 2].copy_from_slice(&(value as i16).to_ne_bytes());
+                write_uninit(
+                    &mut self.data[offset..offset + 2],
+                    &(value as u16).to_ne_bytes(),
+                );
             }
             OpInput::I8 | OpInput::U8 => {
-                self.data[offset..offset + 1].copy_from_slice(&(value as u8).to_ne_bytes());
+                write_uninit(
+                    &mut self.data[offset..offset + 1],
+                    &(value as u8).to_ne_bytes(),
+                );
             }
             _ => panic!("malformed write stream"),
         }
@@ -81,12 +96,16 @@ impl<'a> ShaderDataEncoder<'a> {
     }
 
     pub fn write_f32(&mut self, value: f32) {
-        let (offset, input) = self.layout.fields.get(self.pointer).expect("malformed write stream");
+        let (offset, input) = self
+            .layout
+            .fields
+            .get(self.pointer)
+            .expect("malformed write stream");
         let offset = *offset as usize;
 
         match input {
             OpInput::F32 => {
-                self.data[offset..offset + 4].copy_from_slice(&value.to_ne_bytes());
+                write_uninit(&mut self.data[offset..offset + 4], &value.to_ne_bytes());
             }
             _ => panic!("malformed write stream"),
         }
@@ -138,8 +157,10 @@ pub struct QuadDescriptorStruct {
 }
 
 impl QuadDescriptorStruct {
-    pub fn as_bytes(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self as *const _ as *const _, std::mem::size_of::<Self>()) }
+    pub fn as_byte_slice(slice: &[Self]) -> &[u8] {
+        let len = std::mem::size_of::<Self>() * slice.len();
+        let ptr = slice.as_ptr() as *const u8;
+        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
 
@@ -174,4 +195,16 @@ impl ShaderTextureAllocator {
 pub enum ShaderTextureSlot {
     Static(picodraw_core::Texture),
     Render(picodraw_core::RenderTexture),
+}
+
+pub fn write_uninit<'a>(slice: &'a mut [MaybeUninit<u8>], data: &[u8]) -> &'a mut [u8] {
+    unsafe {
+        // SAFETY: &[T] and &[MaybeUninit<T>] have the same layout
+        let uninit_src: &[MaybeUninit<u8>] = std::mem::transmute(data);
+
+        slice.copy_from_slice(uninit_src);
+
+        // SAFETY: Valid elements have just been copied into `self` so it is initialized
+        std::mem::transmute(slice)
+    }
 }

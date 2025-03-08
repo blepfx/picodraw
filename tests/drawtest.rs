@@ -1,7 +1,7 @@
 use image::{DynamicImage, GenericImageView, Rgba, open};
 use picodraw::{
     CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData, Texture,
-    shader::{boolean, float1, float2, float3, float4, int1, int2, int3, int4, io},
+    shader::*,
 };
 
 const CANVAS_SIZE: u32 = 512;
@@ -15,7 +15,7 @@ fn fill_purple() {
             io::write_color(float4((1.0, 0.0, 1.0, 1.0)));
         }));
 
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
         commands
             .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
             .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
@@ -37,7 +37,7 @@ fn fill_checker() {
             );
         }));
 
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
         commands
             .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
             .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
@@ -87,7 +87,7 @@ fn blurry_semicircle() {
         }));
 
         let buffer = context.create_texture_render();
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
 
         commands
             .begin_buffer(buffer, [CANVAS_SIZE, CANVAS_SIZE])
@@ -152,7 +152,7 @@ fn msdf_text() {
             io::write_color(float4(mask));
         }));
 
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
         let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
 
         let mut x = 10.0;
@@ -193,7 +193,7 @@ fn stress_test() {
         }));
 
         for _ in 0..2 {
-            let mut commands = CommandBuffer::default();
+            let mut commands = CommandBuffer::new();
             let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
             frame.clear([0, 0, CANVAS_SIZE, CANVAS_SIZE]);
 
@@ -221,49 +221,102 @@ fn stress_test() {
 /// - if `ShaderData` derive proc macro implemented correctly
 /// - primitive types like u8, i16 and f32 are serialized correctly
 /// - literals like 1 and infinity are serialized correctly
-/// - if custom `ShaderData` implementation is honored
+/// - if custom `ShaderData` implementation is honored, including implementations that use resolution/bounds data at serialize time
+/// - if `#[shader(ignore)]` and `#[shader(_)]` attributes work correctly
+/// - if `ShaderData` implementation can be derived for tuple structs and unit structs
+/// - if `ShaderData` proc macro supports custom encoders
+///
 #[test]
+#[cfg(feature = "derive")]
 fn serialize_test() {
     fn sdf_circle(pos: float2, center: float2, radius: float1, invert: boolean) -> float1 {
         let mask = ((center - pos).len() - radius).smoothstep(0.707, -0.707);
         invert.select(1.0 - mask, mask)
     }
 
-    #[cfg(feature = "derive")]
     #[derive(ShaderData)]
-    struct Circle {
-        x: f32,
-        y: f32,
-        scale: f32,
-        invert: bool,
+    struct PassthroughEncoder<T>(T);
+    struct FracResolutionEncoder(f32, f32);
+    struct FracQuadBoundsEncoder(f32, f32);
+
+    impl ShaderData for FracResolutionEncoder {
+        type Data = float2;
+        fn read() -> Self::Data {
+            let resolution = io::resolution();
+            float2((
+                io::read::<f32>() * resolution.x(),
+                io::read::<f32>() * resolution.y(),
+            ))
+        }
+        fn write(&self, writer: &mut dyn io::ShaderDataWriter) {
+            writer.write_f32(self.0 / writer.resolution().width as f32);
+            writer.write_f32(self.1 / writer.resolution().height as f32);
+        }
     }
 
-    #[cfg(not(feature = "derive"))]
-    {
-        struct CircleShader {
-            x: float1,
-            y: float1,
-            scale: float1,
-            invert: bool,
+    impl ShaderData for FracQuadBoundsEncoder {
+        type Data = float2;
+        fn read() -> Self::Data {
+            let (start, end) = io::bounds();
+            float2((io::read::<f32>(), io::read::<f32>())).lerp(start, end)
         }
+        fn write(&self, writer: &mut dyn io::ShaderDataWriter) {
+            let bounds = writer.quad_bounds();
+            let x0 = (self.0 - bounds.left as f32) / bounds.width() as f32;
+            let y0 = (self.1 - bounds.top as f32) / bounds.height() as f32;
+            x0.write(writer);
+            y0.write(writer);
+        }
+    }
 
-        impl ShaderData for Circle {
-            type Data = CircleShader;
-            fn read() -> Self::Data {
-                CircleShader {
-                    x: f32::read(),
-                    y: f32::read(),
-                    scale: f32::read(),
-                    invert: bool::read(),
-                }
-            }
-            fn write(&self, writer: &mut dyn io::ShaderDataWriter) {
-                f32::write(&self.x, writer);
-                f32::write(&self.y, writer);
-                f32::write(&self.scale, writer);
-                bool::write(&self.invert, writer);
-            }
+    impl From<f32> for PassthroughEncoder<f32> {
+        fn from(value: f32) -> Self {
+            PassthroughEncoder(value)
         }
+    }
+
+    impl From<(f32, f32)> for FracResolutionEncoder {
+        fn from(value: (f32, f32)) -> Self {
+            FracResolutionEncoder(value.0, value.1)
+        }
+    }
+
+    impl From<(f32, f32)> for FracQuadBoundsEncoder {
+        fn from(value: (f32, f32)) -> Self {
+            FracQuadBoundsEncoder(value.0, value.1)
+        }
+    }
+
+    #[derive(ShaderData)]
+    struct Circle {
+        #[shader(FracResolutionEncoder)]
+        point: (f32, f32),
+
+        #[shader(PassthroughEncoder::<f32>)]
+        scale: f32,
+
+        invert: bool,
+
+        #[shader(ignore)]
+        _ignored: f32,
+    }
+
+    #[derive(ShaderData)]
+    struct Point(#[shader(FracQuadBoundsEncoder)] (f32, f32));
+
+    #[derive(ShaderData)]
+    struct Nothing;
+
+    #[derive(ShaderData)]
+    struct Primitives {
+        i8: i8,
+        i16: i16,
+        i32: i32,
+        u8: u8,
+        u16: u16,
+        u32: u32,
+        f32: f32,
+        bool: bool,
     }
 
     struct Box {
@@ -295,42 +348,113 @@ fn serialize_test() {
 
     run("serialize-test", move |context| {
         let shader = context.create_shader(Graph::collect(|| {
-            let zero = 1.0 / float1(f32::INFINITY);
-
             let data_circle = io::read::<Circle>();
             let data_box = io::read::<Box>();
-            let position = io::position();
+            let data_point = io::read::<Point>();
+            let data_primitives = io::read::<Primitives>();
+            let data_extra = io::read::<&f64>();
+            let _ = io::read::<Nothing>();
+            let _ = io::read::<()>(); //wow
 
+            let position = io::position();
             let mask_box = data_box.color
                 * position.x().step(data_box.bounds.x())
                 * position.y().step(data_box.bounds.y())
                 * (1.0 - position.x().step(data_box.bounds.z()))
                 * (1.0 - position.y().step(data_box.bounds.w()));
+
             let mask_circle = 0.5
                 * sdf_circle(
                     position,
-                    float2((data_circle.x, data_circle.y)),
-                    data_circle.scale,
+                    data_circle.point,
+                    data_circle.scale.0,
                     data_circle.invert,
                 );
 
-            io::write_color(float4(mask_box + mask_circle + zero));
+            let mask_point = sdf_circle(position, data_point.0, float1(5.0), boolean(false));
+
+            let background = {
+                let nan_soup = float1(f32::INFINITY) + float1(f32::NEG_INFINITY) + float1(f32::NAN);
+                let literal_soup = float1(1.0)
+                    + float1(0.0)
+                    + float1(-1.0)
+                    + float1(0.5)
+                    + float1(
+                        int1(1) + int1(0) + int1(-1) + int1(2) + int1(-2) + int1(3) + int1(-3),
+                    )
+                    + boolean(true).select(float1(0.25), 0.0)
+                    + boolean(false).select(float1(0.0), 0.5);
+
+                let pos = io::position() * 0.001;
+                let a = pos.x() * data_primitives.f32
+                    + pos.y() * float1(data_primitives.i8)
+                    + float1(data_primitives.i16)
+                    + float1(data_primitives.i32)
+                    + float1(data_primitives.u8)
+                    + float1(data_primitives.u16)
+                    + float1(data_primitives.u32)
+                    + data_primitives.bool.select(float1(1.0), 2.0)
+                    + nan_soup.eq(nan_soup).select(nan_soup, 0.0)
+                    + literal_soup % 0.1
+                    + data_extra;
+
+                float4((1.0, 1.0, 1.0, a.sin().abs() * 0.2))
+            };
+
+            let bounding_box = {
+                let (start, end) = io::bounds();
+                let start = start + 2.0;
+                let end = end - 2.0;
+
+                let mask = position.x().step(start.x())
+                    * position.y().step(start.y())
+                    * (1.0 - position.x().step(end.x()))
+                    * (1.0 - position.y().step(end.y()));
+
+                1.0 - mask
+            };
+
+            io::write_color(float4(
+                bounding_box + background + mask_box + mask_circle + mask_point,
+            ));
         }));
 
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
+
+        // should not be dispatched! we reset the command buffer before the dispatch
+        // dispatching this will lead to `malformed write stream` panic
+        commands
+            .begin_screen([1, 1])
+            .begin_quad(shader, [0, 0, 1, 1]);
+        commands.reset_commands();
+
         commands
             .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
+            .begin_quad(shader, [20, 20, CANVAS_SIZE - 20, CANVAS_SIZE - 20])
             .write_data(Circle {
-                x: 256.0,
-                y: 256.0,
+                point: (256.0, 256.0),
                 scale: 150.0,
                 invert: false,
+                _ignored: 1.0,
             })
             .write_data(Box {
                 bounds: [100, 100, 250, 250],
                 color: i16::MAX / 2,
-            });
+            })
+            .write_data(Point((350.0, 350.0)))
+            .write_data(Primitives {
+                i8: 12,
+                i16: -327,
+                i32: 2147,
+                u8: 255,
+                u16: 655,
+                u32: 4294,
+                f32: 3.14159,
+                bool: true,
+            })
+            .write_data(&0.1f64)
+            .write_data(Nothing)
+            .write_data(());
 
         context.draw(&commands);
     });
@@ -372,7 +496,7 @@ fn resource_mgmt() {
         let buffer_0 = context.create_texture_render();
 
         // frame 0 draw
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
         commands
             .begin_buffer(buffer_0, [CANVAS_SIZE, CANVAS_SIZE])
             .begin_quad(shader_1, [0, 0, 10, 10])
@@ -399,7 +523,7 @@ fn resource_mgmt() {
         assert!(!context.delete_texture_static(texture_0));
 
         // frame 1 draw
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
         let mut frame = commands.begin_buffer(buffer_0, [CANVAS_SIZE, CANVAS_SIZE]);
         frame.clear([5, 5, 10, 10]);
         frame
@@ -426,7 +550,7 @@ fn resource_mgmt() {
         }));
 
         // frame 2 drawpath
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
         let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
         frame.begin_quad(shader_4, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
         frame
@@ -449,130 +573,130 @@ fn resource_mgmt() {
 fn shader_ops() {
     run("shader-ops", |context| {
         let shader = context.create_shader(Graph::collect(|| {
-            let i0 = io::read::<f32>();
-            let i1 = io::read::<u8>();
-            let i2 = io::read::<u16>();
-            let i3 = io::read::<u32>();
-            let i4 = io::read::<i8>();
-            let i5 = io::read::<i16>();
-            let i6 = io::read::<i32>();
-            let i7 = io::read::<bool>();
+            let funcs: [fn(float1, float1) -> float3; 11] = [
+                |x, _| {
+                    // trig functions
+                    let x = x * 10.0 - 5.0;
+                    float3((x.sin(), x.cos(), x.tan()))
+                },
+                |x, _| {
+                    // trig functions
+                    let x = x * 10.0 - 5.0;
+                    float3((x.asin(), x.acos(), x.atan()))
+                },
+                |x, _| {
+                    // exponentiation and powers
+                    let x = x * 10.0 - 5.0;
+                    float3((x.exp(), x.sqrt(), x.ln()))
+                },
+                |x, _| {
+                    // exponentiation and powers
+                    let x = x * 10.0 - 5.0;
+                    float3((x.pow(20.1), x.pow(2.0), x.pow(-0.333)))
+                },
+                |x, _| {
+                    // boolean masks and scalar comparisons
+                    let x = x * 10.0 - 5.0;
+                    let y = int1(x);
 
-            let blocks = [
-                // input and literal operations
-                {
-                    let pos = io::position();
-                    let res = io::resolution();
-                    let (b0, b1) = io::bounds();
+                    let a = x.lt(1.0).select(float1(0.9), 0.1);
+                    let b = x.gt(2.0).select(float1(0.8), 0.2);
+                    let c = x.ge(3.0).select(float1(0.7), 0.3);
+                    let d = x.le(4.0).select(float1(0.6), 0.4);
 
-                    float4((
-                        i0 + float1(i3) / 200000.0 + float1(i6) / 200000.0 + float1(i2) / 1000.0,
-                        float1(i1) / 1000.0
-                            + float1(i4) / 1000.0
-                            + float1(i5) / 1000.0
-                            + float1(int1(1)),
-                        (pos / res + float2(0.5) + b0 - b1).len() % 0.2 / 0.2,
-                        i7.select(
-                            float1(0.6),
-                            boolean(true)
-                                .select(float1(0.4), boolean(false).select(float1(0.9), 0.5)),
-                        ),
+                    let i = y.lt(-1).select(float1(0.9), 0.1);
+                    let j = y.gt(-2).select(float1(0.8), 0.2);
+                    let k = y.ge(-3).select(float1(0.7), 0.3);
+                    let l = y.le(-4).select(float1(0.6), 0.4);
+                    let m = y.eq(-5).select(float1(0.5), 0.5);
+                    let n = y.ne(-6).select(float1(0.4), 0.6);
+
+                    float3((a + b + c + d, i + j + k, l + m + n)) * 0.25
+                },
+                |x, _| {
+                    // floor/abs/sign
+                    let x = x * 10.0 - 5.0;
+                    float3((
+                        x.floor(),
+                        x.sign() + x.norm(), /* same as sign */
+                        x.abs() + x.len(),   /* same as abs */
+                    )) * 0.25
+                },
+                |x, _| {
+                    // min/max/clamp/lerp
+                    let x = x * 10.0 - 5.0;
+                    float3((
+                        x.min(1.0) + x.max(2.0),
+                        x.clamp(-1.0, 1.0),
+                        x.lerp(-0.5, 1.0),
+                    )) * 0.25
+                        + 0.25
+                },
+                |j, i| {
+                    // integer bitwise operations
+                    let x = int1(j * 128.0);
+                    let y = int1(i * 64.0);
+                    let z = int1((i + j) * 32.0);
+
+                    float3((
+                        float1((x | y & z) % 16) / 16.0,
+                        float1((x & y ^ z) % 16) / 16.0,
+                        float1((x ^ y | !z) % 16) / 16.0,
                     ))
                 },
-                // swizzle operations
-                {
-                    let x = float2((1.0, 0.2));
-                    let y = float3((0.3, 0.5, 0.7));
+                |x, y| {
+                    // screen space derivatives
+                    let r = io::resolution();
+                    let x = x * 10.0 - 5.0;
+                    let a = x.sin();
+                    let b = x.cos();
+                    let c = (y * 5.0).tan();
 
-                    let z = int2((10, 20));
-                    let w = int3((50, 45, 60));
-                    let u = int4((100, 200, 300, 400));
-
-                    float4((x.y(), y.z(), y.z(), x.x()))
-                        + float4((z.y(), w.z(), w.z(), z.x())) / 200.0
-                        + float4((u.y(), u.z(), u.w(), u.x())) / 500.0
+                    float3((a.dx() * r.x() / 10.0, b, a.fwidth() * r.x() / 10.0))
+                        + float3((c.dx() * r.x() / 10.0, c, c.dy() * r.y() / 10.0))
                 },
-                // trigonometric and math operations
-                {
-                    let x = io::position().x() * 0.10;
-                    let y = io::position().y() * 0.10;
-                    let z = io::position().x() % 50.0 * 0.20;
+                |x, y| {
+                    // 2d vector operations
+                    let x = x * 10.0 - 5.0;
+                    let y = y * 10.0;
 
-                    let w = float2((x, y));
-                    let u = float3((x, y, z));
-                    let v = float3((z, y, x));
+                    let p = y.atan2(x);
+                    let n = float2((x, y)).norm();
+                    let l = float2((x, y)).len();
 
-                    float4((
-                        (x.sin() + y.cos() + z.tan() + x.asin() + y.acos() + z.atan()).sin(),
-                        (x.atan2(y)
-                            + y.exp()
-                            + z.ln()
-                            + x.sqrt()
-                            + y.pow(5.0)
-                            + float3::cross(-u, v).len())
-                        .sin(),
-                        (x.sin().abs()
-                            + y.cos().abs()
-                            + z.tan().abs()
-                            + x.sign()
-                            + y.dot(x)
-                            + z.norm()
-                            + w.norm().x())
-                        .sin(),
-                        1.0,
-                    ))
+                    float3((p, n.y(), l)) * 0.5 + 0.5
                 },
-                // bitwise and utility operations
-                {
-                    let x = io::position().x() % 20.0 / 20.0;
-                    let y = io::position().y() % 20.0 / 20.0;
-                    let z = float1(0.75);
+                |x, y| {
+                    // 3d vector operations
+                    let x = x * 10.0 - 5.0;
+                    let y = y * 10.0;
 
-                    let a = int1(x * 20.0);
-                    let b = int1(y * 20.0);
-                    let c = int1(z * 20.0);
+                    let p = float3((x, y, 0.0)).cross(float3((1.0, 1.0, 1.0)));
+                    let n = float3((x, y, 0.0)).dot(float3((1.0, 1.0, 1.0)));
+                    let l = float3((x, y, 0.0)).len();
 
-                    (float4((
-                        x.min(y).max(z).clamp(y, z).lerp(x, y),
-                        x.step(y).smoothstep(y, z),
-                        x.gt(y).select(
-                            z.ge(x).select(
-                                z.lt(y).select(float1(0.2), 0.9),
-                                z.eq(y).select(float1(0.1), 0.3),
-                            ),
-                            z.le(x).select(
-                                z.lt(y).select(float1(0.4), 0.8),
-                                z.ne(y).select(float1(0.6), 0.7),
-                            ),
-                        ),
-                        1.0,
-                    )) + float4(((a & b | c), (a ^ c & !b), a ^ b, 1.0)))
-                        * 0.5
+                    float3((p.x(), n, l)) * 0.5 + 0.5
                 },
             ];
 
             let pos = io::position() / io::resolution();
-            let a = pos.x().gt(0.5);
-            let b = pos.y().lt(0.5);
+            let idx = int1(pos.y() * funcs.len() as f32);
 
-            io::write_color(a.select(
-                b.select(blocks[0], blocks[1]),
-                b.select(blocks[2], blocks[3]),
-            ));
+            let mut color = float3(0.0);
+            for i in 0..funcs.len() {
+                color = color
+                    + idx
+                        .eq(i as i32)
+                        .select(funcs[i](pos.x(), pos.y() % (1.0 / funcs.len() as f32)), 0.0);
+            }
+
+            io::write_color(float4((color.x(), color.y(), color.z(), 1.0)));
         }));
 
-        let mut commands = CommandBuffer::default();
+        let mut commands = CommandBuffer::new();
         commands
             .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
-            .write_data(1.0 / 3.0)
-            .write_data(200u8)
-            .write_data(699u16)
-            .write_data(100000u32)
-            .write_data(-128i8)
-            .write_data(-327i16)
-            .write_data(-50000i32)
-            .write_data(true);
+            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
         context.draw(&commands);
     });
 }
@@ -583,11 +707,12 @@ fn run(id: &str, render: impl Fn(&mut dyn Context) + Send + 'static) {
         let mut sum = 0;
         for i in 0..a.width() {
             for j in 0..a.height() {
-                let Rgba([r0, g0, b0, _]) = a.get_pixel(i, j);
-                let Rgba([r1, g1, b1, _]) = b.get_pixel(i, j);
+                let Rgba([r0, g0, b0, a0]) = a.get_pixel(i, j);
+                let Rgba([r1, g1, b1, a1]) = b.get_pixel(i, j);
                 sum += r0.abs_diff(r1) as u64;
                 sum += g0.abs_diff(g1) as u64;
                 sum += b0.abs_diff(b1) as u64;
+                sum += a0.abs_diff(a1) as u64;
             }
         }
         sum as f64 / (a.height() * a.width()) as f64
@@ -643,6 +768,7 @@ mod opengl {
                 bits_depth: 0,
                 bits_stencil: 0,
                 version: OpenGlVersion::Core(3, 3),
+                debug: true,
                 ..Default::default()
             })
             .with_size(CANVAS_SIZE, CANVAS_SIZE)
@@ -678,6 +804,15 @@ mod opengl {
                 Event::Update => {
                     view.obscure_view();
                 }
+
+                Event::Unrealize { .. } => {
+                    if let Some(gl_backend) = gl_backend.take() {
+                        unsafe {
+                            gl_backend.delete();
+                        }
+                    }
+                }
+
                 _ => {}
             })
             .realize()

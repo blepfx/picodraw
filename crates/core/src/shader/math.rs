@@ -2,7 +2,7 @@
 
 pub use types::*;
 pub mod types {
-    use crate::graph::{Graph, Op, OpAddr, Swizzle};
+    use crate::graph::{Graph, Op, OpAddr};
     use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Sub};
 
     #[doc(hidden)]
@@ -348,11 +348,11 @@ pub mod types {
 
             impl $type {
                 pub fn x(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::X])))
+                    $scalar(Graph::push_collect(Op::ExtractX(self.0)))
                 }
 
                 pub fn y(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::Y])))
+                    $scalar(Graph::push_collect(Op::ExtractY(self.0)))
                 }
             }
 
@@ -385,15 +385,15 @@ pub mod types {
 
             impl $type {
                 pub fn x(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::X])))
+                    $scalar(Graph::push_collect(Op::ExtractX(self.0)))
                 }
 
                 pub fn y(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::Y])))
+                    $scalar(Graph::push_collect(Op::ExtractY(self.0)))
                 }
 
                 pub fn z(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::Z])))
+                    $scalar(Graph::push_collect(Op::ExtractZ(self.0)))
                 }
             }
 
@@ -427,19 +427,19 @@ pub mod types {
 
             impl $type {
                 pub fn x(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::X])))
+                    $scalar(Graph::push_collect(Op::ExtractX(self.0)))
                 }
 
                 pub fn y(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::Y])))
+                    $scalar(Graph::push_collect(Op::ExtractY(self.0)))
                 }
 
                 pub fn z(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::Z])))
+                    $scalar(Graph::push_collect(Op::ExtractZ(self.0)))
                 }
 
                 pub fn w(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::Swizzle1(self.0, [Swizzle::W])))
+                    $scalar(Graph::push_collect(Op::ExtractW(self.0)))
                 }
             }
 

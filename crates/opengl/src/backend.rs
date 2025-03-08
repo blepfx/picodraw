@@ -1,4 +1,10 @@
-use crate::{compiler, raw::*};
+use crate::{
+    compiler::{
+        self,
+        serialize::{QuadDescriptorStruct, write_uninit},
+    },
+    raw::*,
+};
 use picodraw_core::*;
 use slotmap::{DefaultKey, Key, KeyData, SecondaryMap, SlotMap};
 use std::ffi::{CStr, c_void};
@@ -492,12 +498,14 @@ impl<'a> Context for OpenGlContext<'a> {
                             let offset_quads_start = writer.pointer();
                             let quads_count = self.0.scratch_quads.len();
 
-                            self.0.scratch_textures.clear();
-
-                            for quad in self.0.scratch_quads.drain(..) {
-                                let slice = quad.as_bytes();
-                                writer.request(slice.len()).copy_from_slice(slice);
+                            {
+                                let quad_data_bytes = QuadDescriptorStruct::as_byte_slice(self.0.scratch_quads.as_slice());
+                                let dst = writer.request(quad_data_bytes.len());
+                                write_uninit(dst, quad_data_bytes);
                             }
+
+                            self.0.scratch_textures.clear();
+                            self.0.scratch_quads.clear();
 
                             if buffer_full {
                                 writer.mark_full();

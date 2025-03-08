@@ -5,9 +5,9 @@ use std::{
     cell::Cell,
     collections::HashSet,
     ffi::{CStr, CString},
-    mem::{forget, size_of},
+    mem::{MaybeUninit, forget, size_of},
     ops::Deref,
-    ptr::{null, write_bytes},
+    ptr::null,
 };
 
 pub use bindings::GlBindings;
@@ -15,7 +15,10 @@ pub use bindings::GlBindings;
 #[derive(Clone, Copy)]
 pub struct GlContext<'a>(&'a GlBindings);
 impl<'a> GlContext<'a> {
-    pub unsafe fn within<R>(bindings: &'a GlBindings, c: impl for<'x> FnOnce(GlContext<'x>) -> R) -> R {
+    pub unsafe fn within<R>(
+        bindings: &'a GlBindings,
+        c: impl for<'x> FnOnce(GlContext<'x>) -> R,
+    ) -> R {
         c(GlContext(bindings))
     }
 }
@@ -42,7 +45,12 @@ impl GlProgram {
                     check_error(gl);
                     let shader_drop = Defer(|| gl.delete_shader(shader));
 
-                    gl.shader_source(shader, 1, &(source.as_ptr() as *const GLchar), &(source.len() as GLint));
+                    gl.shader_source(
+                        shader,
+                        1,
+                        &(source.as_ptr() as *const GLchar),
+                        &(source.len() as GLint),
+                    );
                     check_error(gl);
 
                     gl.compile_shader(shader);
@@ -58,12 +66,21 @@ impl GlProgram {
                         check_error(gl);
 
                         let mut buffer = vec![0u8; max_length as usize];
-                        gl.get_shader_info_log(shader, max_length, &mut max_length, buffer.as_mut_ptr() as *mut _);
+                        gl.get_shader_info_log(
+                            shader,
+                            max_length,
+                            &mut max_length,
+                            buffer.as_mut_ptr() as *mut _,
+                        );
                         check_error(gl);
 
                         panic!(
                             "picodraw opengl internal error ({} shader compilation)\n {}",
-                            if type_ == VERTEX_SHADER { "vertex" } else { "fragment" },
+                            if type_ == VERTEX_SHADER {
+                                "vertex"
+                            } else {
+                                "fragment"
+                            },
                             String::from_utf8_lossy(&buffer)
                         );
                     }
@@ -99,7 +116,12 @@ impl GlProgram {
                 gl.get_program_iv(program, INFO_LOG_LENGTH, &mut max_length);
 
                 let mut buffer = vec![0u8; max_length as usize];
-                gl.get_program_info_log(program, max_length, &mut max_length, buffer.as_mut_ptr() as *mut _);
+                gl.get_program_info_log(
+                    program,
+                    max_length,
+                    &mut max_length,
+                    buffer.as_mut_ptr() as *mut _,
+                );
 
                 panic!(
                     "picodraw opengl internal error (shader linking)\n {}",
@@ -234,7 +256,11 @@ impl GlTextureBuffer {
         }
     }
 
-    pub fn update<R>(&mut self, gl: GlContext, c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R) -> R {
+    pub fn update<R>(
+        &mut self,
+        gl: GlContext,
+        c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R,
+    ) -> R {
         unsafe {
             gl.bind_buffer(TEXTURE_BUFFER, self.tbo_buffer);
             check_error(gl);
@@ -311,15 +337,14 @@ impl<'a> GlTextureBufferWriter<'a> {
         self.owner.ptr.set(self.owner.size);
     }
 
-    pub fn request(&self, byte_size: usize) -> &mut [u8] {
+    pub fn request(&self, byte_size: usize) -> &mut [MaybeUninit<u8>] {
         let texel_size = byte_size.div_ceil(GlTextureBuffer::TEXEL_SIZE_BYTES);
         if self.space_left() >= texel_size {
             unsafe {
                 let ptr = self.buffer.add(self.owner.ptr.get() - self.start);
                 self.owner.ptr.set(self.owner.ptr.get() + texel_size);
 
-                write_bytes(ptr as *mut u8, 0, byte_size);
-                std::slice::from_raw_parts_mut(ptr as *mut u8, byte_size)
+                std::slice::from_raw_parts_mut(ptr as *mut MaybeUninit<u8>, byte_size)
             }
         } else {
             panic!("overwrite");
@@ -448,7 +473,10 @@ impl GlFramebuffer {
             forget(texture_drop);
             forget(framebuffer_drop);
 
-            Self { texture, framebuffer }
+            Self {
+                texture,
+                framebuffer,
+            }
         }
     }
 
@@ -545,7 +573,10 @@ impl GlInfo {
             gl.get_integer_v(MAX_TEXTURE_BUFFER_SIZE, &mut max_texture_buffer_size);
             gl.get_integer_v(MAX_TEXTURE_SIZE, &mut max_texture_size);
             gl.get_integer_v(MAX_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units);
-            gl.get_integer_v(MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units_combined);
+            gl.get_integer_v(
+                MAX_COMBINED_TEXTURE_IMAGE_UNITS,
+                &mut max_texture_image_units_combined,
+            );
             check_error(gl);
 
             // sanity checks
