@@ -1,4 +1,4 @@
-use crate::{Bounds, ImageData, ShaderData, ShaderDataWriter, Size, graph::Graph};
+use crate::{Bounds, Graph, ImageData, ShaderData, Size};
 
 /// The heart of `picodraw`.
 ///
@@ -30,6 +30,16 @@ pub trait Context {
 
     /// Execute a list of draw commands on the backend
     fn draw(&mut self, buffer: &CommandBuffer);
+}
+
+pub trait ShaderDataWriter {
+    fn write_i32(&mut self, x: i32);
+    fn write_f32(&mut self, x: f32);
+    fn write_texture_static(&mut self, texture: Texture);
+    fn write_texture_render(&mut self, texture: RenderTexture);
+
+    fn resolution(&self) -> Size;
+    fn quad_bounds(&self) -> Bounds;
 }
 
 /// A single draw command.

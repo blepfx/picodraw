@@ -4,7 +4,7 @@ members = [
     "crates/core",
     "crates/derive",
     "crates/opengl"
-]
+, "crates/software"]
 
 [workspace.dependencies]
 pugl-rs = { git = "https://github.com/blepfx/pugl-rs", features = ["opengl"] }
@@ -23,7 +23,7 @@ description = "A smol gpu graphics library"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-picodraw-core = { path = "crates/core" }
+picodraw-core = { path = "crates/core", default-features = false }
 picodraw-derive = { path = "crates/derive", optional = true }
 picodraw-opengl = { path = "crates/opengl", optional = true }
 
@@ -32,7 +32,8 @@ pugl-rs = { workspace = true }
 image = { workspace = true }
 
 [features]
-default = ["derive"]
+default = ["derive", "collect"]
+collect = ["picodraw-core/collect"]
 derive = ["dep:picodraw-derive"]
 opengl = ["dep:picodraw-opengl"]
 

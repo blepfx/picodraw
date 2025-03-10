@@ -5,3 +5,6 @@ edition = "2024"
 description = "picodraw core"
 license = "MIT OR Apache-2.0"
 
+[features]
+default = ["collect"]
+collect = []

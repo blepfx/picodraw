@@ -1,0 +1,10 @@
+[package]
+name = "picodraw-software"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+picodraw-core = { path = "../core" }
+multiversion = "0.8.0"
+fxhash = "0.2"
+rayon = "1"

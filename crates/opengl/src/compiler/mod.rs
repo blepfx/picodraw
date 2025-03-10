@@ -45,8 +45,12 @@ impl<'a> Compiler<'a> {
             let mut branch_ids = 1;
 
             for (id, graph) in self.shaders.iter() {
-                let layout =
-                    serialize::ShaderDataLayout::new(graph, branch_ids, textures, self.options.texture_units - 1);
+                let layout = serialize::ShaderDataLayout::new(
+                    graph,
+                    branch_ids,
+                    textures,
+                    self.options.texture_units - 1,
+                );
 
                 branch_ids += 1;
                 textures += layout.textures.len() as u32;
@@ -68,11 +72,11 @@ impl<'a> Compiler<'a> {
             for (id, graph) in self.shaders.iter() {
                 let layout = shader_layout.get(id).unwrap();
 
-                codegen.begin_graph(&layout);
-                for info in graph.resolve() {
-                    codegen.put_atom(info);
+                codegen.emit_begin_graph(&layout);
+                for op in graph.iter() {
+                    codegen.emit_atom(graph, op);
                 }
-                codegen.end_graph();
+                codegen.emit_end_graph();
             }
 
             codegen.finish()

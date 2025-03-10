@@ -22,8 +22,8 @@ impl ShaderDataLayout {
         let mut fields = vec![];
         let mut textures = vec![];
 
-        for (_, op) in graph.iter() {
-            if let Op::Input(input) = op {
+        for op in graph.iter() {
+            if let OpValue::Input(input) = graph.value_of(op) {
                 let (size, align) = match input {
                     OpInput::F32 => (4, 4),
                     OpInput::I32 => (4, 4),

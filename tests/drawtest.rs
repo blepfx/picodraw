@@ -1,7 +1,7 @@
 use image::{DynamicImage, GenericImageView, Rgba, open};
 use picodraw::{
-    CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData, Texture,
-    shader::*,
+    CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData,
+    ShaderDataWriter, Texture, shader::*,
 };
 
 const CANVAS_SIZE: u32 = 512;
@@ -248,7 +248,7 @@ fn serialize_test() {
                 io::read::<f32>() * resolution.y(),
             ))
         }
-        fn write(&self, writer: &mut dyn io::ShaderDataWriter) {
+        fn write(&self, writer: &mut dyn ShaderDataWriter) {
             writer.write_f32(self.0 / writer.resolution().width as f32);
             writer.write_f32(self.1 / writer.resolution().height as f32);
         }
@@ -260,7 +260,7 @@ fn serialize_test() {
             let (start, end) = io::bounds();
             float2((io::read::<f32>(), io::read::<f32>())).lerp(start, end)
         }
-        fn write(&self, writer: &mut dyn io::ShaderDataWriter) {
+        fn write(&self, writer: &mut dyn ShaderDataWriter) {
             let bounds = writer.quad_bounds();
             let x0 = (self.0 - bounds.left as f32) / bounds.width() as f32;
             let y0 = (self.1 - bounds.top as f32) / bounds.height() as f32;
@@ -337,7 +337,7 @@ fn serialize_test() {
                 color: float1(i16::read()) / (i16::MAX as f32),
             }
         }
-        fn write(&self, writer: &mut dyn io::ShaderDataWriter) {
+        fn write(&self, writer: &mut dyn ShaderDataWriter) {
             writer.write_i32(self.bounds[0] as i32);
             writer.write_i32(self.bounds[1] as i32);
             writer.write_i32(self.bounds[2] as i32);

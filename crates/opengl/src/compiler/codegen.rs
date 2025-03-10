@@ -67,7 +67,7 @@ pub struct FragmentCodegen {
     buffer: String,
 
     graph_first: bool,
-    graph_atoms: HashMap<OpAddr, (String, OpType)>,
+    graph_atoms: HashMap<OpAddr, String>,
     graph_inputs: VecDeque<u32>,
     graph_textures: VecDeque<u32>,
 }
@@ -89,7 +89,7 @@ impl FragmentCodegen {
         }
     }
 
-    pub fn begin_graph(&mut self, layout: &ShaderDataLayout) {
+    pub fn emit_begin_graph(&mut self, layout: &ShaderDataLayout) {
         if !self.graph_first {
             write!(&mut self.buffer, "else ").ok();
         }
@@ -109,31 +109,33 @@ impl FragmentCodegen {
         }
     }
 
-    pub fn put_atom(&mut self, info: OpInfo) {
-        let inline = match info.value {
-            Op::Output(_) => false,
-            Op::LiteralFloat(_) => true,
-            Op::LiteralInt(_) => true,
-            Op::LiteralBool(_) => true,
-            Op::Input(OpInput::TextureRender) => true,
-            Op::Input(OpInput::TextureStatic) => true,
-            _ => info.dependents.len() <= 1,
+    pub fn emit_atom(&mut self, graph: &Graph, op: OpAddr) {
+        let inline = match graph.value_of(op) {
+            OpValue::Output(_) => false,
+            OpValue::Literal(_) => true,
+            OpValue::Input(OpInput::TextureRender) => true,
+            OpValue::Input(OpInput::TextureStatic) => true,
+            _ => match graph.dependents_of(op).count() {
+                0 => return,
+                1 => true,
+                _ => false,
+            },
         };
 
         if inline {
-            let result = self.render_atom(info.ty, info.value);
-            self.graph_atoms.insert(info.addr, (result, info.ty));
+            let result = self.emit_atom_value(graph, op);
+            self.graph_atoms.insert(op, result);
         } else {
-            let ident = self.render_ident(info.addr);
-            let result = self.render_atom(info.ty, info.value);
-            let typestr = self.render_type(info.ty);
+            let ident = self.emit_ident(op);
+            let result = self.emit_atom_value(graph, op);
+            let typestr = self.emit_type(graph.type_of(op));
 
             write!(&mut self.buffer, "{} {}={};", typestr, ident, result).ok();
-            self.graph_atoms.insert(info.addr, (ident, info.ty));
+            self.graph_atoms.insert(op, result);
         }
     }
 
-    pub fn end_graph(&mut self) {
+    pub fn emit_end_graph(&mut self) {
         self.graph_first = false;
         self.graph_atoms.clear();
         self.graph_inputs.clear();
@@ -150,11 +152,11 @@ impl FragmentCodegen {
         self.buffer
     }
 
-    fn render_ident(&mut self, id: OpAddr) -> String {
-        format!("_{:x}", id.0)
+    fn emit_ident(&mut self, id: OpAddr) -> String {
+        format!("_{:x}", id)
     }
 
-    fn render_type(&mut self, ty: OpType) -> &'static str {
+    fn emit_type(&mut self, ty: OpType) -> &'static str {
         match ty {
             OpType::F1 => "float",
             OpType::F2 => "vec2",
@@ -169,42 +171,43 @@ impl FragmentCodegen {
         }
     }
 
-    fn render_atom(&mut self, ty: OpType, op: Op) -> String {
-        use Op::*;
+    fn emit_atom_value(&mut self, graph: &Graph, op: OpAddr) -> String {
         use OpType::*;
+        use OpValue::*;
 
         macro_rules! emit {
-            ($lit:literal, $x:ident) => {{ format!($lit, self.graph_atoms.get(&$x).expect("codegen error").0) }};
+            ($lit:literal, $x:ident) => {{ format!($lit, self.graph_atoms.get(&$x).expect("codegen error")) }};
 
             ($lit:literal, $x:ident, $y:ident) => {{
                 format!(
                     $lit,
-                    self.graph_atoms.get(&$x).expect("codegen error").0,
-                    self.graph_atoms.get(&$y).expect("codegen error").0
+                    self.graph_atoms.get(&$x).expect("codegen error"),
+                    self.graph_atoms.get(&$y).expect("codegen error")
                 )
             }};
 
             ($lit:literal, $x:ident, $y:ident, $z:ident) => {{
                 format!(
                     $lit,
-                    self.graph_atoms.get(&$x).expect("codegen error").0,
-                    self.graph_atoms.get(&$y).expect("codegen error").0,
-                    self.graph_atoms.get(&$z).expect("codegen error").0
+                    self.graph_atoms.get(&$x).expect("codegen error"),
+                    self.graph_atoms.get(&$y).expect("codegen error"),
+                    self.graph_atoms.get(&$z).expect("codegen error")
                 )
             }};
 
             ($lit:literal, $x:ident, $y:ident, $z:ident, $w:ident) => {{
                 format!(
                     $lit,
-                    self.graph_atoms.get(&$x).expect("codegen error").0,
-                    self.graph_atoms.get(&$y).expect("codegen error").0,
-                    self.graph_atoms.get(&$z).expect("codegen error").0,
-                    self.graph_atoms.get(&$w).expect("codegen error").0
+                    self.graph_atoms.get(&$x).expect("codegen error"),
+                    self.graph_atoms.get(&$y).expect("codegen error"),
+                    self.graph_atoms.get(&$z).expect("codegen error"),
+                    self.graph_atoms.get(&$w).expect("codegen error")
                 )
             }};
         }
 
-        match op {
+        let ty = graph.type_of(op);
+        match graph.value_of(op) {
             Position => format!("fragPosition"),
             Resolution => format!("uResolution"),
             QuadStart => format!("fragBounds.xy"),
@@ -212,51 +215,52 @@ impl FragmentCodegen {
 
             Input(OpInput::F32) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2f({})", self.render_input(offset, 4))
+                format!("u2f({})", self.emit_input(offset, 4))
             }
             Input(OpInput::I32) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.render_input(offset, 4))
+                format!("int({})", self.emit_input(offset, 4))
             }
             Input(OpInput::I16) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2i({},32768u)", self.render_input(offset, 2))
+                format!("u2i({},32768u)", self.emit_input(offset, 2))
             }
             Input(OpInput::I8) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2i({},256u)", self.render_input(offset, 1))
+                format!("u2i({},256u)", self.emit_input(offset, 1))
             }
             Input(OpInput::U32) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.render_input(offset, 4))
+                format!("int({})", self.emit_input(offset, 4))
             }
             Input(OpInput::U16) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.render_input(offset, 2))
+                format!("int({})", self.emit_input(offset, 2))
             }
             Input(OpInput::U8) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.render_input(offset, 1))
+                format!("int({})", self.emit_input(offset, 1))
             }
             Input(OpInput::TextureRender) | Input(OpInput::TextureStatic) => {
                 let index = self.graph_textures.pop_front().expect("codegen error");
                 format!("{}", index)
             }
 
-            Output(x) => emit!("(outColor={})", x),
+            Output(x) => {
+                emit!("(outColor={})", x)
+            }
 
-            LiteralFloat(x) => match f32::from(x) {
-                f32::INFINITY => format!("u2f(0x7F800000u)"),
-                f32::NEG_INFINITY => format!("u2f(0xFF800000u)"),
-                x if x.is_nan() => format!("u2f(0xFFFFFFFFu)"),
-                x if x.is_sign_positive() => format!("{:?}", x),
-                x => format!("({:?})", x),
+            Literal(x) => match x {
+                OpLiteral::Float(f32::INFINITY) => format!("u2f(0x7F800000u)"),
+                OpLiteral::Float(f32::NEG_INFINITY) => format!("u2f(0xFF800000u)"),
+                OpLiteral::Float(x) if x.is_nan() => format!("u2f(0xFFFFFFFFu)"),
+                OpLiteral::Float(x) if x.is_sign_positive() => format!("{:?}", x),
+                OpLiteral::Float(x) => format!("({:?})", x),
+                OpLiteral::Int(x) if x >= 0 => format!("{:?}", x),
+                OpLiteral::Int(x) => format!("({:?})", x),
+                OpLiteral::Bool(true) => format!("true"),
+                OpLiteral::Bool(false) => format!("false"),
             },
-
-            LiteralInt(x) if x >= 0 => format!("{x}"),
-            LiteralInt(x) => format!("({x})"),
-            LiteralBool(true) => format!("true"),
-            LiteralBool(false) => format!("false"),
 
             Add(x, y) => emit!("({}+{})", x, y),
             Sub(x, y) => emit!("({}-{})", x, y),
@@ -264,7 +268,7 @@ impl FragmentCodegen {
             Div(x, y) => emit!("({}/{})", x, y),
             Rem(x, y) => emit!("mod({},{})", x, y),
 
-            Dot(x, y) if self.graph_atoms.get(&x).expect("codegen error").1 == F1 => {
+            Dot(x, y) if graph.type_of(x) == F1 => {
                 emit!("({}*{})", x, y)
             }
 
@@ -289,6 +293,7 @@ impl FragmentCodegen {
             Sign(x) => emit!("sign({})", x),
             Floor(x) => emit!("floor({})", x),
             Lerp(x, y, z) => emit!("mix({},{},{})", y, z, x),
+            Step(x, y) => emit!("step({},{})", y, x),
 
             Select(x, y, z) if ty.size() == 1 => emit!("mix({},{},{})", z, y, x),
             Select(x, y, z) if ty.size() == 2 => emit!("mix({},{},bvec2({}))", z, y, x),
@@ -296,7 +301,6 @@ impl FragmentCodegen {
             Select(x, y, z) if ty.size() == 4 => emit!("mix({},{},bvec4({}))", z, y, x),
 
             Smoothstep(x, y, z) => emit!("smoothstep({},{},{})", y, z, x),
-            Step(x, y) => emit!("step({},{})", y, x),
             Eq(x, y) => emit!("({}=={})", x, y),
             Ne(x, y) => emit!("({}!={})", x, y),
             Lt(x, y) => emit!("({}<{})", x, y),
@@ -344,7 +348,7 @@ impl FragmentCodegen {
             ExtractW(x) => emit!("{}.w", x),
 
             Normalize(x) if ty == F1 => emit!("sign({})", x),
-            Length(x) if self.graph_atoms.get(&x).expect("codegen error").1 == F1 => {
+            Length(x) if graph.type_of(x) == F1 => {
                 emit!("abs({})", x)
             }
 
@@ -363,7 +367,7 @@ impl FragmentCodegen {
         }
     }
 
-    fn render_input(&mut self, offset: u32, size: u32) -> String {
+    fn emit_input(&mut self, offset: u32, size: u32) -> String {
         let (b16, b4, b1) = (offset >> 4, (offset >> 2) & 3, (offset & 3) << 3);
         let b4 = match b4 {
             0 => "x",

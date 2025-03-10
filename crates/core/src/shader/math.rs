@@ -2,7 +2,7 @@
 
 pub use types::*;
 pub mod types {
-    use crate::graph::{Graph, Op, OpAddr};
+    use crate::graph::{Graph, OpAddr, OpLiteral, OpValue};
     use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Sub};
 
     #[doc(hidden)]
@@ -118,99 +118,99 @@ pub mod types {
         ($type:ty, $int:ty) => {
             impl $type {
                 pub fn sin(self) -> Self {
-                    Self(Graph::push_collect(Op::Sin(self.0)))
+                    Self(Graph::push_collect(OpValue::Sin(self.0)))
                 }
 
                 pub fn cos(self) -> Self {
-                    Self(Graph::push_collect(Op::Cos(self.0)))
+                    Self(Graph::push_collect(OpValue::Cos(self.0)))
                 }
 
                 pub fn tan(self) -> Self {
-                    Self(Graph::push_collect(Op::Tan(self.0)))
+                    Self(Graph::push_collect(OpValue::Tan(self.0)))
                 }
 
                 pub fn asin(self) -> Self {
-                    Self(Graph::push_collect(Op::Asin(self.0)))
+                    Self(Graph::push_collect(OpValue::Asin(self.0)))
                 }
 
                 pub fn acos(self) -> Self {
-                    Self(Graph::push_collect(Op::Acos(self.0)))
+                    Self(Graph::push_collect(OpValue::Acos(self.0)))
                 }
 
                 pub fn atan(self) -> Self {
-                    Self(Graph::push_collect(Op::Atan(self.0)))
+                    Self(Graph::push_collect(OpValue::Atan(self.0)))
                 }
 
                 pub fn sqrt(self) -> Self {
-                    Self(Graph::push_collect(Op::Sqrt(self.0)))
+                    Self(Graph::push_collect(OpValue::Sqrt(self.0)))
                 }
 
                 pub fn exp(self) -> Self {
-                    Self(Graph::push_collect(Op::Exp(self.0)))
+                    Self(Graph::push_collect(OpValue::Exp(self.0)))
                 }
 
                 pub fn ln(self) -> Self {
-                    Self(Graph::push_collect(Op::Ln(self.0)))
+                    Self(Graph::push_collect(OpValue::Ln(self.0)))
                 }
 
                 pub fn floor(self) -> Self {
-                    Self(Graph::push_collect(Op::Floor(self.0)))
+                    Self(Graph::push_collect(OpValue::Floor(self.0)))
                 }
 
                 pub fn dx(self) -> Self {
-                    Self(Graph::push_collect(Op::DerivX(self.0)))
+                    Self(Graph::push_collect(OpValue::DerivX(self.0)))
                 }
 
                 pub fn dy(self) -> Self {
-                    Self(Graph::push_collect(Op::DerivY(self.0)))
+                    Self(Graph::push_collect(OpValue::DerivY(self.0)))
                 }
 
                 pub fn fwidth(self) -> Self {
-                    Self(Graph::push_collect(Op::DerivWidth(self.0)))
+                    Self(Graph::push_collect(OpValue::DerivWidth(self.0)))
                 }
 
                 pub fn abs(self) -> Self {
-                    Self(Graph::push_collect(Op::Abs(self.0)))
+                    Self(Graph::push_collect(OpValue::Abs(self.0)))
                 }
 
                 pub fn sign(self) -> Self {
-                    Self(Graph::push_collect(Op::Sign(self.0)))
+                    Self(Graph::push_collect(OpValue::Sign(self.0)))
                 }
 
                 pub fn dot(self, rhs: impl Into<Self>) -> float1 {
-                    float1(Graph::push_collect(Op::Dot(self.0, rhs.into().0)))
+                    float1(Graph::push_collect(OpValue::Dot(self.0, rhs.into().0)))
                 }
 
                 pub fn min(self, rhs: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Min(self.0, rhs.into().0)))
+                    Self(Graph::push_collect(OpValue::Min(self.0, rhs.into().0)))
                 }
 
                 pub fn max(self, rhs: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Max(self.0, rhs.into().0)))
+                    Self(Graph::push_collect(OpValue::Max(self.0, rhs.into().0)))
                 }
 
                 pub fn atan2(self, rhs: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Atan2(self.0, rhs.into().0)))
+                    Self(Graph::push_collect(OpValue::Atan2(self.0, rhs.into().0)))
                 }
 
                 pub fn pow(self, rhs: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Pow(self.0, rhs.into().0)))
+                    Self(Graph::push_collect(OpValue::Pow(self.0, rhs.into().0)))
                 }
 
                 pub fn step(self, min: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Step(self.0, min.into().0)))
+                    Self(Graph::push_collect(OpValue::Step(self.0, min.into().0)))
                 }
 
                 pub fn len(self) -> float1 {
-                    float1(Graph::push_collect(Op::Length(self.0)))
+                    float1(Graph::push_collect(OpValue::Length(self.0)))
                 }
 
                 pub fn norm(self) -> Self {
-                    Self(Graph::push_collect(Op::Normalize(self.0)))
+                    Self(Graph::push_collect(OpValue::Normalize(self.0)))
                 }
 
                 pub fn clamp(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Clamp(
+                    Self(Graph::push_collect(OpValue::Clamp(
                         self.0,
                         min.into().0,
                         max.into().0,
@@ -218,7 +218,7 @@ pub mod types {
                 }
 
                 pub fn lerp(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Lerp(
+                    Self(Graph::push_collect(OpValue::Lerp(
                         self.0,
                         min.into().0,
                         max.into().0,
@@ -226,7 +226,7 @@ pub mod types {
                 }
 
                 pub fn smoothstep(self, min: impl Into<Self>, max: impl Into<Self>) -> Self {
-                    Self(Graph::push_collect(Op::Smoothstep(
+                    Self(Graph::push_collect(OpValue::Smoothstep(
                         self.0,
                         min.into().0,
                         max.into().0,
@@ -236,13 +236,13 @@ pub mod types {
 
             impl From<$int> for $type {
                 fn from(x: $int) -> Self {
-                    Self(Graph::push_collect(Op::CastFloat(x.0)))
+                    Self(Graph::push_collect(OpValue::CastFloat(x.0)))
                 }
             }
 
             impl From<$type> for $int {
                 fn from(x: $type) -> Self {
-                    Self(Graph::push_collect(Op::CastInt(x.0)))
+                    Self(Graph::push_collect(OpValue::CastInt(x.0)))
                 }
             }
         };
@@ -252,7 +252,7 @@ pub mod types {
         ($type:ty, $elem:ty) => {
             impl Select for $type {
                 fn select(x: Self, y: Self, switch: boolean) -> Self {
-                    Self(Graph::push_collect(Op::Select(switch.0, x.0, y.0)))
+                    Self(Graph::push_collect(OpValue::Select(switch.0, x.0, y.0)))
                 }
             }
 
@@ -268,68 +268,68 @@ pub mod types {
             impl Add<$type> for $type {
                 type Output = $type;
                 fn add(self, rhs: $type) -> Self::Output {
-                    Self(Graph::push_collect(Op::Add(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Add(self.0, rhs.0)))
                 }
             }
 
             impl Sub<$type> for $type {
                 type Output = $type;
                 fn sub(self, rhs: $type) -> Self::Output {
-                    Self(Graph::push_collect(Op::Sub(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Sub(self.0, rhs.0)))
                 }
             }
 
             impl Mul<$type> for $type {
                 type Output = $type;
                 fn mul(self, rhs: $type) -> Self::Output {
-                    Self(Graph::push_collect(Op::Mul(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Mul(self.0, rhs.0)))
                 }
             }
 
             impl Div<$type> for $type {
                 type Output = $type;
                 fn div(self, rhs: $type) -> Self::Output {
-                    Self(Graph::push_collect(Op::Div(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Div(self.0, rhs.0)))
                 }
             }
 
             impl Rem<$type> for $type {
                 type Output = $type;
                 fn rem(self, rhs: $type) -> Self::Output {
-                    Self(Graph::push_collect(Op::Rem(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Rem(self.0, rhs.0)))
                 }
             }
 
             impl Neg for $type {
                 type Output = $type;
                 fn neg(self) -> Self::Output {
-                    Self(Graph::push_collect(Op::Neg(self.0)))
+                    Self(Graph::push_collect(OpValue::Neg(self.0)))
                 }
             }
 
             impl $type {
                 pub fn eq(self, other: impl Into<Self>) -> boolean {
-                    boolean(Graph::push_collect(Op::Eq(self.0, other.into().0)))
+                    boolean(Graph::push_collect(OpValue::Eq(self.0, other.into().0)))
                 }
 
                 pub fn ne(self, other: impl Into<Self>) -> boolean {
-                    boolean(Graph::push_collect(Op::Ne(self.0, other.into().0)))
+                    boolean(Graph::push_collect(OpValue::Ne(self.0, other.into().0)))
                 }
 
                 pub fn le(self, other: impl Into<Self>) -> boolean {
-                    boolean(Graph::push_collect(Op::Le(self.0, other.into().0)))
+                    boolean(Graph::push_collect(OpValue::Le(self.0, other.into().0)))
                 }
 
                 pub fn ge(self, other: impl Into<Self>) -> boolean {
-                    boolean(Graph::push_collect(Op::Ge(self.0, other.into().0)))
+                    boolean(Graph::push_collect(OpValue::Ge(self.0, other.into().0)))
                 }
 
                 pub fn lt(self, other: impl Into<Self>) -> boolean {
-                    boolean(Graph::push_collect(Op::Lt(self.0, other.into().0)))
+                    boolean(Graph::push_collect(OpValue::Lt(self.0, other.into().0)))
                 }
 
                 pub fn gt(self, other: impl Into<Self>) -> boolean {
-                    boolean(Graph::push_collect(Op::Gt(self.0, other.into().0)))
+                    boolean(Graph::push_collect(OpValue::Gt(self.0, other.into().0)))
                 }
             }
         };
@@ -348,17 +348,17 @@ pub mod types {
 
             impl $type {
                 pub fn x(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractX(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractX(self.0)))
                 }
 
                 pub fn y(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractY(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractY(self.0)))
                 }
             }
 
             impl From<$scalar> for $type {
                 fn from(x: $scalar) -> Self {
-                    Self(Graph::push_collect(Op::Splat2(x.0)))
+                    Self(Graph::push_collect(OpValue::Splat2(x.0)))
                 }
             }
 
@@ -370,7 +370,7 @@ pub mod types {
 
             impl<X: Into<$scalar>, Y: Into<$scalar>> From<(X, Y)> for $type {
                 fn from((x, y): (X, Y)) -> Self {
-                    Self(Graph::push_collect(Op::Vec2(
+                    Self(Graph::push_collect(OpValue::Vec2(
                         Into::<$scalar>::into(x).0,
                         Into::<$scalar>::into(y).0,
                     )))
@@ -385,21 +385,21 @@ pub mod types {
 
             impl $type {
                 pub fn x(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractX(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractX(self.0)))
                 }
 
                 pub fn y(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractY(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractY(self.0)))
                 }
 
                 pub fn z(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractZ(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractZ(self.0)))
                 }
             }
 
             impl From<$scalar> for $type {
                 fn from(x: $scalar) -> Self {
-                    Self(Graph::push_collect(Op::Splat3(x.0)))
+                    Self(Graph::push_collect(OpValue::Splat3(x.0)))
                 }
             }
 
@@ -411,7 +411,7 @@ pub mod types {
 
             impl<X: Into<$scalar>, Y: Into<$scalar>, Z: Into<$scalar>> From<(X, Y, Z)> for $type {
                 fn from((x, y, z): (X, Y, Z)) -> Self {
-                    Self(Graph::push_collect(Op::Vec3(
+                    Self(Graph::push_collect(OpValue::Vec3(
                         Into::<$scalar>::into(x).0,
                         Into::<$scalar>::into(y).0,
                         Into::<$scalar>::into(z).0,
@@ -427,25 +427,25 @@ pub mod types {
 
             impl $type {
                 pub fn x(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractX(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractX(self.0)))
                 }
 
                 pub fn y(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractY(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractY(self.0)))
                 }
 
                 pub fn z(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractZ(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractZ(self.0)))
                 }
 
                 pub fn w(self) -> $scalar {
-                    $scalar(Graph::push_collect(Op::ExtractW(self.0)))
+                    $scalar(Graph::push_collect(OpValue::ExtractW(self.0)))
                 }
             }
 
             impl From<$scalar> for $type {
                 fn from(x: $scalar) -> Self {
-                    Self(Graph::push_collect(Op::Splat4(x.0)))
+                    Self(Graph::push_collect(OpValue::Splat4(x.0)))
                 }
             }
 
@@ -459,7 +459,7 @@ pub mod types {
                 From<(X, Y, Z, W)> for $type
             {
                 fn from((x, y, z, w): (X, Y, Z, W)) -> Self {
-                    Self(Graph::push_collect(Op::Vec4(
+                    Self(Graph::push_collect(OpValue::Vec4(
                         Into::<$scalar>::into(x).0,
                         Into::<$scalar>::into(y).0,
                         Into::<$scalar>::into(z).0,
@@ -475,28 +475,28 @@ pub mod types {
             impl BitAnd for $type {
                 type Output = $type;
                 fn bitand(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(Op::And(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::And(self.0, rhs.0)))
                 }
             }
 
             impl BitOr for $type {
                 type Output = $type;
                 fn bitor(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(Op::Or(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Or(self.0, rhs.0)))
                 }
             }
 
             impl BitXor for $type {
                 type Output = $type;
                 fn bitxor(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(Op::Xor(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Xor(self.0, rhs.0)))
                 }
             }
 
             impl Not for $type {
                 type Output = $type;
                 fn not(self) -> Self::Output {
-                    Self(Graph::push_collect(Op::Not(self.0)))
+                    Self(Graph::push_collect(OpValue::Not(self.0)))
                 }
             }
         };
@@ -524,7 +524,7 @@ pub mod types {
 
     impl float3 {
         pub fn cross(self, rhs: Self) -> Self {
-            Self(Graph::push_collect(Op::Cross(self.0, rhs.0)))
+            Self(Graph::push_collect(OpValue::Cross(self.0, rhs.0)))
         }
     }
 
@@ -536,15 +536,18 @@ pub mod types {
 
     impl texture {
         pub fn size(&self) -> int2 {
-            int2(Graph::push_collect(Op::TextureSize(self.0)))
+            int2(Graph::push_collect(OpValue::TextureSize(self.0)))
         }
 
         pub fn sample_linear(&self, pos: impl Into<float2>) -> float4 {
-            float4(Graph::push_collect(Op::TextureLinear(self.0, pos.into().0)))
+            float4(Graph::push_collect(OpValue::TextureLinear(
+                self.0,
+                pos.into().0,
+            )))
         }
 
         pub fn sample_nearest(&self, pos: impl Into<float2>) -> float4 {
-            float4(Graph::push_collect(Op::TextureNearest(
+            float4(Graph::push_collect(OpValue::TextureNearest(
                 self.0,
                 pos.into().0,
             )))
@@ -553,25 +556,31 @@ pub mod types {
 
     impl From<f32> for float1 {
         fn from(value: f32) -> Self {
-            Self(Graph::push_collect(Op::LiteralFloat(value.into())))
+            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Float(
+                value,
+            ))))
         }
     }
 
     impl From<i32> for float1 {
         fn from(value: i32) -> Self {
-            Self(Graph::push_collect(Op::LiteralFloat((value as f32).into())))
+            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Float(
+                value as _,
+            ))))
         }
     }
 
     impl From<i32> for int1 {
         fn from(value: i32) -> Self {
-            Self(Graph::push_collect(Op::LiteralInt(value)))
+            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Int(value))))
         }
     }
 
     impl From<bool> for boolean {
         fn from(value: bool) -> Self {
-            Self(Graph::push_collect(Op::LiteralBool(value)))
+            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Bool(
+                value,
+            ))))
         }
     }
 }

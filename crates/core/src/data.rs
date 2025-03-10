@@ -49,6 +49,38 @@ impl Bounds {
     pub fn height(&self) -> u32 {
         self.size().height
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.left >= self.right || self.top >= self.bottom
+    }
+
+    pub fn intersect(&self, other: Self) -> Self {
+        let left = self.left.max(other.left);
+        let right = self.right.min(other.right);
+        let top = self.top.max(other.top);
+        let bottom = self.bottom.min(other.bottom);
+
+        Self {
+            left,
+            right,
+            top,
+            bottom,
+        }
+    }
+
+    pub fn union(&self, other: Self) -> Self {
+        let left = self.left.min(other.left);
+        let right = self.right.max(other.right);
+        let top = self.top.min(other.top);
+        let bottom = self.bottom.max(other.bottom);
+
+        Self {
+            left,
+            right,
+            top,
+            bottom,
+        }
+    }
 }
 
 impl From<[u32; 2]> for Size {
