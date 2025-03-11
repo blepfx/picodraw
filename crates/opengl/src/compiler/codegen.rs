@@ -112,6 +112,10 @@ impl FragmentCodegen {
     pub fn emit_atom(&mut self, graph: &Graph, op: OpAddr) {
         let inline = match graph.value_of(op) {
             OpValue::Literal(_) => true,
+            OpValue::Position => true,
+            OpValue::Resolution => true,
+            OpValue::QuadStart => true,
+            OpValue::QuadEnd => true,
             OpValue::Input(OpInput::TextureRender) => true,
             OpValue::Input(OpInput::TextureStatic) => true,
             _ => {
@@ -129,7 +133,7 @@ impl FragmentCodegen {
             let typestr = self.emit_type(graph.type_of(op));
 
             write!(&mut self.buffer, "{} {}={};", typestr, ident, result).ok();
-            self.graph_atoms.insert(op, result);
+            self.graph_atoms.insert(op, ident);
         }
     }
 
