@@ -56,7 +56,8 @@ fn main() {
                         let circle = ShaderDataCircle::read();
                         let mask =
                             sdf_circle(io::position(), float2((circle.x, circle.y)), circle.radius);
-                        io::write_color(float4((1.0, 0.5, 1.0, mask * circle.alpha)));
+
+                        float4((1.0, 0.5, 1.0, mask * circle.alpha))
                     }));
 
                     Data {

@@ -11,9 +11,7 @@ const CANVAS_SIZE: u32 = 512;
 #[test]
 fn fill_purple() {
     run("fill-purple", |context| {
-        let shader = context.create_shader(Graph::collect(|| {
-            io::write_color(float4((1.0, 0.0, 1.0, 1.0)));
-        }));
+        let shader = context.create_shader(Graph::collect(|| float4((1.0, 0.0, 1.0, 1.0))));
 
         let mut commands = CommandBuffer::new();
         commands
@@ -32,9 +30,8 @@ fn fill_checker() {
         let shader = context.create_shader(Graph::collect(|| {
             let grid = (io::position() / 16.0).floor();
             let checker = (grid.x() + grid.y()) % 2.0;
-            io::write_color(
-                float4(checker).lerp(float4((0.0, 0.0, 0.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0))),
-            );
+
+            float4(checker).lerp(float4((0.0, 0.0, 0.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)))
         }));
 
         let mut commands = CommandBuffer::new();
@@ -70,7 +67,7 @@ fn blurry_semicircle() {
             let mask = sdf_circle(io::position(), float2((x, y)), float1(128.0));
             let color = texture * mask;
 
-            io::write_color(float4(mask * color));
+            float4(mask * color)
         }));
 
         let shader_boxblur = context.create_shader(Graph::collect(|| {
@@ -83,7 +80,7 @@ fn blurry_semicircle() {
                 }
             }
 
-            io::write_color(result / (11 * 11) as f32);
+            result / (11 * 11) as f32
         }));
 
         let buffer = context.create_texture_render();
@@ -149,7 +146,7 @@ fn msdf_text() {
             );
 
             let mask = (((2.0 * scale).max(1.0) * (median - 0.5)) + 0.5).smoothstep(0.0, 1.0);
-            io::write_color(float4(mask));
+            float4(mask)
         }));
 
         let mut commands = CommandBuffer::new();
@@ -189,7 +186,7 @@ fn stress_test() {
         let shader = context.create_shader(Graph::collect(|| {
             let [r, g, b] = io::read::<[f32; 3]>();
             io::read::<[u32; 8]>();
-            io::write_color(float4((r, g, b, 1.0)));
+            float4((r, g, b, 1.0))
         }));
 
         for _ in 0..2 {
@@ -414,9 +411,7 @@ fn serialize_test() {
                 1.0 - mask
             };
 
-            io::write_color(float4(
-                bounding_box + background + mask_box + mask_circle + mask_point,
-            ));
+            float4(bounding_box + background + mask_box + mask_circle + mask_point)
         }));
 
         let mut commands = CommandBuffer::new();
@@ -485,12 +480,9 @@ fn resource_mgmt() {
             data: &[127, 127, 127, 255, 255, 255],
         });
 
-        let shader_0 = context.create_shader(Graph::collect(|| {
-            io::write_color(float4((0.0, 0.0, 0.0, 0.25)));
-        }));
-
+        let shader_0 = context.create_shader(Graph::collect(|| float4((0.0, 0.0, 0.0, 0.25))));
         let shader_1 = context.create_shader(Graph::collect(|| {
-            io::write_color(io::read::<Texture>().sample_linear(io::position()))
+            io::read::<Texture>().sample_linear(io::position())
         }));
 
         let buffer_0 = context.create_texture_render();
@@ -514,7 +506,7 @@ fn resource_mgmt() {
         });
 
         let shader_2 = context.create_shader(Graph::collect(|| {
-            io::write_color(io::read::<Texture>().sample_linear(io::position()) * 2.0)
+            io::read::<Texture>().sample_linear(io::position()) * 2.0
         }));
 
         assert!(context.delete_shader(shader_1));
@@ -541,12 +533,9 @@ fn resource_mgmt() {
         assert!(context.delete_texture_static(texture_2));
         assert!(!context.delete_texture_static(texture_2));
 
+        let shader_4 = context.create_shader(Graph::collect(|| float4((1.0, 1.0, 1.0, 1.0))));
         let shader_3 = context.create_shader(Graph::collect(|| {
-            io::write_color(io::read::<RenderTexture>().sample_linear(io::position()))
-        }));
-
-        let shader_4 = context.create_shader(Graph::collect(|| {
-            io::write_color(float4((1.0, 1.0, 1.0, 1.0)))
+            io::read::<RenderTexture>().sample_linear(io::position())
         }));
 
         // frame 2 drawpath
@@ -690,7 +679,7 @@ fn shader_ops() {
                         .select(funcs[i](pos.x(), pos.y() % (1.0 / funcs.len() as f32)), 0.0);
             }
 
-            io::write_color(float4((color.x(), color.y(), color.z(), 1.0)));
+            float4((color.x(), color.y(), color.z(), 1.0))
         }));
 
         let mut commands = CommandBuffer::new();

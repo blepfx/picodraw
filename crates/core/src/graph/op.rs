@@ -14,7 +14,6 @@ pub enum OpValue {
     QuadEnd,
 
     Input(OpInput),
-    Output(OpAddr),
     Literal(OpLiteral),
 
     Add(OpAddr, OpAddr),
@@ -113,7 +112,7 @@ pub enum OpLiteral {
     Bool(bool),
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub enum OpType {
     F1,
     F2,
@@ -126,7 +125,6 @@ pub enum OpType {
     Boolean,
     TextureStatic,
     TextureRender,
-    Void,
 }
 
 impl OpAddr {
@@ -168,7 +166,24 @@ impl OpType {
             F3 | I3 => 3,
             F4 | I4 => 4,
             TextureStatic | TextureRender => 1,
-            Void => 0,
+        }
+    }
+}
+
+impl OpInput {
+    pub fn value_type(self) -> OpType {
+        use OpType::*;
+
+        match self {
+            Self::F32 => F1,
+            Self::I32 => I1,
+            Self::I16 => I1,
+            Self::I8 => I1,
+            Self::U32 => I1,
+            Self::U16 => I1,
+            Self::U8 => I1,
+            Self::TextureStatic => TextureStatic,
+            Self::TextureRender => TextureRender,
         }
     }
 }
@@ -191,13 +206,7 @@ impl OpValue {
             Input(OpInput::U8) => I1,
             Input(OpInput::TextureStatic) => TextureStatic,
             Input(OpInput::TextureRender) => TextureRender,
-            Output(x) => {
-                if arg(x)? == F4 {
-                    Void
-                } else {
-                    return None;
-                }
-            }
+
             Literal(OpLiteral::Float(_)) => F1,
             Literal(OpLiteral::Int(_)) => I1,
             Literal(OpLiteral::Bool(_)) => Boolean,
@@ -454,7 +463,7 @@ impl OpValue {
             | Not(x) | Neg(x) | Abs(x) | Sign(x) | Floor(x) | DerivX(x) | DerivY(x)
             | DerivWidth(x) | Normalize(x) | ExtractX(x) | ExtractY(x) | ExtractZ(x)
             | ExtractW(x) | Length(x) | Splat2(x) | Splat3(x) | Splat4(x) | CastFloat(x)
-            | CastInt(x) | TextureSize(x) | Output(x) => {
+            | CastInt(x) | TextureSize(x) => {
                 if idx == 0 {
                     Some(x)
                 } else {
@@ -566,6 +575,26 @@ impl Hash for OpLiteral {
 impl Debug for OpAddr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "${:0>4x}", self.0)
+    }
+}
+
+impl Debug for OpType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use OpType::*;
+
+        match self {
+            F1 => write!(f, "F1"),
+            F2 => write!(f, "F2"),
+            F3 => write!(f, "F3"),
+            F4 => write!(f, "F4"),
+            I1 => write!(f, "I1"),
+            I2 => write!(f, "I2"),
+            I3 => write!(f, "I3"),
+            I4 => write!(f, "I4"),
+            Boolean => write!(f, "B1"),
+            TextureStatic => write!(f, "TX"),
+            TextureRender => write!(f, "TR"),
+        }
     }
 }
 

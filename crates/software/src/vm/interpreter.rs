@@ -5,111 +5,183 @@ pub const TILE_SIZE: usize = 32;
 pub const REGISTER_COUNT: usize = 32;
 pub const PIXEL_COUNT: usize = TILE_SIZE * TILE_SIZE;
 
+#[repr(align(8))]
 #[derive(Debug, Clone, Copy)]
-pub enum VMOpcode {
-    PosX(VMReg),
-    PosY(VMReg),
-    ResX(VMReg),
-    ResY(VMReg),
-    QuadT(VMReg),
-    QuadL(VMReg),
-    QuadB(VMReg),
-    QuadR(VMReg),
+pub enum VMOp<I, O> {
+    PosX(O),
+    PosY(O),
+    ResX(O),
+    ResY(O),
+    QuadT(O),
+    QuadL(O),
+    QuadB(O),
+    QuadR(O),
 
-    LitF(f32, VMReg),
-    LitI(i32, VMReg),
+    LitF(f32, O),
+    LitI(i32, O),
 
-    ReadF(u32, VMReg),
-    ReadI(u32, VMReg),
+    ReadF(u32, O),
+    ReadI(u32, O),
 
-    AddI(VMReg, VMReg, VMReg),
-    AddF(VMReg, VMReg, VMReg),
-    SubI(VMReg, VMReg, VMReg),
-    SubF(VMReg, VMReg, VMReg),
-    MulI(VMReg, VMReg, VMReg),
-    MulF(VMReg, VMReg, VMReg),
-    DivI(VMReg, VMReg, VMReg),
-    DivF(VMReg, VMReg, VMReg),
-    ModI(VMReg, VMReg, VMReg),
-    ModF(VMReg, VMReg, VMReg),
-    NegF(VMReg, VMReg),
-    NegI(VMReg, VMReg),
+    AddI(I, I, O),
+    AddF(I, I, O),
+    SubI(I, I, O),
+    SubF(I, I, O),
+    MulI(I, I, O),
+    MulF(I, I, O),
+    DivI(I, I, O),
+    DivF(I, I, O),
+    ModI(I, I, O),
+    ModF(I, I, O),
 
-    Add3F(VMReg, VMReg, VMReg, VMReg),
-    Add4F(VMReg, VMReg, VMReg, VMReg, VMReg),
+    AddCI(i32, I, O),
+    AddCF(f32, I, O),
+    SubCI(i32, I, O),
+    SubCF(f32, I, O),
+    MulCI(i32, I, O),
+    MulCF(f32, I, O),
 
-    MinF(VMReg, VMReg, VMReg),
-    MinI(VMReg, VMReg, VMReg),
-    MaxF(VMReg, VMReg, VMReg),
-    MaxI(VMReg, VMReg, VMReg),
-    AbsF(VMReg, VMReg),
-    AbsI(VMReg, VMReg),
-    FloorF(VMReg, VMReg),
+    NegF(I, O),
+    NegI(I, O),
 
-    SinF(VMReg, VMReg),
-    CosF(VMReg, VMReg),
-    TanF(VMReg, VMReg),
+    MinF(I, I, O),
+    MinI(I, I, O),
+    MaxF(I, I, O),
+    MaxI(I, I, O),
+    AbsF(I, O),
+    AbsI(I, O),
+    FloorF(I, O),
 
-    AsinF(VMReg, VMReg),
-    AcosF(VMReg, VMReg),
-    AtanF(VMReg, VMReg),
-    Atan2F(VMReg, VMReg, VMReg),
+    SinF(I, O),
+    CosF(I, O),
+    TanF(I, O),
 
-    SqrtF(VMReg, VMReg),
-    PowF(VMReg, VMReg, VMReg),
-    ExpF(VMReg, VMReg),
-    LnF(VMReg, VMReg),
+    AsinF(I, O),
+    AcosF(I, O),
+    AtanF(I, O),
+    Atan2F(I, I, O),
 
-    AndI(VMReg, VMReg, VMReg),
-    OrI(VMReg, VMReg, VMReg),
-    XorI(VMReg, VMReg, VMReg),
-    NotI(VMReg, VMReg),
+    SqrtF(I, O),
+    PowF(I, I, O),
+    ExpF(I, O),
+    LnF(I, O),
 
-    LerpF(VMReg, VMReg, VMReg, VMReg),
-    SmoothstepF(VMReg, VMReg, VMReg, VMReg),
+    AndI(I, I, O),
+    OrI(I, I, O),
+    XorI(I, I, O),
+    NotI(I, O),
 
-    Select(VMReg, VMReg, VMReg, VMReg),
+    Select(I, I, I, O),
 
-    CastF(VMReg, VMReg),
-    CastI(VMReg, VMReg),
+    CastF(I, O),
+    CastI(I, O),
 
-    DxF(VMReg, VMReg),
-    DyF(VMReg, VMReg),
+    DxF(I, O),
+    DyF(I, O),
 
-    EqI(VMReg, VMReg, VMReg),
-    EqF(VMReg, VMReg, VMReg),
-    LtI(VMReg, VMReg, VMReg),
-    LtF(VMReg, VMReg, VMReg),
-    GtI(VMReg, VMReg, VMReg),
-    GtF(VMReg, VMReg, VMReg),
-    NeI(VMReg, VMReg, VMReg),
-    NeF(VMReg, VMReg, VMReg),
-    LeI(VMReg, VMReg, VMReg),
-    LeF(VMReg, VMReg, VMReg),
-    GeI(VMReg, VMReg, VMReg),
-    GeF(VMReg, VMReg, VMReg),
+    EqI(I, I, O),
+    EqF(I, I, O),
+    LtI(I, I, O),
+    LtF(I, I, O),
+    GtI(I, I, O),
+    GtF(I, I, O),
+    NeI(I, I, O),
+    NeF(I, I, O),
+    LeI(I, I, O),
+    LeF(I, I, O),
+    GeI(I, I, O),
+    GeF(I, I, O),
 }
+
+impl<I, O> VMOp<I, O> {
+    pub fn map<I0, O0>(
+        self,
+        mut inp: impl FnMut(I) -> I0,
+        out: impl FnOnce(O) -> O0,
+    ) -> VMOp<I0, O0> {
+        use VMOp::*;
+        match self {
+            PosX(o) => PosX(out(o)),
+            PosY(o) => PosY(out(o)),
+            ResX(o) => ResX(out(o)),
+            ResY(o) => ResY(out(o)),
+            QuadT(o) => QuadT(out(o)),
+            QuadL(o) => QuadL(out(o)),
+            QuadB(o) => QuadB(out(o)),
+            QuadR(o) => QuadR(out(o)),
+            LitF(val, o) => LitF(val, out(o)),
+            LitI(val, o) => LitI(val, out(o)),
+            ReadF(idx, o) => ReadF(idx, out(o)),
+            ReadI(idx, o) => ReadI(idx, out(o)),
+            AddI(a, b, o) => AddI(inp(a), inp(b), out(o)),
+            AddF(a, b, o) => AddF(inp(a), inp(b), out(o)),
+            SubI(a, b, o) => SubI(inp(a), inp(b), out(o)),
+            SubF(a, b, o) => SubF(inp(a), inp(b), out(o)),
+            MulI(a, b, o) => MulI(inp(a), inp(b), out(o)),
+            MulF(a, b, o) => MulF(inp(a), inp(b), out(o)),
+            DivI(a, b, o) => DivI(inp(a), inp(b), out(o)),
+            DivF(a, b, o) => DivF(inp(a), inp(b), out(o)),
+            ModI(a, b, o) => ModI(inp(a), inp(b), out(o)),
+            ModF(a, b, o) => ModF(inp(a), inp(b), out(o)),
+            AddCI(a, b, o) => AddCI(a, inp(b), out(o)),
+            AddCF(a, b, o) => AddCF(a as f32, inp(b), out(o)),
+            SubCI(a, b, o) => SubCI(a, inp(b), out(o)),
+            SubCF(a, b, o) => SubCF(a as f32, inp(b), out(o)),
+            MulCI(a, b, o) => MulCI(a, inp(b), out(o)),
+            MulCF(a, b, o) => MulCF(a as f32, inp(b), out(o)),
+            NegF(a, o) => NegF(inp(a), out(o)),
+            NegI(a, o) => NegI(inp(a), out(o)),
+            MinF(a, b, o) => MinF(inp(a), inp(b), out(o)),
+            MinI(a, b, o) => MinI(inp(a), inp(b), out(o)),
+            MaxF(a, b, o) => MaxF(inp(a), inp(b), out(o)),
+            MaxI(a, b, o) => MaxI(inp(a), inp(b), out(o)),
+            AbsF(a, o) => AbsF(inp(a), out(o)),
+            AbsI(a, o) => AbsI(inp(a), out(o)),
+            FloorF(a, o) => FloorF(inp(a), out(o)),
+            SinF(a, o) => SinF(inp(a), out(o)),
+            CosF(a, o) => CosF(inp(a), out(o)),
+            TanF(a, o) => TanF(inp(a), out(o)),
+            AsinF(a, o) => AsinF(inp(a), out(o)),
+            AcosF(a, o) => AcosF(inp(a), out(o)),
+            AtanF(a, o) => AtanF(inp(a), out(o)),
+            Atan2F(a, b, o) => Atan2F(inp(a), inp(b), out(o)),
+            SqrtF(a, o) => SqrtF(inp(a), out(o)),
+            PowF(a, b, o) => PowF(inp(a), inp(b), out(o)),
+            ExpF(a, o) => ExpF(inp(a), out(o)),
+            LnF(a, o) => LnF(inp(a), out(o)),
+            AndI(a, b, o) => AndI(inp(a), inp(b), out(o)),
+            OrI(a, b, o) => OrI(inp(a), inp(b), out(o)),
+            XorI(a, b, o) => XorI(inp(a), inp(b), out(o)),
+            NotI(a, o) => NotI(inp(a), out(o)),
+            Select(a, b, c, o) => Select(inp(a), inp(b), inp(c), out(o)),
+            CastF(a, o) => CastF(inp(a), out(o)),
+            CastI(a, o) => CastI(inp(a), out(o)),
+            DxF(a, o) => DxF(inp(a), out(o)),
+            DyF(a, o) => DyF(inp(a), out(o)),
+            EqI(a, b, o) => EqI(inp(a), inp(b), out(o)),
+            EqF(a, b, o) => EqF(inp(a), inp(b), out(o)),
+            LtI(a, b, o) => LtI(inp(a), inp(b), out(o)),
+            LtF(a, b, o) => LtF(inp(a), inp(b), out(o)),
+            GtI(a, b, o) => GtI(inp(a), inp(b), out(o)),
+            GtF(a, b, o) => GtF(inp(a), inp(b), out(o)),
+            NeI(a, b, o) => NeI(inp(a), inp(b), out(o)),
+            NeF(a, b, o) => NeF(inp(a), inp(b), out(o)),
+            LeI(a, b, o) => LeI(inp(a), inp(b), out(o)),
+            LeF(a, b, o) => LeF(inp(a), inp(b), out(o)),
+            GeI(a, b, o) => GeI(inp(a), inp(b), out(o)),
+            GeF(a, b, o) => GeF(inp(a), inp(b), out(o)),
+        }
+    }
+
+    pub fn output(self) -> O {
+        let mut output = None;
+        self.map(|_| (), |o| output = Some(o));
+        output.unwrap()
+    }
+}
+
 pub type VMReg = u8;
-
-#[derive(Copy, Clone)]
-pub union VMSlot {
-    pub int: i32,
-    pub float: f32,
-}
-
-#[derive(Copy, Clone)]
-#[repr(align(128))]
-pub struct VMTile([VMSlot; PIXEL_COUNT]);
-
-/// SAFETY: should be zeroable
-pub unsafe trait VMRegister {
-    const WIDTH: usize;
-    const HEIGHT: usize;
-    fn as_i32(&self) -> &[i32];
-    fn as_f32(&self) -> &[f32];
-    fn as_i32_mut(&mut self) -> &mut [i32];
-    fn as_f32_mut(&mut self) -> &mut [f32];
-}
+pub type VMOpcode = VMOp<VMReg, VMReg>;
 
 pub struct VMProgram<'a> {
     pub ops: &'a [VMOpcode],
@@ -141,7 +213,7 @@ impl<R: VMRegister> VMInterpreter<R> {
         #[allow(unused_unsafe)]
         #[multiversion(targets = "simd")]
         unsafe fn execute_simd<R: VMRegister>(state: &mut VMInterpreter<R>, program: VMProgram) {
-            use VMOpcode::*;
+            use VMOp::*;
 
             macro_rules! registers {
                 ($($input:expr,)* mut $output:expr) => {
@@ -253,12 +325,6 @@ impl<R: VMRegister> VMInterpreter<R> {
                     AddF(a, b, c) => {
                         op!(|a: f32, b: f32, c: mut f32| a + b);
                     }
-                    Add3F(a, b, c, d) => {
-                        op!(|a: f32, b: f32, c: f32, d: mut f32| a + b + c);
-                    }
-                    Add4F(a, b, c, d, e) => {
-                        op!(|a: f32, b: f32, c: f32, d: f32, e: mut f32| a + b + c + d);
-                    }
                     AddI(a, b, c) => {
                         op!(|a: i32, b: i32, c: mut i32| a + b);
                     }
@@ -286,6 +352,24 @@ impl<R: VMRegister> VMInterpreter<R> {
                     ModI(a, b, c) => {
                         op!(|a: i32, b: i32, c: mut i32| a % b);
                     }
+                    AddCF(a, b, c) => {
+                        op!(|b: f32, c: mut f32| a + b);
+                    }
+                    AddCI(a, b, c) => {
+                        op!(|b: i32, c: mut i32| a + b);
+                    }
+                    SubCF(a, b, c) => {
+                        op!(|b: f32, c: mut f32| a - b);
+                    }
+                    SubCI(a, b, c) => {
+                        op!(|b: i32, c: mut i32| a - b);
+                    }
+                    MulCF(a, b, c) => {
+                        op!(|b: f32, c: mut f32| a * b);
+                    }
+                    MulCI(a, b, c) => {
+                        op!(|b: i32, c: mut i32| a * b);
+                    }
                     NegF(a, b) => {
                         op!(|a: f32, b: mut f32| -a);
                     }
@@ -312,15 +396,6 @@ impl<R: VMRegister> VMInterpreter<R> {
                     }
                     FloorF(a, b) => {
                         op!(|a: f32, b: mut f32| a.floor());
-                    }
-                    LerpF(a, b, c, d) => {
-                        op!(|a: f32, b: f32, c: f32, d: mut f32| a.mul_add(c - b, b));
-                    }
-                    SmoothstepF(a, b, c, d) => {
-                        op!(|a: f32, b: f32, c: f32, d: mut f32| {
-                            let t = ((a - b) / (c - b)).clamp(0.0, 1.0);
-                            t * t * (3.0 - 2.0 * t)
-                        });
                     }
                     SinF(a, b) => {
                         op!(|a: f32, b: mut f32| a.sin());
@@ -524,6 +599,26 @@ impl<R: VMRegister> VMInterpreter<R> {
     }
 }
 
+#[derive(Copy, Clone)]
+pub union VMSlot {
+    pub int: i32,
+    pub float: f32,
+}
+
+#[derive(Copy, Clone)]
+#[repr(align(128))]
+pub struct VMTile([VMSlot; PIXEL_COUNT]);
+
+/// SAFETY: should be zeroable
+pub unsafe trait VMRegister {
+    const WIDTH: usize;
+    const HEIGHT: usize;
+    fn as_i32(&self) -> &[i32];
+    fn as_f32(&self) -> &[f32];
+    fn as_i32_mut(&mut self) -> &mut [i32];
+    fn as_f32_mut(&mut self) -> &mut [f32];
+}
+
 unsafe impl VMRegister for VMSlot {
     const WIDTH: usize = 1;
     const HEIGHT: usize = 1;
@@ -575,11 +670,7 @@ mod test {
     fn test_vm() {
         let mut interpreter = VMInterpreter::<VMSlot>::new();
         let program = VMProgram {
-            ops: &[
-                VMOpcode::LitF(1.0, 0),
-                VMOpcode::ReadF(0, 1),
-                VMOpcode::AddF(0, 1, 2),
-            ],
+            ops: &[VMOp::LitF(1.0, 0), VMOp::ReadF(0, 1), VMOp::AddF(0, 1, 2)],
             data: &[VMSlot { float: -1.5 }],
             tile_x: 0.0,
             tile_y: 0.0,

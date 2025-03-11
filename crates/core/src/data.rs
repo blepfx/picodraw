@@ -81,6 +81,15 @@ impl Bounds {
             bottom,
         }
     }
+
+    pub fn offset(&self, x: i32, y: i32) -> Self {
+        Self {
+            left: self.left.saturating_add_signed(x),
+            right: self.right.saturating_add_signed(x),
+            top: self.top.saturating_add_signed(y),
+            bottom: self.bottom.saturating_add_signed(y),
+        }
+    }
 }
 
 impl From<[u32; 2]> for Size {

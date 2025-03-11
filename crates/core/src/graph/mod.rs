@@ -1,3 +1,5 @@
+#[cfg(feature = "collect")]
+mod collect;
 mod op;
 pub use op::*;
 
@@ -10,6 +12,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 /// The graph is represented by a list of operations ([`OpValue`]) that each define a value computed based on other operations ([`OpAddr`]).
 pub struct Graph {
     ops: Vec<GraphOp>,
+    output: OpAddr,
     hash: u64,
 }
 
@@ -28,36 +31,6 @@ struct GraphOp {
     value: OpValue,
     type_: OpType,
     dependants: Vec<OpAddr>,
-}
-
-#[cfg(feature = "collect")]
-thread_local! {
-    static COLLECT_GRAPH: std::cell::RefCell<Option<GraphBuilder>> = std::cell::RefCell::new(None);
-}
-
-#[cfg(feature = "collect")]
-impl Graph {
-    pub fn push_collect(op: OpValue) -> OpAddr {
-        COLLECT_GRAPH.with(|graph| {
-            let mut graph = graph.borrow_mut();
-            let graph = graph
-                .as_mut()
-                .expect("not executing in a shader graph context");
-
-            graph.push(op)
-        })
-    }
-
-    pub fn collect(f: impl FnOnce()) -> Self {
-        let prev = COLLECT_GRAPH
-            .with(|engine| std::mem::replace(&mut *engine.borrow_mut(), Some(GraphBuilder::new())));
-        f();
-        COLLECT_GRAPH
-            .with(|engine| std::mem::replace(&mut *engine.borrow_mut(), prev))
-            .unwrap()
-            .build()
-            .unwrap()
-    }
 }
 
 impl Graph {
@@ -81,8 +54,16 @@ impl Graph {
         self.ops[addr.into_raw()].dependants.iter().copied()
     }
 
+    pub fn output(&self) -> OpAddr {
+        self.output
+    }
+
     pub fn hash(&self) -> u64 {
         self.hash
+    }
+
+    pub fn len(&self) -> u32 {
+        self.ops.len() as u32
     }
 }
 
@@ -97,7 +78,7 @@ impl GraphBuilder {
         OpAddr::from_raw(self.ops.len() - 1)
     }
 
-    pub fn build(self) -> Result<Graph, GraphError> {
+    pub fn finish(self, output: OpAddr) -> Result<Graph, GraphError> {
         let mut ops: Vec<GraphOp> = Vec::new();
         for (op, value) in self.ops.iter().enumerate() {
             let op = OpAddr::from_raw(op);
@@ -126,6 +107,7 @@ impl GraphBuilder {
         Ok(Graph {
             ops,
             hash: self.hash.finish(),
+            output,
         })
     }
 }

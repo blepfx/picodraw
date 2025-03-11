@@ -111,15 +111,13 @@ impl FragmentCodegen {
 
     pub fn emit_atom(&mut self, graph: &Graph, op: OpAddr) {
         let inline = match graph.value_of(op) {
-            OpValue::Output(_) => false,
             OpValue::Literal(_) => true,
             OpValue::Input(OpInput::TextureRender) => true,
             OpValue::Input(OpInput::TextureStatic) => true,
-            _ => match graph.dependents_of(op).count() {
-                0 => return,
-                1 => true,
-                _ => false,
-            },
+            _ => {
+                let dependents = (graph.output() == op) as usize + graph.dependents_of(op).count();
+                dependents < 2
+            }
         };
 
         if inline {
@@ -135,7 +133,16 @@ impl FragmentCodegen {
         }
     }
 
-    pub fn emit_end_graph(&mut self) {
+    pub fn emit_end_graph(&mut self, graph: &Graph) {
+        write!(
+            &mut self.buffer,
+            "outColor={};",
+            self.graph_atoms
+                .get(&graph.output())
+                .expect("codegen error")
+        )
+        .ok();
+
         self.graph_first = false;
         self.graph_atoms.clear();
         self.graph_inputs.clear();
@@ -161,7 +168,7 @@ impl FragmentCodegen {
             OpType::F1 => "float",
             OpType::F2 => "vec2",
             OpType::F3 => "vec3",
-            OpType::F4 | OpType::Void => "vec4",
+            OpType::F4 => "vec4",
             OpType::I1 => "int",
             OpType::I2 => "ivec2",
             OpType::I3 => "ivec3",
@@ -246,10 +253,6 @@ impl FragmentCodegen {
                 format!("{}", index)
             }
 
-            Output(x) => {
-                emit!("(outColor={})", x)
-            }
-
             Literal(x) => match x {
                 OpLiteral::Float(f32::INFINITY) => format!("u2f(0x7F800000u)"),
                 OpLiteral::Float(f32::NEG_INFINITY) => format!("u2f(0xFF800000u)"),
@@ -288,19 +291,19 @@ impl FragmentCodegen {
             Ln(x) => emit!("log({})", x),
             Min(x, y) => emit!("min({},{})", x, y),
             Max(x, y) => emit!("max({},{})", x, y),
-            Clamp(x, y, z) => emit!("clamp({},{},{})", x, y, z),
             Abs(x) => emit!("abs({})", x),
             Sign(x) => emit!("sign({})", x),
             Floor(x) => emit!("floor({})", x),
             Lerp(x, y, z) => emit!("mix({},{},{})", y, z, x),
             Step(x, y) => emit!("step({},{})", y, x),
+            Clamp(x, y, z) => emit!("clamp({},{},{})", x, y, z),
+            Smoothstep(x, y, z) => emit!("smoothstep({},{},{})", y, z, x),
 
             Select(x, y, z) if ty.size() == 1 => emit!("mix({},{},{})", z, y, x),
             Select(x, y, z) if ty.size() == 2 => emit!("mix({},{},bvec2({}))", z, y, x),
             Select(x, y, z) if ty.size() == 3 => emit!("mix({},{},bvec3({}))", z, y, x),
             Select(x, y, z) if ty.size() == 4 => emit!("mix({},{},bvec4({}))", z, y, x),
 
-            Smoothstep(x, y, z) => emit!("smoothstep({},{},{})", y, z, x),
             Eq(x, y) => emit!("({}=={})", x, y),
             Ne(x, y) => emit!("({}!={})", x, y),
             Lt(x, y) => emit!("({}<{})", x, y),

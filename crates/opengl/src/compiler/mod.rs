@@ -76,7 +76,7 @@ impl<'a> Compiler<'a> {
                 for op in graph.iter() {
                     codegen.emit_atom(graph, op);
                 }
-                codegen.emit_end_graph();
+                codegen.emit_end_graph(graph);
             }
 
             codegen.finish()

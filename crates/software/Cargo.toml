@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 picodraw-core = { path = "../core" }
+slotmap = { workspace = true }
 multiversion = "0.8.0"
 fxhash = "0.2"
 rayon = "1"

@@ -1,5 +1,8 @@
+mod backend;
 mod dispatch;
-mod shader;
+mod vm;
+
+pub use backend::*;
 
 // TODO: implement
 //

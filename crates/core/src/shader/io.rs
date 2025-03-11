@@ -9,13 +9,6 @@ pub fn read<T: ShaderData>() -> T::Data {
     T::read()
 }
 
-/// Write a value to the shader output.
-///
-/// Should be called inside of [`Graph::collect`]
-pub fn write_color(color: float4) {
-    Graph::push_collect(OpValue::Output(color.0));
-}
-
 /// Get the current fragment position in physical pixels
 ///
 /// Should be called inside of [`Graph::collect`]
