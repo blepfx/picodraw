@@ -1,199 +1,328 @@
-use std::{
-    alloc::{Layout, alloc_zeroed},
-    sync::mpsc::{Receiver, Sender},
+use crate::{
+    simd::dispatch,
+    vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMInterpreter, VMProgram, VMSlot, VMTile},
 };
+use bumpalo::{Bump, collections::Vec};
+use picodraw_core::Bounds;
+use std::{iter::from_fn, ops::Range};
 
-use crate::vm::{
-    CompiledShader, PIXEL_COUNT, VMInterpreter, VMProgram, VMRegister, VMSlot, VMTile,
-};
-use fxhash::FxHashMap;
-use picodraw_core::{Bounds, Size};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+pub enum BufferType {
+    Rgba8Row,
+    Argb8Row,
+    Abrg8Row,
+    Brga8Row,
+    Rgba8Column,
+    Argb8Column,
+    Abrg8Column,
+    Brga8Column,
+}
 
-pub struct DispatchObject<'a> {
-    pub shader: &'a CompiledShader,
-    pub data: &'a [VMSlot],
+struct DispatchObject<'a> {
+    shader: &'a CompiledShader,
+    data: Range<usize>,
+    bounds: Bounds,
+}
+
+pub struct DispatchBuffer<'a> {
+    pub buffer: &'a mut [u32],
+    pub width: u32,
+    pub height: u32,
     pub bounds: Bounds,
 }
 
-pub struct DispatchRequest<'a> {
-    pub objects: &'a [DispatchObject<'a>],
-    pub bounds: Bounds,
-
-    pub target_size: Size,
-    pub target_buffer: &'a mut [u32],
+pub struct Dispatcher<'a> {
+    arena: &'a Bump,
+    objects: Vec<'a, DispatchObject<'a>>,
+    data: Vec<'a, VMSlot>,
 }
 
-pub struct Dispatcher {
-    sender: Sender<(u32, u32, DispatchTile)>,
-    receiver: Receiver<(u32, u32, DispatchTile)>,
-    tiles: FxHashMap<(u32, u32), Vec<u32>>,
-}
-
-struct DispatchTile(pub Box<[u32; PIXEL_COUNT]>);
-
-impl DispatchTile {
-    pub fn new() -> Self {
-        unsafe {
-            Self(Box::from_raw(
-                alloc_zeroed(Layout::new::<[u32; PIXEL_COUNT]>()) as *mut _,
-            ))
-        }
-    }
-
-    pub fn blend_result(&mut self, bounds: Bounds, r: &[f32], g: &[f32], b: &[f32], a: &[f32]) {
-        let bounds = bounds.intersect(Bounds {
-            left: 0,
-            top: 0,
-            right: PIXEL_COUNT as u32,
-            bottom: PIXEL_COUNT as u32,
-        });
-
-        for y in bounds.top..bounds.bottom {
-            for x in bounds.left..bounds.right {
-                let i = y as usize * PIXEL_COUNT + x as usize;
-                let r0 = (self.0[i] & 0xFF) as f32 * (1.0 / 255.0);
-                let g0 = ((self.0[i] >> 8) & 0xFF) as f32 * (1.0 / 255.0);
-                let b0 = ((self.0[i] >> 16) & 0xFF) as f32 * (1.0 / 255.0);
-                let a0 = (self.0[i] >> 24) as f32 * (1.0 / 255.0);
-
-                let r1 = r[i as usize];
-                let g1 = g[i as usize];
-                let b1 = b[i as usize];
-                let a1 = a[i as usize];
-
-                let r2 = r0 * (1.0 - a1) + r1 * a1;
-                let g2 = g0 * (1.0 - a1) + g1 * a1;
-                let b2 = b0 * (1.0 - a1) + b1 * a1;
-                let a2 = a0 * (1.0 - a1) + a1;
-
-                self.0[i] = ((a2 * 255.0) as u32) << 24
-                    | ((b2 * 255.0) as u32) << 16
-                    | ((g2 * 255.0) as u32) << 8
-                    | (r2 * 255.0) as u32;
-            }
-        }
-    }
-
-    pub fn blit_into(
-        &self,
-        bounds: Bounds,
-        target: &mut [u32],
-        target_size: Size,
-        target_x: u32,
-        target_y: u32,
-    ) {
-        let bounds = bounds.intersect(Bounds {
-            left: 0,
-            top: 0,
-            right: PIXEL_COUNT as u32,
-            bottom: PIXEL_COUNT as u32,
-        });
-
-        for y in 0..bounds.height().min(target_size.height - target_y) {
-            for x in 0..bounds.width().min(target_size.width - target_x) {
-                let i = (y + target_y) * target_size.width + (x + target_x);
-                let j = (y + bounds.top) * PIXEL_COUNT as u32 + (x + bounds.left);
-                target[i as usize] = self.0[j as usize];
-            }
-        }
-    }
-}
-
-impl Dispatcher {
-    pub fn new() -> Self {
-        let (sender, receiver) = std::sync::mpsc::channel();
+impl<'a> Dispatcher<'a> {
+    pub fn new(arena: &'a Bump) -> Self {
         Self {
-            sender,
-            receiver,
-            tiles: FxHashMap::default(),
+            arena,
+            objects: Vec::new_in(arena),
+            data: Vec::new_in(arena),
         }
     }
 
-    pub fn dispatch(&mut self, mut request: DispatchRequest) {
-        // step 1: split objects into tiles
-        self.tiles.clear();
+    pub fn write_start(&mut self, bounds: impl Into<Bounds>, shader: &'a CompiledShader) {
+        self.objects.push(DispatchObject {
+            shader,
+            data: self.data.len()..0,
+            bounds: bounds.into(),
+        });
+    }
 
-        for (index, object) in request.objects.iter().enumerate() {
-            let bounds = object.bounds.intersect(request.bounds);
-            let x0 = bounds.left / PIXEL_COUNT as u32;
-            let y0 = bounds.top / PIXEL_COUNT as u32;
-            let x1 = (bounds.right + PIXEL_COUNT as u32 - 1) / PIXEL_COUNT as u32;
-            let y1 = (bounds.bottom + PIXEL_COUNT as u32 - 1) / PIXEL_COUNT as u32;
+    pub fn write_data(&mut self, data: &[VMSlot]) {
+        self.data.extend_from_slice(data);
+    }
 
-            for y in y0..=y1 {
-                for x in x0..=x1 {
-                    self.tiles
-                        .entry((x, y))
-                        .or_insert_with(|| vec![])
-                        .push(index as u32);
+    pub fn write_end(&mut self) {
+        self.objects
+            .last_mut()
+            .expect("write_end without corresponding write_start")
+            .data
+            .end = self.data.len();
+    }
+
+    pub fn dispatch(self, buffer: DispatchBuffer) {
+        // prepare data
+        let data = self.data.into_bump_slice();
+        let width = buffer.width;
+        let height = buffer.height;
+        let bounds = buffer.bounds;
+        let buffer_ptr = buffer.buffer.as_mut_ptr() as usize;
+        drop(buffer);
+
+        // tile objects into separate buckets
+        let tiles_width = (bounds.width().div_ceil(TILE_SIZE as u32)) as usize;
+        let tiles_height = (bounds.height().div_ceil(TILE_SIZE as u32)) as usize;
+        let tiles = {
+            let mut tiles = Vec::from_iter_in(
+                from_fn(|| Some(Vec::new_in(self.arena))).take(tiles_width * tiles_height),
+                self.arena,
+            );
+
+            for object in self.objects.iter() {
+                let bounds = object
+                    .bounds
+                    .offset(-(bounds.left as i32), -(bounds.top as i32));
+                let x0 = bounds.left as usize / TILE_SIZE;
+                let y0 = bounds.top as usize / TILE_SIZE;
+                let x1 = (bounds.right as usize).div_ceil(TILE_SIZE);
+                let y1 = (bounds.bottom as usize).div_ceil(TILE_SIZE);
+
+                for y in y0..y1 {
+                    for x in x0..x1 {
+                        tiles[y * tiles_width + x].push(object);
+                    }
                 }
             }
-        }
 
-        self.tiles.par_iter().for_each(|((x, y), objects)| {
-            let mut tile = DispatchTile::new();
-            let mut interpreter = VMInterpreter::<VMTile>::new();
+            tiles
+        };
 
-            for object in objects {
-                let object = &request.objects[*object as usize];
+        // filter empty tiles out and make a list of jobs
+        let jobs = tiles
+            .into_iter()
+            .enumerate()
+            .filter(|(_, objects)| objects.len() > 0)
+            .map(|(i, objects)| {
+                let x = ((i % tiles_width) * TILE_SIZE) as u32;
+                let y = ((i / tiles_width) * TILE_SIZE) as u32;
 
-                unsafe {
-                    interpreter.execute(VMProgram {
-                        ops: object.shader.opcodes(),
-                        data: object.data,
-                        tile_x: (*x * PIXEL_COUNT as u32) as f32,
-                        tile_y: (*y * PIXEL_COUNT as u32) as f32,
-                        quad_t: object.bounds.top as f32,
-                        quad_b: object.bounds.bottom as f32,
-                        quad_l: object.bounds.left as f32,
-                        quad_r: object.bounds.right as f32,
-                        res_x: request.target_size.width as f32,
-                        res_y: request.target_size.height as f32,
-                    })
-                };
+                DispatchJob {
+                    x,
+                    y,
+                    objects: objects.into_bump_slice(),
+                }
+            });
 
-                tile.blend_result(
-                    object.bounds.offset(
-                        -(*x as i32 * PIXEL_COUNT as i32),
-                        -(*y as i32 * PIXEL_COUNT as i32),
-                    ),
-                    interpreter
-                        .register(object.shader.output_register(0))
-                        .as_f32(),
-                    interpreter
-                        .register(object.shader.output_register(1))
-                        .as_f32(),
-                    interpreter
-                        .register(object.shader.output_register(2))
-                        .as_f32(),
-                    interpreter
-                        .register(object.shader.output_register(3))
-                        .as_f32(),
-                );
-            }
+        // dispatch jobs
+        dispatch_jobs(self.arena, jobs, |job, worker| {
+            dispatch(
+                #[inline(always)]
+                || {
+                    // clear the buffer
+                    worker.r.fill(0.0);
+                    worker.g.fill(0.0);
+                    worker.b.fill(0.0);
+                    worker.a.fill(0.0);
 
-            let _ = self.sender.send((*x, *y, tile));
-        });
+                    // draw the objects in sequence
+                    for object in job.objects.iter() {
+                        // SAFETY: the program is guaranteed to be valid
+                        // because [`CompiledShader::compile`] is expected to return a valid program
+                        unsafe {
+                            worker.interpreter.execute(VMProgram {
+                                ops: object.shader.opcodes(),
+                                data: &data[object.data.clone()],
+                                tile_x: job.x as f32,
+                                tile_y: job.y as f32,
+                                quad_t: object.bounds.top as f32,
+                                quad_l: object.bounds.left as f32,
+                                quad_b: object.bounds.bottom as f32,
+                                quad_r: object.bounds.right as f32,
+                                res_x: width as f32,
+                                res_y: height as f32,
+                            });
+                        }
 
-        for (x, y, tile) in self.receiver.iter() {
-            tile.blit_into(
-                request.bounds.offset(
-                    -(x as i32 * PIXEL_COUNT as i32),
-                    -(y as i32 * PIXEL_COUNT as i32),
-                ),
-                &mut request.target_buffer,
-                request.target_size,
-                x * PIXEL_COUNT as u32,
-                y * PIXEL_COUNT as u32,
+                        let bounds = object.bounds.offset(-(job.x as i32), -(job.y as i32));
+                        let r = worker
+                            .interpreter
+                            .register(object.shader.output_register(0))
+                            .as_f32();
+                        let g = worker
+                            .interpreter
+                            .register(object.shader.output_register(1))
+                            .as_f32();
+                        let b = worker
+                            .interpreter
+                            .register(object.shader.output_register(2))
+                            .as_f32();
+                        let a = worker
+                            .interpreter
+                            .register(object.shader.output_register(3))
+                            .as_f32();
+
+                        blend_tile(
+                            &mut worker.r,
+                            &mut worker.g,
+                            &mut worker.b,
+                            &mut worker.a,
+                            r,
+                            g,
+                            b,
+                            a,
+                            bounds,
+                        );
+                    }
+
+                    // copy the worker memory to the global buffer
+                    // SAFETY: the buffer is guaranteed to be valid,
+                    // and we write to each region only once
+                    // (i.e. threads have no intersecting write regions)
+                    unsafe {
+                        finish_tile(
+                            buffer_ptr as *mut u32,
+                            width,
+                            height,
+                            worker.r,
+                            worker.g,
+                            worker.b,
+                            worker.a,
+                            job.x,
+                            job.y,
+                        );
+                    }
+                },
             );
-        }
+        });
     }
 }
 
-#[cfg(test)]
-mod test {
+struct DispatchJob<'a> {
+    x: u32,
+    y: u32,
+    objects: &'a [&'a DispatchObject<'a>],
+}
 
-    #[test]
-    fn test() {}
+struct DispatchWorker<'a> {
+    r: &'a mut [f32; PIXEL_COUNT],
+    g: &'a mut [f32; PIXEL_COUNT],
+    b: &'a mut [f32; PIXEL_COUNT],
+    a: &'a mut [f32; PIXEL_COUNT],
+    interpreter: VMInterpreter<'a, VMTile>,
+}
+
+#[inline(always)]
+#[cfg(not(feature = "parallel"))]
+fn dispatch_jobs<'a>(
+    arena: &'a Bump,
+    jobs: impl Iterator<Item = DispatchJob<'a>>,
+    run: impl Fn(&DispatchJob, &mut DispatchWorker) + Send + Sync,
+) {
+    let mut worker = DispatchWorker {
+        r: arena.alloc([0.0; PIXEL_COUNT]),
+        g: arena.alloc([0.0; PIXEL_COUNT]),
+        b: arena.alloc([0.0; PIXEL_COUNT]),
+        a: arena.alloc([0.0; PIXEL_COUNT]),
+        interpreter: VMInterpreter::new(arena),
+    };
+
+    for job in jobs {
+        run(&job, &mut worker);
+    }
+}
+
+#[inline(always)]
+#[cfg(feature = "parallel")]
+fn dispatch_jobs<'a>(
+    arena: &'a Bump,
+    jobs: impl Iterator<Item = DispatchJob<'a>>,
+    run: impl Fn(&DispatchJob, &mut DispatchWorker) + Send + Sync,
+) {
+    use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+    use std::sync::Mutex;
+
+    let workers = &*arena.alloc_slice_fill_iter((0..rayon::current_num_threads()).map(|_| {
+        Mutex::new(DispatchWorker {
+            r: arena.alloc([0.0; PIXEL_COUNT]),
+            g: arena.alloc([0.0; PIXEL_COUNT]),
+            b: arena.alloc([0.0; PIXEL_COUNT]),
+            a: arena.alloc([0.0; PIXEL_COUNT]),
+            interpreter: VMInterpreter::new(arena),
+        })
+    }));
+
+    let jobs = Vec::from_iter_in(jobs, arena);
+
+    jobs.par_iter().for_each(|job| {
+        let worker = &mut *workers[rayon::current_thread_index().unwrap()]
+            .lock()
+            .unwrap();
+        run(job, worker);
+    });
+}
+
+#[inline(always)]
+fn blend_tile(
+    r0: &mut [f32; PIXEL_COUNT],
+    g0: &mut [f32; PIXEL_COUNT],
+    b0: &mut [f32; PIXEL_COUNT],
+    a0: &mut [f32; PIXEL_COUNT],
+    r1: &[f32; PIXEL_COUNT],
+    g1: &[f32; PIXEL_COUNT],
+    b1: &[f32; PIXEL_COUNT],
+    a1: &[f32; PIXEL_COUNT],
+    bounds: Bounds,
+) {
+    for i in 0..PIXEL_COUNT {
+        let mask = {
+            let x = i % TILE_SIZE;
+            let y = i / TILE_SIZE;
+            (x >= bounds.left as usize)
+                & (x < bounds.right as usize)
+                & (y >= bounds.top as usize)
+                & (y < bounds.bottom as usize)
+        };
+
+        let a1 = if mask { a1[i] } else { 0.0 };
+        a0[i] = a0[i] + ((a1 - a0[i]) * a1);
+        r0[i] = r0[i] + ((r1[i] - r0[i]) * a1);
+        g0[i] = g0[i] + ((g1[i] - g0[i]) * a1);
+        b0[i] = b0[i] + ((b1[i] - b0[i]) * a1);
+    }
+}
+
+pub unsafe fn finish_tile(
+    dst: *mut u32,
+    width: u32,
+    height: u32,
+    r: &[f32; PIXEL_COUNT],
+    g: &[f32; PIXEL_COUNT],
+    b: &[f32; PIXEL_COUNT],
+    a: &[f32; PIXEL_COUNT],
+    x: u32,
+    y: u32,
+) {
+    for j in 0..(TILE_SIZE as u32).min(height - y) {
+        for i in 0..(TILE_SIZE as u32).min(width - x) {
+            let tx = x + i;
+            let ty = y + j;
+
+            let r = r[(j * TILE_SIZE as u32 + i) as usize];
+            let g = g[(j * TILE_SIZE as u32 + i) as usize];
+            let b = b[(j * TILE_SIZE as u32 + i) as usize];
+            let a = a[(j * TILE_SIZE as u32 + i) as usize];
+
+            unsafe {
+                *dst.add((ty * width + tx) as usize) = ((a * 255.0) as u32) << 24
+                    | ((r * 255.0) as u32) << 16
+                    | ((g * 255.0) as u32) << 8
+                    | ((b * 255.0) as u32);
+            }
+        }
+    }
 }

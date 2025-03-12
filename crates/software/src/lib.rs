@@ -1,8 +1,12 @@
 mod backend;
 mod dispatch;
+mod simd;
 mod vm;
 
 pub use backend::*;
+
+pub use dispatch::*;
+pub use vm::*;
 
 // TODO: implement
 //

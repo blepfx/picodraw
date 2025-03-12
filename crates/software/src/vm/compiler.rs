@@ -1,32 +1,24 @@
-use super::interpreter::{VMOp, VMOpcode};
-use fxhash::FxHashMap;
+use super::{VMIR, VMOp, VMOpcode};
 use picodraw_core::{
     Graph,
     graph::{OpAddr, OpInput, OpLiteral, OpValue},
 };
+use std::collections::HashMap;
 
-type IR = VMOp<u32, ()>;
 struct IRBuilder {
-    ops: Vec<IR>,
-    map: FxHashMap<(OpAddr, u8), u32>,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct IRRegion {
-    addr: u32,
-    start: u32,
-    end: u32,
+    ops: Vec<VMIR>,
+    map: HashMap<(OpAddr, u8), u32>,
 }
 
 impl IRBuilder {
     pub fn new() -> Self {
         Self {
             ops: Vec::new(),
-            map: FxHashMap::default(),
+            map: HashMap::new(),
         }
     }
 
-    pub fn emit_ir(&mut self, op: IR) -> u32 {
+    pub fn emit_ir(&mut self, op: VMIR) -> u32 {
         let idx = self.ops.len() as u32;
         self.ops.push(op);
         idx
@@ -180,45 +172,45 @@ impl IRBuilder {
             DerivWidth(a) => out!(AddF(AbsF(DxF(a)), AbsF(DyF(a)))),
 
             Position => {
-                let pos_x = self.emit_ir(IR::PosX(()));
-                let pos_y = self.emit_ir(IR::PosY(()));
+                let pos_x = self.emit_ir(VMIR::PosX(()));
+                let pos_y = self.emit_ir(VMIR::PosY(()));
                 self.set_graph(op, 0, pos_x);
                 self.set_graph(op, 1, pos_y);
             }
 
             Resolution => {
-                let res_x = self.emit_ir(IR::ResX(()));
-                let res_y = self.emit_ir(IR::ResY(()));
+                let res_x = self.emit_ir(VMIR::ResX(()));
+                let res_y = self.emit_ir(VMIR::ResY(()));
                 self.set_graph(op, 0, res_x);
                 self.set_graph(op, 1, res_y);
             }
 
             QuadStart => {
-                let quad_t = self.emit_ir(IR::QuadT(()));
-                let quad_l = self.emit_ir(IR::QuadL(()));
+                let quad_t = self.emit_ir(VMIR::QuadT(()));
+                let quad_l = self.emit_ir(VMIR::QuadL(()));
                 self.set_graph(op, 0, quad_t);
                 self.set_graph(op, 1, quad_l);
             }
 
             QuadEnd => {
-                let quad_b = self.emit_ir(IR::QuadB(()));
-                let quad_r = self.emit_ir(IR::QuadR(()));
+                let quad_b = self.emit_ir(VMIR::QuadB(()));
+                let quad_r = self.emit_ir(VMIR::QuadR(()));
                 self.set_graph(op, 0, quad_b);
                 self.set_graph(op, 1, quad_r);
             }
 
             Literal(OpLiteral::Int(x)) => {
-                let ir = self.emit_ir(IR::LitI(x, ()));
+                let ir = self.emit_ir(VMIR::LitI(x, ()));
                 self.set_graph(op, 0, ir);
             }
 
             Literal(OpLiteral::Float(x)) => {
-                let ir = self.emit_ir(IR::LitF(x, ()));
+                let ir = self.emit_ir(VMIR::LitF(x, ()));
                 self.set_graph(op, 0, ir);
             }
 
             Literal(OpLiteral::Bool(x)) => {
-                let ir = self.emit_ir(IR::LitI(x as i32, ()));
+                let ir = self.emit_ir(VMIR::LitI(x as i32, ()));
                 self.set_graph(op, 0, ir);
             }
 
@@ -274,10 +266,10 @@ impl IRBuilder {
                 for i in 0..graph.type_of(a).size() {
                     let a = self.get_graph(a, i as u8);
                     let b = self.get_graph(b, i as u8);
-                    let t = self.emit_ir(IR::MulF(a, b, ()));
+                    let t = self.emit_ir(VMIR::MulF(a, b, ()));
 
                     out = match out {
-                        Some(out) => Some(self.emit_ir(IR::AddF(out, t, ()))),
+                        Some(out) => Some(self.emit_ir(VMIR::AddF(out, t, ()))),
                         None => Some(t),
                     };
                 }
@@ -288,15 +280,15 @@ impl IRBuilder {
                 let mut out = None;
                 for i in 0..graph.type_of(a).size() {
                     let a = self.get_graph(a, i as u8);
-                    let t = self.emit_ir(IR::MulF(a, a, ()));
+                    let t = self.emit_ir(VMIR::MulF(a, a, ()));
 
                     out = match out {
-                        Some(out) => Some(self.emit_ir(IR::AddF(out, t, ()))),
+                        Some(out) => Some(self.emit_ir(VMIR::AddF(out, t, ()))),
                         None => Some(t),
                     };
                 }
 
-                let ir = self.emit_ir(IR::SqrtF(out.unwrap(), ()));
+                let ir = self.emit_ir(VMIR::SqrtF(out.unwrap(), ()));
                 self.set_graph(op, 0, ir);
             }
 
@@ -304,18 +296,18 @@ impl IRBuilder {
                 let mut out = None;
                 for i in 0..graph.type_of(a).size() {
                     let a = self.get_graph(a, i as u8);
-                    let t = self.emit_ir(IR::MulF(a, a, ()));
+                    let t = self.emit_ir(VMIR::MulF(a, a, ()));
 
                     out = match out {
-                        Some(out) => Some(self.emit_ir(IR::AddF(out, t, ()))),
+                        Some(out) => Some(self.emit_ir(VMIR::AddF(out, t, ()))),
                         None => Some(t),
                     };
                 }
 
-                let length = self.emit_ir(IR::SqrtF(out.unwrap(), ()));
+                let length = self.emit_ir(VMIR::SqrtF(out.unwrap(), ()));
                 for i in 0..graph.type_of(a).size() {
                     let a = self.get_graph(a, i as u8);
-                    let ir = self.emit_ir(IR::DivF(a, length, ()));
+                    let ir = self.emit_ir(VMIR::DivF(a, length, ()));
                     self.set_graph(op, i as u8, ir);
                 }
             }
@@ -398,13 +390,13 @@ impl CompiledShader {
         for op in graph.iter() {
             match graph.value_of(op) {
                 OpValue::Input(OpInput::F32) => {
-                    let ir = builder.emit_ir(IR::ReadF(data_slots, ()));
+                    let ir = builder.emit_ir(VMIR::ReadF(data_slots, ()));
                     builder.set_graph(op, 0, ir);
                     data_slots += 1;
                 }
 
                 OpValue::Input(x) if x.value_type().is_int() => {
-                    let ir = builder.emit_ir(IR::ReadI(data_slots, ()));
+                    let ir = builder.emit_ir(VMIR::ReadI(data_slots, ()));
                     builder.set_graph(op, 0, ir);
                     data_slots += 1;
                 }
@@ -448,7 +440,11 @@ impl CompiledShader {
 
 #[cfg(test)]
 mod tests {
-    use crate::vm::{CompiledShader, VMInterpreter, VMProgram, VMRegister, VMSlot, VMTile};
+    use crate::{
+        simd::dispatch,
+        vm::{CompiledShader, VMInterpreter, VMProgram, VMRegister, VMSlot, VMTile},
+    };
+    use bumpalo::Bump;
     use picodraw_core::{
         Graph,
         shader::{float2, float4, io},
@@ -467,9 +463,10 @@ mod tests {
         });
 
         let shader = CompiledShader::compile(&graph);
-        let mut interpreter = VMInterpreter::<VMTile>::new();
+        let arena = Bump::new();
+        let mut interpreter = VMInterpreter::<VMTile>::new(&arena);
 
-        const ITERS: usize = 1000000;
+        const ITERS: usize = 10000000;
         let start = std::time::Instant::now();
         for i in 0..ITERS {
             let program = VMProgram {
@@ -487,9 +484,12 @@ mod tests {
                 res_y: 32.0,
             };
 
-            unsafe {
-                interpreter.execute(program);
-            }
+            dispatch(
+                #[inline(always)]
+                || unsafe {
+                    interpreter.execute(program);
+                },
+            );
 
             black_box(interpreter.register(0).as_f32());
             black_box(interpreter.register(1).as_f32());

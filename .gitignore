@@ -14,4 +14,9 @@ Cargo.lock
 *.pdb
 
 /tests/drawtest/failures/*
+
+test.png
+perf.data
+perf.data.old
+flamegraph.svg
 tarpaulin-report.html

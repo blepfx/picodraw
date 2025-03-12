@@ -383,14 +383,20 @@ impl FragmentCodegen {
             _ => "w",
         };
 
-        if size == 1 {
-            format!("(_i{:x}.{}>>{}u)&255u", b16, b4, b1)
-        } else if size == 2 {
-            format!("(_i{:x}.{}>>{}u)&65535u", b16, b4, b1)
-        } else if size == 4 {
-            format!("_i{:x}.{}", b16, b4)
+        if b1 == 0 {
+            match size {
+                1 => format!("(_i{:x}.{}&255u)", b16, b4),
+                2 => format!("(_i{:x}.{}&65535u)", b16, b4),
+                4 => format!("_i{:x}.{}", b16, b4),
+                _ => unreachable!(),
+            }
         } else {
-            unreachable!()
+            match size {
+                1 => format!("(_i{:x}.{}>>{}u)&255u", b16, b4, b1),
+                2 => format!("(_i{:x}.{}>>{}u)&65535u", b16, b4, b1),
+                4 => format!("_i{:x}.{}", b16, b4),
+                _ => unreachable!(),
+            }
         }
     }
 }
