@@ -26,6 +26,7 @@ license = "MIT OR Apache-2.0"
 picodraw-core = { path = "crates/core", default-features = false }
 picodraw-derive = { path = "crates/derive", optional = true }
 picodraw-opengl = { path = "crates/opengl", optional = true }
+picodraw-software = { path = "crates/software", optional = true }
 
 [dev-dependencies]
 pugl-rs = { workspace = true }
@@ -35,8 +36,11 @@ image = { workspace = true }
 default = ["derive", "collect"]
 collect = ["picodraw-core/collect"]
 derive = ["dep:picodraw-derive"]
-opengl = ["dep:picodraw-opengl"]
+
+backend-opengl = ["dep:picodraw-opengl"]
+backend-software = ["dep:picodraw-software"]
+backend-software-rayon = ["backend-software", "picodraw-software/parallel"]
 
 [[example]]
 name = "opengl"
-required-features = ["opengl", "derive"]
+required-features = ["backend-opengl", "derive"]

@@ -1,5 +1,7 @@
 pub use picodraw_core::*;
 #[cfg(feature = "derive")]
 pub use picodraw_derive::ShaderData;
-#[cfg(feature = "opengl")]
+#[cfg(feature = "backend-opengl")]
 pub use picodraw_opengl as opengl;
+#[cfg(feature = "backend-software")]
+pub use picodraw_software as software;

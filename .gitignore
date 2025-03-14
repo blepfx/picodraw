@@ -15,6 +15,7 @@ Cargo.lock
 
 /tests/drawtest/failures/*
 
+asm.txt
 test.png
 perf.data
 perf.data.old

@@ -9,7 +9,7 @@ pub const REGISTER_COUNT: usize = 32;
 pub const PIXEL_COUNT: usize = TILE_SIZE * TILE_SIZE;
 
 #[repr(align(8))]
-#[derive(Debug, Clone, Copy)]
+#[derive(PartialEq, Debug, Clone, Copy)]
 pub enum VMOp<I, O> {
     PosX(O),
     PosY(O),
@@ -36,6 +36,10 @@ pub enum VMOp<I, O> {
     DivF(I, I, O),
     ModI(I, I, O),
     ModF(I, I, O),
+    MinF(I, I, O),
+    MinI(I, I, O),
+    MaxF(I, I, O),
+    MaxI(I, I, O),
 
     AddCI(i32, I, O),
     AddCF(f32, I, O),
@@ -43,14 +47,19 @@ pub enum VMOp<I, O> {
     SubCF(f32, I, O),
     MulCI(i32, I, O),
     MulCF(f32, I, O),
+    MinCI(i32, I, O),
+    MinCF(f32, I, O),
+    MaxCI(i32, I, O),
+    MaxCF(f32, I, O),
+
+    Add3F(I, I, I, O),
+    Add3I(I, I, I, O),
+    Mul3F(I, I, I, O),
+    Mul3I(I, I, I, O),
 
     NegF(I, O),
     NegI(I, O),
 
-    MinF(I, I, O),
-    MinI(I, I, O),
-    MaxF(I, I, O),
-    MaxI(I, I, O),
     AbsF(I, O),
     AbsI(I, O),
     FloorF(I, O),
@@ -88,16 +97,11 @@ pub enum VMOp<I, O> {
     LtF(I, I, O),
     GtI(I, I, O),
     GtF(I, I, O),
-    NeI(I, I, O),
-    NeF(I, I, O),
-    LeI(I, I, O),
-    LeF(I, I, O),
-    GeI(I, I, O),
-    GeF(I, I, O),
 }
 
 impl<I, O> VMOp<I, O> {
-    pub fn map<I0, O0>(
+    #[doc(hidden)]
+    fn map_inner<I0, O0>(
         self,
         mut inp: impl FnMut(I) -> I0,
         out: impl FnOnce(O) -> O0,
@@ -126,12 +130,23 @@ impl<I, O> VMOp<I, O> {
             DivF(a, b, o) => DivF(inp(a), inp(b), out(o)),
             ModI(a, b, o) => ModI(inp(a), inp(b), out(o)),
             ModF(a, b, o) => ModF(inp(a), inp(b), out(o)),
+
             AddCI(a, b, o) => AddCI(a, inp(b), out(o)),
-            AddCF(a, b, o) => AddCF(a as f32, inp(b), out(o)),
+            AddCF(a, b, o) => AddCF(a, inp(b), out(o)),
             SubCI(a, b, o) => SubCI(a, inp(b), out(o)),
-            SubCF(a, b, o) => SubCF(a as f32, inp(b), out(o)),
+            SubCF(a, b, o) => SubCF(a, inp(b), out(o)),
             MulCI(a, b, o) => MulCI(a, inp(b), out(o)),
-            MulCF(a, b, o) => MulCF(a as f32, inp(b), out(o)),
+            MulCF(a, b, o) => MulCF(a, inp(b), out(o)),
+            MinCI(a, b, o) => MinCI(a, inp(b), out(o)),
+            MinCF(a, b, o) => MinCF(a, inp(b), out(o)),
+            MaxCI(a, b, o) => MaxCI(a, inp(b), out(o)),
+            MaxCF(a, b, o) => MaxCF(a, inp(b), out(o)),
+
+            Add3F(a, b, c, o) => Add3F(inp(a), inp(b), inp(c), out(o)),
+            Add3I(a, b, c, o) => Add3I(inp(a), inp(b), inp(c), out(o)),
+            Mul3F(a, b, c, o) => Mul3F(inp(a), inp(b), inp(c), out(o)),
+            Mul3I(a, b, c, o) => Mul3I(inp(a), inp(b), inp(c), out(o)),
+
             NegF(a, o) => NegF(inp(a), out(o)),
             NegI(a, o) => NegI(inp(a), out(o)),
             MinF(a, b, o) => MinF(inp(a), inp(b), out(o)),
@@ -167,22 +182,23 @@ impl<I, O> VMOp<I, O> {
             LtF(a, b, o) => LtF(inp(a), inp(b), out(o)),
             GtI(a, b, o) => GtI(inp(a), inp(b), out(o)),
             GtF(a, b, o) => GtF(inp(a), inp(b), out(o)),
-            NeI(a, b, o) => NeI(inp(a), inp(b), out(o)),
-            NeF(a, b, o) => NeF(inp(a), inp(b), out(o)),
-            LeI(a, b, o) => LeI(inp(a), inp(b), out(o)),
-            LeF(a, b, o) => LeF(inp(a), inp(b), out(o)),
-            GeI(a, b, o) => GeI(inp(a), inp(b), out(o)),
-            GeF(a, b, o) => GeF(inp(a), inp(b), out(o)),
         }
+    }
+
+    pub fn map_inputs<I0>(self, inp: impl FnMut(I) -> I0) -> VMOp<I0, O> {
+        self.map_inner(inp, |o| o)
+    }
+
+    pub fn map_outputs<O0>(self, out: impl FnOnce(O) -> O0) -> VMOp<I, O0> {
+        self.map_inner(|i| i, out)
     }
 
     pub fn output(self) -> O {
         let mut output = None;
-        self.map(|_| (), |o| output = Some(o));
+        self.map_inner(|_| (), |o| output = Some(o));
         output.unwrap()
     }
 }
 
 pub type VMReg = u8;
 pub type VMOpcode = VMOp<VMReg, VMReg>;
-pub type VMIR = VMOp<u32, ()>;

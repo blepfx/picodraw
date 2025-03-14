@@ -4,7 +4,6 @@ mod simd;
 mod vm;
 
 pub use backend::*;
-
 pub use dispatch::*;
 pub use vm::*;
 
