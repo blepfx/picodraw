@@ -5,8 +5,7 @@ use picodraw_core::{
 use picodraw_software::{CompiledShader, DispatchBuffer, Dispatcher, VMSlot};
 
 fn main() {
-    let mut arena = bumpalo::Bump::new();
-
+    let arena = bumpalo::Bump::new();
     let start = std::time::Instant::now();
     let shader = CompiledShader::compile(
         &arena,
@@ -22,12 +21,19 @@ fn main() {
         }),
     );
 
-    println!("compiled in {:?} \n{:?}", start.elapsed(), shader);
+    println!(
+        "compiled in {:?} (used {}KB) \n{:?}",
+        start.elapsed(),
+        arena.allocated_bytes() / 1024,
+        shader
+    );
 
-    arena.reset();
-
+    let mut arena = bumpalo::Bump::new();
+    let mut thread_pool = picodraw_software::ThreadPool::new();
     let start = std::time::Instant::now();
-    for i in 0..10000 {
+
+    const ITERS: usize = 10000;
+    for i in 0..ITERS {
         let mut buffer = arena.alloc_slice_fill_default(512 * 512);
         let mut dispatcher = Dispatcher::new(&arena, DispatchBuffer {
             buffer: &mut buffer,
@@ -43,9 +49,11 @@ fn main() {
             }]);
             dispatcher.write_end();
         }
-        dispatcher.dispatch();
+        dispatcher.dispatch(&mut thread_pool);
 
         if i == 0 {
+            println!("memory per draw: {}KB", arena.allocated_bytes() / 1024);
+
             image::RgbaImage::from_fn(512, 512, |x, y| {
                 let color = buffer[(y * 512 + x) as usize];
                 image::Rgba([
@@ -61,5 +69,5 @@ fn main() {
 
         arena.reset();
     }
-    println!("{:?}", start.elapsed());
+    println!("time per frame: {:?}", start.elapsed() / ITERS as u32);
 }

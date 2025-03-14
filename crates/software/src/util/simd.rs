@@ -1,9 +1,9 @@
 #[cfg(target_arch = "x86_64")]
-pub fn dispatch<F: FnOnce()>(f: F) {
+pub fn dispatch_simd<F: FnOnce()>(f: F) {
     if is_x86_feature_detected!("avx2") {
         unsafe { dispatch_avx2(f) }
     } else if is_x86_feature_detected!("avx") {
-        unsafe { dispatch_avx1(f) }
+        unsafe { dispatch_avx(f) }
     } else if is_x86_feature_detected!("sse4.2") {
         unsafe { dispatch_sse42(f) }
     } else {
@@ -16,7 +16,7 @@ pub fn dispatch<F: FnOnce()>(f: F) {
     }
 
     #[target_feature(enable = "avx")]
-    unsafe fn dispatch_avx1<F: FnOnce()>(f: F) {
+    unsafe fn dispatch_avx<F: FnOnce()>(f: F) {
         f()
     }
 
@@ -27,7 +27,7 @@ pub fn dispatch<F: FnOnce()>(f: F) {
 }
 
 #[cfg(target_arch = "aarch64")]
-pub fn dispatch<F: FnOnce()>(f: F) {
+pub fn dispatch_simd<F: FnOnce()>(f: F) {
     if is_aarch64_feature_detected!("neon") {
         unsafe { dispatch_neon(f) }
     } else {
@@ -41,6 +41,6 @@ pub fn dispatch<F: FnOnce()>(f: F) {
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-pub fn dispatch<F: FnOnce()>(f: F) {
+pub fn dispatch_simd<F: FnOnce()>(f: F) {
     f()
 }

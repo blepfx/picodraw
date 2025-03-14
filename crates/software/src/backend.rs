@@ -1,4 +1,4 @@
-use crate::{DispatchBuffer, Dispatcher, VMSlot, vm::CompiledShader};
+use crate::{DispatchBuffer, Dispatcher, VMSlot, util::ThreadPool, vm::CompiledShader};
 use bumpalo::Bump;
 use picodraw_core::{
     Bounds, Command, CommandBuffer, Context, Graph, ImageData, RenderTexture, Shader, Texture,
@@ -9,7 +9,9 @@ pub struct SoftwareBackend {
     shaders: SlotMap<DefaultKey, CompiledShader>,
     textures: SlotMap<DefaultKey, ()>,
     buffers: SlotMap<DefaultKey, ()>,
+
     arena: Bump,
+    thread_pool: ThreadPool,
 }
 
 pub struct SoftwareContext<'a> {
@@ -20,6 +22,8 @@ impl SoftwareBackend {
     pub fn new() -> Self {
         Self {
             arena: Bump::new(),
+            thread_pool: ThreadPool::new(),
+
             shaders: SlotMap::new(),
             textures: SlotMap::new(),
             buffers: SlotMap::new(),
@@ -79,7 +83,7 @@ impl<'a> Context for SoftwareContext<'a> {
         for command in buffer.list_commands() {
             match command {
                 Command::SetRenderTarget { texture, size } => {
-                    dispatcher.dispatch();
+                    dispatcher.dispatch(&mut self.owner.thread_pool);
                     self.owner.arena.reset();
                     dispatcher = Dispatcher::new(&self.owner.arena, DispatchBuffer {
                         buffer: &mut [], //TODO: guh!!!!
@@ -123,6 +127,6 @@ impl<'a> Context for SoftwareContext<'a> {
             }
         }
 
-        dispatcher.dispatch();
+        dispatcher.dispatch(&mut self.owner.thread_pool);
     }
 }

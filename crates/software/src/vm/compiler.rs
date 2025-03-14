@@ -811,7 +811,7 @@ mod ir {
 #[cfg(test)]
 mod tests {
     use crate::{
-        simd::dispatch,
+        util::dispatch_simd,
         vm::{CompiledShader, VMContext, VMInterpreter, VMSlot},
     };
     use bumpalo::Bump;
@@ -856,7 +856,7 @@ mod tests {
                 res_y: 32.0,
             };
 
-            dispatch(
+            dispatch_simd(
                 #[inline(always)]
                 || unsafe {
                     interpreter.execute(program);

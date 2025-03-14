@@ -1,10 +1,11 @@
 mod backend;
 mod dispatch;
-mod simd;
+mod util;
 mod vm;
 
 pub use backend::*;
 pub use dispatch::*;
+pub use util::*;
 pub use vm::*;
 
 // TODO: implement

@@ -1,10 +1,10 @@
 use crate::{
-    simd::dispatch,
+    util::{ThreadPool, dispatch_simd},
     vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMContext, VMInterpreter, VMSlot},
 };
 use bumpalo::{Bump, collections::Vec};
 use picodraw_core::Bounds;
-use std::{iter::from_fn, ops::Range};
+use std::{iter::from_fn, ops::Range, sync::Mutex};
 
 enum DispatchObject<'a> {
     Draw {
@@ -61,14 +61,17 @@ impl<'a> Dispatcher<'a> {
     }
 
     pub fn write_end(&mut self) {
-        if let Some(DispatchObject::Draw { data, .. }) = self.objects.last_mut() {
+        if let Some(DispatchObject::Draw { data, shader, .. }) = self.objects.last_mut() {
             data.end = self.data.len();
+            if shader.data_slots() as usize != data.len() {
+                panic!("write_data wrote insufficient amount of data for the given shader");
+            }
         } else {
             panic!("write_end without corresponding write_start");
         }
     }
 
-    pub fn dispatch(self) {
+    pub fn dispatch(self, pool: &mut ThreadPool) {
         // prepare data
         let slots = self.data.into_bump_slice();
         let width = self.buffer.width;
@@ -120,16 +123,30 @@ impl<'a> Dispatcher<'a> {
                 let x = ((i % tiles_width) * TILE_SIZE) as u32;
                 let y = ((i / tiles_width) * TILE_SIZE) as u32;
 
-                DispatchJob {
+                &*self.arena.alloc(DispatchJob {
                     x,
                     y,
                     objects: objects.into_bump_slice(),
-                }
+                })
             });
 
+        // allocate memory for workers
+        let workers = &*self
+            .arena
+            .alloc_slice_fill_iter((0..pool.num_threads()).map(|_| {
+                Mutex::new(DispatchWorker {
+                    r: self.arena.alloc([0.0; PIXEL_COUNT]),
+                    g: self.arena.alloc([0.0; PIXEL_COUNT]),
+                    b: self.arena.alloc([0.0; PIXEL_COUNT]),
+                    a: self.arena.alloc([0.0; PIXEL_COUNT]),
+                    interpreter: VMInterpreter::new(self.arena),
+                })
+            }));
+
         // dispatch jobs
-        dispatch_jobs(self.arena, jobs, |job, worker| {
-            dispatch(
+        pool.execute(jobs, |job, index| {
+            let worker = &mut *workers[index].lock().unwrap();
+            dispatch_simd(
                 #[inline(always)]
                 || {
                     // clear the buffer
@@ -157,6 +174,7 @@ impl<'a> Dispatcher<'a> {
                             } => {
                                 // SAFETY: the program is guaranteed to be valid
                                 // because [`CompiledShader::compile`] is expected to return a valid program
+                                // data is guaranteed to be valid because we checked it in [`write_end`]
                                 unsafe {
                                     worker.interpreter.execute(VMContext {
                                         ops: shader.opcodes(),
@@ -240,56 +258,6 @@ struct DispatchWorker<'a> {
     b: &'a mut [f32; PIXEL_COUNT],
     a: &'a mut [f32; PIXEL_COUNT],
     interpreter: VMInterpreter<'a>,
-}
-
-#[inline(always)]
-#[cfg(not(feature = "parallel"))]
-fn dispatch_jobs<'a>(
-    arena: &'a Bump,
-    jobs: impl Iterator<Item = DispatchJob<'a>>,
-    run: impl Fn(&DispatchJob, &mut DispatchWorker) + Send + Sync,
-) {
-    let mut worker = DispatchWorker {
-        r: arena.alloc([0.0; PIXEL_COUNT]),
-        g: arena.alloc([0.0; PIXEL_COUNT]),
-        b: arena.alloc([0.0; PIXEL_COUNT]),
-        a: arena.alloc([0.0; PIXEL_COUNT]),
-        interpreter: VMInterpreter::new(arena),
-    };
-
-    for job in jobs {
-        run(&job, &mut worker);
-    }
-}
-
-#[inline(always)]
-#[cfg(feature = "parallel")]
-fn dispatch_jobs<'a>(
-    arena: &'a Bump,
-    jobs: impl Iterator<Item = DispatchJob<'a>>,
-    run: impl Fn(&DispatchJob, &mut DispatchWorker) + Send + Sync,
-) {
-    use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-    use std::sync::Mutex;
-
-    let workers = &*arena.alloc_slice_fill_iter((0..rayon::current_num_threads()).map(|_| {
-        Mutex::new(DispatchWorker {
-            r: arena.alloc([0.0; PIXEL_COUNT]),
-            g: arena.alloc([0.0; PIXEL_COUNT]),
-            b: arena.alloc([0.0; PIXEL_COUNT]),
-            a: arena.alloc([0.0; PIXEL_COUNT]),
-            interpreter: VMInterpreter::new(arena),
-        })
-    }));
-
-    let jobs = Vec::from_iter_in(jobs, arena);
-
-    jobs.par_iter().for_each(|job| {
-        let worker = &mut *workers[rayon::current_thread_index().unwrap()]
-            .lock()
-            .unwrap();
-        run(job, worker);
-    });
 }
 
 #[inline(always)]

@@ -39,7 +39,6 @@ derive = ["dep:picodraw-derive"]
 
 backend-opengl = ["dep:picodraw-opengl"]
 backend-software = ["dep:picodraw-software"]
-backend-software-rayon = ["backend-software", "picodraw-software/parallel"]
 
 [[example]]
 name = "opengl"
