@@ -530,6 +530,14 @@ pub mod types {
         pub fn select<T: Select>(self, x: T, y: impl Into<T>) -> T {
             T::select(x, y.into(), self)
         }
+
+        pub fn eq(self, other: boolean) -> boolean {
+            !(self ^ other)
+        }
+
+        pub fn ne(self, other: boolean) -> boolean {
+            self ^ other
+        }
     }
 
     impl texture {
