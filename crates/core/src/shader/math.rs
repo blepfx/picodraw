@@ -455,9 +455,7 @@ pub mod types {
                 }
             }
 
-            impl<X: Into<$scalar>, Y: Into<$scalar>, Z: Into<$scalar>, W: Into<$scalar>>
-                From<(X, Y, Z, W)> for $type
-            {
+            impl<X: Into<$scalar>, Y: Into<$scalar>, Z: Into<$scalar>, W: Into<$scalar>> From<(X, Y, Z, W)> for $type {
                 fn from((x, y, z, w): (X, Y, Z, W)) -> Self {
                     Self(Graph::push_collect(OpValue::Vec4(
                         Into::<$scalar>::into(x).0,
@@ -540,33 +538,23 @@ pub mod types {
         }
 
         pub fn sample_linear(&self, pos: impl Into<float2>) -> float4 {
-            float4(Graph::push_collect(OpValue::TextureLinear(
-                self.0,
-                pos.into().0,
-            )))
+            float4(Graph::push_collect(OpValue::TextureLinear(self.0, pos.into().0)))
         }
 
         pub fn sample_nearest(&self, pos: impl Into<float2>) -> float4 {
-            float4(Graph::push_collect(OpValue::TextureNearest(
-                self.0,
-                pos.into().0,
-            )))
+            float4(Graph::push_collect(OpValue::TextureNearest(self.0, pos.into().0)))
         }
     }
 
     impl From<f32> for float1 {
         fn from(value: f32) -> Self {
-            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Float(
-                value,
-            ))))
+            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Float(value))))
         }
     }
 
     impl From<i32> for float1 {
         fn from(value: i32) -> Self {
-            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Float(
-                value as _,
-            ))))
+            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Float(value as _))))
         }
     }
 
@@ -578,9 +566,13 @@ pub mod types {
 
     impl From<bool> for boolean {
         fn from(value: bool) -> Self {
-            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Bool(
-                value,
-            ))))
+            Self(Graph::push_collect(OpValue::Literal(OpLiteral::Bool(value))))
+        }
+    }
+
+    impl Select for boolean {
+        fn select(x: Self, y: Self, switch: boolean) -> Self {
+            y ^ ((x ^ y) & switch)
         }
     }
 }
@@ -595,6 +587,4 @@ macro_rules! impl_constructor {
     };
 }
 
-impl_constructor!(
-    float1, float2, float3, float4, int1, int2, int3, int4, boolean
-);
+impl_constructor!(float1, float2, float3, float4, int1, int2, int3, int4, boolean);

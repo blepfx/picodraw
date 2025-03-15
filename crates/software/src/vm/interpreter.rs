@@ -6,8 +6,8 @@ pub struct VMContext<'a> {
     pub ops: &'a [VMOpcode],
     pub data: &'a [VMSlot],
 
-    pub tile_x: f32,
-    pub tile_y: f32,
+    pub pos_x: f32,
+    pub pos_y: f32,
     pub quad_t: f32,
     pub quad_l: f32,
     pub quad_b: f32,
@@ -23,14 +23,7 @@ pub struct VMInterpreter<'a> {
 impl<'a> VMInterpreter<'a> {
     pub fn new(arena: &'a Bump) -> Self {
         Self {
-            data: unsafe {
-                Box::from_raw(
-                    arena
-                        .alloc_layout(Layout::new::<[VMTile; 32]>())
-                        .cast()
-                        .as_ptr(),
-                )
-            },
+            data: unsafe { Box::from_raw(arena.alloc_layout(Layout::new::<[VMTile; 32]>()).cast().as_ptr()) },
         }
     }
 
@@ -321,19 +314,17 @@ impl<'a> VMInterpreter<'a> {
                 }
 
                 Select(a, b, c, d) => {
-                    op!(|a: i32, b: i32, c: i32, d: mut i32| b ^ ((b ^ c) & a));
+                    op!(|a: i32, b: i32, c: i32, d: mut i32| c ^ ((c ^ b) & a));
                 }
 
                 ReadF(idx, reg) => unsafe {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut()
-                        .fill(program.data.get_unchecked(idx as usize).float);
+                    reg.as_f32_mut().fill(program.data.get_unchecked(idx as usize).float);
                 },
 
                 ReadI(idx, reg) => unsafe {
                     let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut()
-                        .fill(program.data.get_unchecked(idx as usize).int);
+                    reg.as_i32_mut().fill(program.data.get_unchecked(idx as usize).int);
                 },
 
                 LitF(val, reg) => {
@@ -376,7 +367,7 @@ impl<'a> VMInterpreter<'a> {
 
                     for i in 0..TILE_SIZE {
                         for j in 0..TILE_SIZE {
-                            reg[i * TILE_SIZE + j] = program.tile_x + j as f32;
+                            reg[i * TILE_SIZE + j] = program.pos_x + j as f32;
                         }
                     }
                 }
@@ -386,7 +377,7 @@ impl<'a> VMInterpreter<'a> {
 
                     for i in 0..TILE_SIZE {
                         for j in 0..TILE_SIZE {
-                            reg[i * TILE_SIZE + j] = program.tile_y + i as f32;
+                            reg[i * TILE_SIZE + j] = program.pos_y + i as f32;
                         }
                     }
                 }
@@ -472,8 +463,8 @@ mod test {
         let program = VMContext {
             ops: &[VMOp::LitF(1.0, 0), VMOp::ReadF(0, 1), VMOp::AddF(0, 1, 2)],
             data: &[VMSlot { float: -1.5 }],
-            tile_x: 0.0,
-            tile_y: 0.0,
+            pos_x: 0.0,
+            pos_y: 0.0,
             quad_t: 0.0,
             quad_l: 0.0,
             quad_b: 0.0,

@@ -219,6 +219,7 @@ mod ir {
                 Clamp(a, b, c) => out!(MaxI(b, MinI(a, c))),
 
                 Lerp(a, b, c) => out!(AddF(b, MulF(a, SubF(c, b)))),
+
                 Smoothstep(a, b, c) => {
                     for i in 0..ty.size() {
                         let t = op!(i => DivF(SubF(a, b), SubF(c, b)));
@@ -247,17 +248,17 @@ mod ir {
                 Or(a, b) => out!(OrI(a, b)),
                 Xor(a, b) => out!(XorI(a, b)),
                 Not(a) => out!(NotI(a)),
-                Eq(a, b) if ty.is_float() => out!(EqF(a, b)),
+                Eq(a, b) if graph.type_of(a).is_float() => out!(EqF(a, b)),
                 Eq(a, b) => out!(EqI(a, b)),
-                Ne(a, b) if ty.is_float() => out!(NotI(EqF(a, b))),
+                Ne(a, b) if graph.type_of(a).is_float() => out!(NotI(EqF(a, b))),
                 Ne(a, b) => out!(NotI(EqI(a, b))),
-                Lt(a, b) if ty.is_float() => out!(LtF(a, b)),
+                Lt(a, b) if graph.type_of(a).is_float() => out!(LtF(a, b)),
                 Lt(a, b) => out!(LtI(a, b)),
-                Le(a, b) if ty.is_float() => out!(NotI(GtF(a, b))),
+                Le(a, b) if graph.type_of(a).is_float() => out!(NotI(GtF(a, b))),
                 Le(a, b) => out!(NotI(GtI(a, b))),
-                Gt(a, b) if ty.is_float() => out!(GtF(a, b)),
+                Gt(a, b) if graph.type_of(a).is_float() => out!(GtF(a, b)),
                 Gt(a, b) => out!(GtI(a, b)),
-                Ge(a, b) if ty.is_float() => out!(NotI(LtF(a, b))),
+                Ge(a, b) if graph.type_of(a).is_float() => out!(NotI(LtF(a, b))),
                 Ge(a, b) => out!(NotI(LtI(a, b))),
                 CastFloat(a) => out!(CastF(a)),
                 CastInt(a) => out!(CastI(a)),
@@ -658,7 +659,7 @@ mod ir {
                     Select(cond, a, b, _) => match (cond.0, a.0, b.0) {
                         (LitI(0, _), _, _) => b,
                         (LitI(-1, _), _, _) => a,
-                        (NotI(c, _), a, b) => emit(arena, Select(*c, IR(b), IR(a), ())),
+                        (NotI(c, _), _, _) => emit(arena, Select(*c, b, a, ())),
                         _ => ir,
                     },
 
@@ -880,8 +881,8 @@ mod tests {
                 data: &[VMSlot {
                     float: 0.0 + i as f32 * 0.01,
                 }],
-                tile_x: 0.0,
-                tile_y: 0.0,
+                pos_x: 0.0,
+                pos_y: 0.0,
                 quad_t: 0.0,
                 quad_l: 0.0,
                 quad_b: 0.0,

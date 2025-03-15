@@ -228,7 +228,7 @@ fn stress_test() {
 #[cfg(feature = "derive")]
 fn serialize_test() {
     fn sdf_circle(pos: float2, center: float2, radius: float1, invert: boolean) -> float1 {
-        let mask = ((center - pos).len() - radius).smoothstep(0.707, -0.707);
+        let mask = ((center - pos).len() - radius).smoothstep(-0.707, 0.707);
         invert.select(1.0 - mask, mask)
     }
 

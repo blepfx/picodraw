@@ -194,14 +194,14 @@ impl<'a> Dispatcher<'a> {
                                     worker.interpreter.execute(VMContext {
                                         ops: shader.opcodes(),
                                         data: &slots[data.clone()],
-                                        tile_x: job.x as f32,
-                                        tile_y: job.y as f32,
+                                        pos_x: job.x as f32,
+                                        pos_y: job.y as f32,
+                                        res_x: width as f32,
+                                        res_y: height as f32,
                                         quad_t: bounds.top as f32,
                                         quad_l: bounds.left as f32,
                                         quad_b: bounds.bottom as f32,
                                         quad_r: bounds.right as f32,
-                                        res_x: width as f32,
-                                        res_y: height as f32,
                                     });
                                 }
 
