@@ -40,16 +40,9 @@ pub trait ShaderDataWriter {
 
     fn resolution(&self) -> Size;
     fn quad_bounds(&self) -> Bounds;
-
-    fn write<T: ShaderData>(&mut self, data: &T)
-    where
-        Self: Sized,
-    {
-        T::write(data, self);
-    }
 }
 
-impl dyn ShaderDataWriter {
+impl dyn ShaderDataWriter + '_ {
     pub fn write<T: ShaderData>(&mut self, data: &T) {
         T::write(data, self);
     }
