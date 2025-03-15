@@ -1,7 +1,7 @@
 use std::{
     ptr::NonNull,
     sync::{
-        Arc, Mutex, RwLock,
+        Arc, Mutex, RwLock, RwLockReadGuard,
         atomic::{AtomicBool, Ordering},
     },
     thread::{Thread, available_parallelism, spawn},
@@ -25,10 +25,17 @@ impl ThreadPool {
                 .map(|thread_idx| {
                     let inner = inner.clone();
                     spawn(move || {
+                        let mut guard = None;
                         while !inner.is_closed() {
                             match inner.pop_job() {
-                                Some(job) => inner.invoke_runner(job, thread_idx + 1),
-                                None => std::thread::park(),
+                                Some(job) => {
+                                    let guard = guard.get_or_insert_with(|| inner.begin_runner());
+                                    inner.invoke_runner(guard, job, thread_idx + 1);
+                                }
+                                None => {
+                                    drop(guard.take());
+                                    std::thread::park();
+                                }
                             }
                         }
                     })
@@ -64,7 +71,7 @@ impl ThreadPool {
                 .for_each(|t| t.unpark());
 
             while let Some(job) = self.inner.pop_job() {
-                self.inner.invoke_runner(job, 0);
+                job_runner(job, 0);
             }
         });
     }
@@ -77,14 +84,15 @@ impl Drop for ThreadPool {
     }
 }
 
-unsafe impl Send for Inner {}
-unsafe impl Sync for Inner {}
-
+type RunnerGuard<'a> = RwLockReadGuard<'a, Option<NonNull<dyn Fn(*const (), usize) + Send + Sync>>>;
 struct Inner {
     closed: AtomicBool,
     job_list: Mutex<Vec<*const ()>>,
     job_runner: RwLock<Option<NonNull<dyn Fn(*const (), usize) + Send + Sync>>>,
 }
+
+unsafe impl Send for Inner {}
+unsafe impl Sync for Inner {}
 
 impl Inner {
     fn new() -> Self {
@@ -110,13 +118,17 @@ impl Inner {
 
     fn push_jobs(&self, jobs: impl IntoIterator<Item = *const ()>) -> usize {
         let mut stack = self.job_list.lock().unwrap();
+        stack.clear();
         stack.extend(jobs);
         stack.len()
     }
 
-    fn invoke_runner(&self, job: *const (), thread: usize) {
-        let task = self.job_runner.read().unwrap();
-        if let Some(task) = *task {
+    fn begin_runner(&self) -> RunnerGuard {
+        self.job_runner.read().unwrap()
+    }
+
+    fn invoke_runner(&self, guard: &RunnerGuard, job: *const (), thread: usize) {
+        if let Some(task) = **guard {
             unsafe {
                 task.as_ref()(job, thread);
             }
@@ -132,6 +144,8 @@ impl Inner {
         f();
 
         {
+            // this will be unlocked when all the runner guards are dropped
+            // i.e. when every thread is parked
             let mut task = self.job_runner.write().unwrap();
             *task = None;
         }
