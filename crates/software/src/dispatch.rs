@@ -1,4 +1,5 @@
 use crate::{
+    buffer::{BufferMut, BufferRef},
     util::{ThreadPool, dispatch_simd},
     vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMContext, VMInterpreter, VMSlot},
 };
@@ -10,6 +11,7 @@ enum DispatchObject<'a> {
     Draw {
         shader: &'a CompiledShader,
         data: Range<usize>,
+        textures: Range<usize>,
         bounds: Bounds,
     },
 
@@ -18,40 +20,32 @@ enum DispatchObject<'a> {
     },
 }
 
-pub struct DispatchBuffer<'a> {
-    pub buffer: &'a mut [u32],
-    pub width: u32,
-    pub height: u32,
-    pub bounds: Bounds,
-}
-
 pub struct Dispatcher<'a> {
     arena: &'a Bump,
-    buffer: DispatchBuffer<'a>,
     objects: Vec<'a, DispatchObject<'a>>,
     data: Vec<'a, VMSlot>,
+    textures: Vec<'a, BufferRef<'a>>,
 }
 
 impl<'a> Dispatcher<'a> {
-    pub fn new(arena: &'a Bump, buffer: DispatchBuffer<'a>) -> Self {
+    pub fn new(arena: &'a Bump) -> Self {
         Self {
             arena,
-            buffer,
             objects: Vec::new_in(arena),
             data: Vec::new_in(arena),
+            textures: Vec::new_in(arena),
         }
     }
 
     pub fn write_clear(&mut self, bounds: impl Into<Bounds>) {
-        self.objects.push(DispatchObject::Clear {
-            bounds: bounds.into(),
-        });
+        self.objects.push(DispatchObject::Clear { bounds: bounds.into() });
     }
 
     pub fn write_start(&mut self, bounds: impl Into<Bounds>, shader: &'a CompiledShader) {
         self.objects.push(DispatchObject::Draw {
             shader,
             data: self.data.len()..0,
+            textures: self.textures.len()..0,
             bounds: bounds.into(),
         });
     }
@@ -60,9 +54,18 @@ impl<'a> Dispatcher<'a> {
         self.data.extend_from_slice(data);
     }
 
+    pub fn write_texture(&mut self, texture: BufferRef<'a>) {
+        self.textures.push(texture);
+    }
+
     pub fn write_end(&mut self) {
-        if let Some(DispatchObject::Draw { data, shader, .. }) = self.objects.last_mut() {
+        if let Some(DispatchObject::Draw {
+            data, textures, shader, ..
+        }) = self.objects.last_mut()
+        {
             data.end = self.data.len();
+            textures.end = self.textures.len();
+
             if shader.data_slots() as usize != data.len() {
                 panic!("write_data wrote insufficient amount of data for the given shader");
             }
@@ -71,18 +74,16 @@ impl<'a> Dispatcher<'a> {
         }
     }
 
-    pub fn dispatch(self, pool: &mut ThreadPool) {
+    pub fn dispatch(self, pool: &mut ThreadPool, buffer: BufferMut<'a>) {
         // prepare data
         let slots = self.data.into_bump_slice();
-        let width = self.buffer.width;
-        let height = self.buffer.height;
-        let bounds = self.buffer.bounds;
-        let buffer_ptr = self.buffer.buffer.as_mut_ptr() as usize;
-        drop(self.buffer);
+        let textures = self.textures.into_bump_slice();
+        let (buffer_ptr, width, height, stride) = buffer.into_raw_parts();
+        let buffer_ptr = buffer_ptr as usize;
 
         // tile objects into separate buckets
-        let tiles_width = (bounds.width().div_ceil(TILE_SIZE as u32)) as usize;
-        let tiles_height = (bounds.height().div_ceil(TILE_SIZE as u32)) as usize;
+        let tiles_width = width.div_ceil(TILE_SIZE);
+        let tiles_height = height.div_ceil(TILE_SIZE);
         let tiles = {
             let mut tiles = Vec::from_iter_in(
                 from_fn(|| Some(Vec::new_in(self.arena))).take(tiles_width * tiles_height),
@@ -91,12 +92,8 @@ impl<'a> Dispatcher<'a> {
 
             for object in self.objects.iter() {
                 let bounds = match object {
-                    DispatchObject::Draw { bounds, .. } => {
-                        bounds.offset(-(bounds.left as i32), -(bounds.top as i32))
-                    }
-                    DispatchObject::Clear { bounds } => {
-                        bounds.offset(-(bounds.left as i32), -(bounds.top as i32))
-                    }
+                    DispatchObject::Draw { bounds, .. } => bounds.offset(-(bounds.left as i32), -(bounds.top as i32)),
+                    DispatchObject::Clear { bounds } => bounds.offset(-(bounds.left as i32), -(bounds.top as i32)),
                 };
 
                 let x0 = bounds.left as usize / TILE_SIZE;
@@ -131,17 +128,15 @@ impl<'a> Dispatcher<'a> {
             });
 
         // allocate memory for workers
-        let workers = &*self
-            .arena
-            .alloc_slice_fill_iter((0..pool.num_threads()).map(|_| {
-                Mutex::new(DispatchWorker {
-                    r: self.arena.alloc([0.0; PIXEL_COUNT]),
-                    g: self.arena.alloc([0.0; PIXEL_COUNT]),
-                    b: self.arena.alloc([0.0; PIXEL_COUNT]),
-                    a: self.arena.alloc([0.0; PIXEL_COUNT]),
-                    interpreter: VMInterpreter::new(self.arena),
-                })
-            }));
+        let workers = &*self.arena.alloc_slice_fill_iter((0..pool.num_threads()).map(|_| {
+            Mutex::new(DispatchWorker {
+                r: self.arena.alloc([0.0; PIXEL_COUNT]),
+                g: self.arena.alloc([0.0; PIXEL_COUNT]),
+                b: self.arena.alloc([0.0; PIXEL_COUNT]),
+                a: self.arena.alloc([0.0; PIXEL_COUNT]),
+                interpreter: VMInterpreter::new(self.arena),
+            })
+        }));
 
         // dispatch jobs
         pool.execute(jobs, |job, index| {
@@ -149,6 +144,19 @@ impl<'a> Dispatcher<'a> {
             dispatch_simd(
                 #[inline(always)]
                 || {
+                    // SAFETY: the buffer is guaranteed to be valid because
+                    // it's alive for the duration of the outer scope,
+                    // and we access each region only once
+                    // (i.e. threads have no intersecting write regions)
+                    let buffer = unsafe {
+                        BufferMut::from_raw_parts(buffer_ptr as *mut u32, width, height, stride).subregion_mut(
+                            job.x as usize,
+                            job.y as usize,
+                            TILE_SIZE,
+                            TILE_SIZE,
+                        )
+                    };
+
                     // clear the buffer
                     worker.r.fill(0.0);
                     worker.g.fill(0.0);
@@ -159,7 +167,13 @@ impl<'a> Dispatcher<'a> {
                     for object in job.objects.iter() {
                         match object {
                             DispatchObject::Clear { bounds } => {
-                                let bounds = bounds.offset(-(job.x as i32), -(job.y as i32));
+                                let bounds = bounds.offset(-(job.x as i32), -(job.y as i32)).intersect(Bounds {
+                                    top: 0,
+                                    left: 0,
+                                    bottom: TILE_SIZE as u32,
+                                    right: TILE_SIZE as u32,
+                                });
+
                                 for j in bounds.top as usize..bounds.bottom as usize {
                                     for i in bounds.left as usize..bounds.right as usize {
                                         worker.a[j * TILE_SIZE + i] = 0.0;
@@ -170,6 +184,7 @@ impl<'a> Dispatcher<'a> {
                             DispatchObject::Draw {
                                 shader,
                                 data,
+                                textures,
                                 bounds,
                             } => {
                                 // SAFETY: the program is guaranteed to be valid
@@ -191,22 +206,10 @@ impl<'a> Dispatcher<'a> {
                                 }
 
                                 let bounds = bounds.offset(-(job.x as i32), -(job.y as i32));
-                                let r = worker
-                                    .interpreter
-                                    .register(shader.output_register(0))
-                                    .as_f32();
-                                let g = worker
-                                    .interpreter
-                                    .register(shader.output_register(1))
-                                    .as_f32();
-                                let b = worker
-                                    .interpreter
-                                    .register(shader.output_register(2))
-                                    .as_f32();
-                                let a = worker
-                                    .interpreter
-                                    .register(shader.output_register(3))
-                                    .as_f32();
+                                let r = worker.interpreter.register(shader.output_register(0)).as_f32();
+                                let g = worker.interpreter.register(shader.output_register(1)).as_f32();
+                                let b = worker.interpreter.register(shader.output_register(2)).as_f32();
+                                let a = worker.interpreter.register(shader.output_register(3)).as_f32();
 
                                 blend_tile(
                                     &mut worker.r,
@@ -223,23 +226,7 @@ impl<'a> Dispatcher<'a> {
                         }
                     }
 
-                    // copy the worker memory to the global buffer
-                    // SAFETY: the buffer is guaranteed to be valid,
-                    // and we write to each region only once
-                    // (i.e. threads have no intersecting write regions)
-                    unsafe {
-                        finish_tile(
-                            buffer_ptr as *mut u32,
-                            width,
-                            height,
-                            worker.r,
-                            worker.g,
-                            worker.b,
-                            worker.a,
-                            job.x,
-                            job.y,
-                        );
-                    }
+                    finish_tile(buffer, worker.r, worker.g, worker.b, worker.a);
                 },
             );
         });
@@ -291,16 +278,12 @@ fn blend_tile(
 }
 
 #[inline(always)]
-unsafe fn finish_tile(
-    dst: *mut u32,
-    width: u32,
-    height: u32,
+fn finish_tile(
+    mut buffer: BufferMut,
     r: &mut [f32; PIXEL_COUNT],
     g: &mut [f32; PIXEL_COUNT],
     b: &mut [f32; PIXEL_COUNT],
     a: &mut [f32; PIXEL_COUNT],
-    x: u32,
-    y: u32,
 ) {
     #[inline(always)]
     fn convert_color_0_255(x: &mut [f32; PIXEL_COUNT]) {
@@ -322,17 +305,14 @@ unsafe fn finish_tile(
     convert_color_0_255(b);
     convert_color_0_255(a);
 
-    for j in 0..(TILE_SIZE as u32).min(height - y) {
-        for i in 0..(TILE_SIZE as u32).min(width - x) {
-            let tx = x + i;
-            let ty = y + j;
-
+    for j in 0..TILE_SIZE.min(buffer.height()) {
+        for i in 0..TILE_SIZE.min(buffer.width()) {
             unsafe {
-                let r = r[(j * TILE_SIZE as u32 + i) as usize].to_int_unchecked::<u32>();
-                let g = g[(j * TILE_SIZE as u32 + i) as usize].to_int_unchecked::<u32>();
-                let b = b[(j * TILE_SIZE as u32 + i) as usize].to_int_unchecked::<u32>();
-                let a = a[(j * TILE_SIZE as u32 + i) as usize].to_int_unchecked::<u32>();
-                *dst.add((ty * width + tx) as usize) = a << 24 | r << 16 | g << 8 | b;
+                let r = r[j * TILE_SIZE + i].to_int_unchecked::<u8>();
+                let g = g[j * TILE_SIZE + i].to_int_unchecked::<u8>();
+                let b = b[j * TILE_SIZE + i].to_int_unchecked::<u8>();
+                let a = a[j * TILE_SIZE + i].to_int_unchecked::<u8>();
+                buffer[(i, j)] = u32::from_le_bytes([b, g, r, a]);
             }
         }
     }

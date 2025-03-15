@@ -1,7 +1,7 @@
 /// Pixel format of an image.
 #[derive(Clone, Copy, Debug)]
 pub enum ImageFormat {
-    R8,
+    Gray8,
     RGB8,
     RGBA8,
 }

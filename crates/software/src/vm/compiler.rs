@@ -1,3 +1,5 @@
+use crate::REGISTER_COUNT;
+
 use super::{VMOp, VMOpcode};
 use bumpalo::Bump;
 use picodraw_core::{Graph, graph::OpInput};
@@ -40,6 +42,11 @@ impl CompiledShader {
         let program = program.optimize_peephole(arena);
         let program = program.optimize_hashcons(arena);
         let program = program.lower_to_opcodes(arena);
+
+        assert!(
+            program.register_count <= REGISTER_COUNT as u8,
+            "too many registers used"
+        );
 
         Self {
             output: [
@@ -265,9 +272,6 @@ mod ir {
                 Length(a) if graph.type_of(a).size() == 1 => {
                     out!(AbsF(a));
                 }
-                Select(a, b, c) => {
-                    out!(Select(a, b, c));
-                }
 
                 DerivX(a) => out!(DxF(a)),
                 DerivY(a) => out!(DyF(a)),
@@ -359,8 +363,38 @@ mod ir {
                     self.set_graph(op, 0, self.get_graph(a, 3));
                 }
 
-                Cross(_, _) => {
-                    todo!()
+                Select(a, b, c) => {
+                    let selector = self.get_graph(a, 0);
+                    for i in 0..ty.size() {
+                        let x = self.get_graph(b, i as u8);
+                        let y = self.get_graph(c, i as u8);
+                        let ir = emit(self.arena, VMOp::Select(selector, x, y, ()));
+                        self.set_graph(op, i as u8, ir);
+                    }
+                }
+
+                Cross(a, b) => {
+                    let ax = self.get_graph(a, 0);
+                    let ay = self.get_graph(a, 1);
+                    let az = self.get_graph(a, 2);
+                    let bx = self.get_graph(b, 0);
+                    let by = self.get_graph(b, 1);
+                    let bz = self.get_graph(b, 2);
+
+                    let aybz = emit(self.arena, VMOp::MulF(ay, bz, ()));
+                    let azby = emit(self.arena, VMOp::MulF(az, by, ()));
+                    let azbx = emit(self.arena, VMOp::MulF(az, bx, ()));
+                    let axbz = emit(self.arena, VMOp::MulF(ax, bz, ()));
+                    let axby = emit(self.arena, VMOp::MulF(ax, by, ()));
+                    let aybx = emit(self.arena, VMOp::MulF(ay, bx, ()));
+
+                    let x = emit(self.arena, VMOp::SubF(aybz, azby, ()));
+                    let y = emit(self.arena, VMOp::SubF(azbx, axbz, ()));
+                    let z = emit(self.arena, VMOp::SubF(axby, aybx, ()));
+
+                    self.set_graph(op, 0, x);
+                    self.set_graph(op, 1, y);
+                    self.set_graph(op, 2, z);
                 }
 
                 Dot(a, b) => {
@@ -435,6 +469,7 @@ mod ir {
     pub struct VMProgram<'a> {
         pub opcodes: Vec<'a, VMOpcode>,
         pub outputs: Vec<'a, u8>,
+        pub register_count: u8,
     }
 
     impl<'a> IRProgram<'a> {
@@ -637,10 +672,7 @@ mod ir {
                 &mut mapping,
                 |mapping, ir, _| !mapping.contains_key(&ir),
                 |mapping, ir| {
-                    mapping.insert(
-                        ir,
-                        single_peephole(arena, ir.map_children(arena, |ir| mapping[&ir])),
-                    );
+                    mapping.insert(ir, single_peephole(arena, ir.map_children(arena, |ir| mapping[&ir])));
                 },
             );
 
@@ -729,9 +761,7 @@ mod ir {
                 |(_, reverse), ir, _| !reverse.contains_key(&ir),
                 |(forward, reverse), ir| {
                     let key = IRKey(ir.0.map_inputs(|input| reverse[&input]));
-                    let normalized = *forward
-                        .entry(key)
-                        .or_insert(ir.map_children(arena, |ir| reverse[&ir]));
+                    let normalized = *forward.entry(key).or_insert(ir.map_children(arena, |ir| reverse[&ir]));
                     reverse.insert(ir, normalized);
                 },
             );
@@ -803,7 +833,11 @@ mod ir {
                 outputs.push(registers[&output]);
             }
 
-            VMProgram { opcodes, outputs }
+            VMProgram {
+                opcodes,
+                outputs,
+                register_count: state.len() as u8,
+            }
         }
     }
 }

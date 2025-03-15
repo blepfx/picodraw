@@ -377,7 +377,7 @@ impl GlTexture {
                 TEXTURE_2D,
                 0,
                 match data.format {
-                    picodraw_core::ImageFormat::R8 => R8,
+                    picodraw_core::ImageFormat::Gray8 => R8,
                     picodraw_core::ImageFormat::RGB8 => RGB8,
                     picodraw_core::ImageFormat::RGBA8 => RGBA8,
                 },
@@ -385,7 +385,7 @@ impl GlTexture {
                 data.height as _,
                 0,
                 match data.format {
-                    picodraw_core::ImageFormat::R8 => RED,
+                    picodraw_core::ImageFormat::Gray8 => RED,
                     picodraw_core::ImageFormat::RGB8 => RGB,
                     picodraw_core::ImageFormat::RGBA8 => RGBA,
                 },

@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use image::{DynamicImage, GenericImageView, Rgba, open};
 use picodraw::{
-    CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData,
-    ShaderDataWriter, Texture, shader::*,
+    CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData, ShaderDataWriter, Texture,
+    shader::*,
 };
 
 const CANVAS_SIZE: u32 = 512;
@@ -62,8 +64,7 @@ fn blurry_semicircle() {
 
             let grid = (io::position() / 32.0).floor();
             let checker = (grid.x() + grid.y()) % 2.0;
-            let texture =
-                float4(checker).lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
+            let texture = float4(checker).lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
             let mask = sdf_circle(io::position(), float2((x, y)), float1(128.0));
             let color = texture * mask;
 
@@ -240,10 +241,7 @@ fn serialize_test() {
         type Data = float2;
         fn read() -> Self::Data {
             let resolution = io::resolution();
-            float2((
-                io::read::<f32>() * resolution.x(),
-                io::read::<f32>() * resolution.y(),
-            ))
+            float2((io::read::<f32>() * resolution.x(), io::read::<f32>() * resolution.y()))
         }
         fn write(&self, writer: &mut dyn ShaderDataWriter) {
             writer.write_f32(self.0 / writer.resolution().width as f32);
@@ -360,13 +358,7 @@ fn serialize_test() {
                 * (1.0 - position.x().step(data_box.bounds.z()))
                 * (1.0 - position.y().step(data_box.bounds.w()));
 
-            let mask_circle = 0.5
-                * sdf_circle(
-                    position,
-                    data_circle.point,
-                    data_circle.scale.0,
-                    data_circle.invert,
-                );
+            let mask_circle = 0.5 * sdf_circle(position, data_circle.point, data_circle.scale.0, data_circle.invert);
 
             let mask_point = sdf_circle(position, data_point.0, float1(5.0), boolean(false));
 
@@ -376,9 +368,7 @@ fn serialize_test() {
                     + float1(0.0)
                     + float1(-1.0)
                     + float1(0.5)
-                    + float1(
-                        int1(1) + int1(0) + int1(-1) + int1(2) + int1(-2) + int1(3) + int1(-3),
-                    )
+                    + float1(int1(1) + int1(0) + int1(-1) + int1(2) + int1(-2) + int1(3) + int1(-3))
                     + boolean(true).select(float1(0.25), 0.0)
                     + boolean(false).select(float1(0.0), 0.5);
 
@@ -418,9 +408,7 @@ fn serialize_test() {
 
         // should not be dispatched! we reset the command buffer before the dispatch
         // dispatching this will lead to `malformed write stream` panic
-        commands
-            .begin_screen([1, 1])
-            .begin_quad(shader, [0, 0, 1, 1]);
+        commands.begin_screen([1, 1]).begin_quad(shader, [0, 0, 1, 1]);
         commands.reset_commands();
 
         commands
@@ -469,7 +457,7 @@ fn resource_mgmt() {
         let texture_0 = context.create_texture_static(ImageData {
             width: 1,
             height: 1,
-            format: ImageFormat::R8,
+            format: ImageFormat::Gray8,
             data: &[127],
         });
 
@@ -481,9 +469,7 @@ fn resource_mgmt() {
         });
 
         let shader_0 = context.create_shader(Graph::collect(|| float4((0.0, 0.0, 0.0, 0.25))));
-        let shader_1 = context.create_shader(Graph::collect(|| {
-            io::read::<Texture>().sample_linear(io::position())
-        }));
+        let shader_1 = context.create_shader(Graph::collect(|| io::read::<Texture>().sample_linear(io::position())));
 
         let buffer_0 = context.create_texture_render();
 
@@ -500,9 +486,7 @@ fn resource_mgmt() {
             width: 2,
             height: 2,
             format: ImageFormat::RGBA8,
-            data: &[
-                0, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 255, 255, 0, 255,
-            ],
+            data: &[0, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 255, 255, 0, 255],
         });
 
         let shader_2 = context.create_shader(Graph::collect(|| {
@@ -518,12 +502,8 @@ fn resource_mgmt() {
         let mut commands = CommandBuffer::new();
         let mut frame = commands.begin_buffer(buffer_0, [CANVAS_SIZE, CANVAS_SIZE]);
         frame.clear([5, 5, 10, 10]);
-        frame
-            .begin_quad(shader_2, [10, 10, 20, 20])
-            .write_data(texture_1);
-        frame
-            .begin_quad(shader_2, [20, 20, 30, 30])
-            .write_data(texture_2);
+        frame.begin_quad(shader_2, [10, 10, 20, 20]).write_data(texture_1);
+        frame.begin_quad(shader_2, [20, 20, 30, 30]).write_data(texture_2);
         frame.begin_quad(shader_0, [0, 0, 20, 20]);
         context.draw(&commands);
 
@@ -614,12 +594,7 @@ fn shader_ops() {
                 |x, _| {
                     // min/max/clamp/lerp
                     let x = x * 10.0 - 5.0;
-                    float3((
-                        x.min(1.0) + x.max(2.0),
-                        x.clamp(-1.0, 1.0),
-                        x.lerp(-0.5, 1.0),
-                    )) * 0.25
-                        + 0.25
+                    float3((x.min(1.0) + x.max(2.0), x.clamp(-1.0, 1.0), x.lerp(-0.5, 1.0))) * 0.25 + 0.25
                 },
                 |j, i| {
                     // integer bitwise operations
@@ -691,7 +666,7 @@ fn shader_ops() {
 }
 
 #[allow(unused_variables, dead_code)]
-fn run(id: &str, render: impl Fn(&mut dyn Context) + Send + 'static) {
+fn run(id: &str, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
     fn difference(a: &DynamicImage, b: &DynamicImage) -> f64 {
         let mut sum = 0;
         for i in 0..a.width() {
@@ -712,41 +687,48 @@ fn run(id: &str, render: impl Fn(&mut dyn Context) + Send + 'static) {
     }
 
     std::fs::create_dir_all("./tests/drawtest/failures").ok();
+    std::fs::create_dir_all("./tests/drawtest/successes").ok();
 
-    let expected =
-        open(format!("./tests/drawtest/expected/{}.webp", id)).expect("no 'expected' image found");
+    let renderer = Arc::new(render);
 
-    #[cfg(feature = "opengl")]
-    {
-        let result = opengl::render(CANVAS_SIZE, CANVAS_SIZE, render);
+    let expected = open(format!("./tests/drawtest/expected/{}.webp", id)).expect("no 'expected' image found");
+    let results: Vec<(&'static str, DynamicImage)> = vec![
+        #[cfg(feature = "backend-software")]
+        ("software", software::render(CANVAS_SIZE, CANVAS_SIZE, renderer.clone())),
+        #[cfg(feature = "backend-opengl")]
+        ("opengl", opengl::render(CANVAS_SIZE, CANVAS_SIZE, renderer.clone())),
+    ];
+
+    for (backend, result) in results {
         let diff = difference(&result, &expected);
         if diff > 3.0 {
             result
-                .save(format!("./tests/drawtest/failures/opengl-{}.webp", id))
+                .save(format!("./tests/drawtest/failures/{}-{}.webp", backend, id))
                 .unwrap();
-            panic!("opengl backend: {:.2} difference", diff);
+            std::fs::remove_file(format!("./tests/drawtest/successes/{}-{}.webp", backend, id)).ok();
+            panic!("{} backend: {:.2} difference", backend, diff);
         } else {
-            std::fs::remove_file(format!("./tests/drawtest/failures/opengl-{}.webp", id)).ok();
+            result
+                .save(format!("./tests/drawtest/successes/{}-{}.webp", backend, id))
+                .unwrap();
+            std::fs::remove_file(format!("./tests/drawtest/failures/{}-{}.webp", backend, id)).ok();
         }
     }
 }
 
-#[cfg(feature = "opengl")]
+#[cfg(feature = "backend-opengl")]
 mod opengl {
     use super::CANVAS_SIZE;
     use image::{DynamicImage, Rgb, RgbImage};
     use picodraw::{Context, opengl::OpenGlBackend};
     use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
+    use std::sync::Arc;
     use std::{
         sync::mpsc::{TryRecvError, sync_channel},
         time::Duration,
     };
 
-    pub fn render(
-        width: u32,
-        height: u32,
-        render: impl Fn(&mut dyn Context) + Send + 'static,
-    ) -> DynamicImage {
+    pub fn render(width: u32, height: u32, render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>) -> DynamicImage {
         let (sender, receiver) = sync_channel::<RgbImage>(1);
         let mut gl_backend = None;
 
@@ -765,9 +747,7 @@ mod opengl {
                 Event::Expose { backend, .. } => {
                     let mut gl_backend = unsafe {
                         gl_backend
-                            .get_or_insert_with(|| {
-                                OpenGlBackend::new(&|c| backend.get_proc_address(c)).unwrap()
-                            })
+                            .get_or_insert_with(|| OpenGlBackend::new(&|c| backend.get_proc_address(c)).unwrap())
                             .open()
                     };
 
@@ -817,5 +797,33 @@ mod opengl {
                 Err(TryRecvError::Disconnected) => panic!("receiver disconnected"),
             }
         }
+    }
+}
+
+#[cfg(feature = "backend-software")]
+mod software {
+    use image::{DynamicImage, Rgb, RgbImage};
+    use picodraw::{
+        Context,
+        software::{BufferMut, SoftwareBackend},
+    };
+    use std::sync::Arc;
+
+    pub fn render(width: u32, height: u32, render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>) -> DynamicImage {
+        let mut backend = SoftwareBackend::new();
+        let mut buffer = vec![0u32; (width * height) as usize];
+        let mut context = backend.begin(BufferMut::from_slice(&mut buffer, width as usize, height as usize));
+
+        render(&mut context);
+
+        let mut image = RgbImage::new(width, height);
+        for i in 0..width {
+            for j in 0..height {
+                let data = buffer[(i + j * width) as usize];
+                image.put_pixel(i, j, Rgb([(data >> 16) as u8, (data >> 8) as u8, data as u8]));
+            }
+        }
+
+        image.into()
     }
 }

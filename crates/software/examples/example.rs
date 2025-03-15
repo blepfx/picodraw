@@ -2,7 +2,7 @@ use picodraw_core::{
     Graph,
     shader::{float4, io},
 };
-use picodraw_software::{CompiledShader, DispatchBuffer, Dispatcher, VMSlot};
+use picodraw_software::{BufferMut, CompiledShader, Dispatcher, VMSlot};
 
 fn main() {
     let arena = bumpalo::Bump::new();
@@ -35,12 +35,7 @@ fn main() {
     const ITERS: usize = 10000;
     for i in 0..ITERS {
         let mut buffer = arena.alloc_slice_fill_default(512 * 512);
-        let mut dispatcher = Dispatcher::new(&arena, DispatchBuffer {
-            buffer: &mut buffer,
-            width: 512,
-            height: 512,
-            bounds: [0, 0, 512, 512].into(),
-        });
+        let mut dispatcher = Dispatcher::new(&arena);
 
         for i in 0..10 {
             dispatcher.write_start([0, 0, 512, 512], &shader);
@@ -49,7 +44,11 @@ fn main() {
             }]);
             dispatcher.write_end();
         }
-        dispatcher.dispatch(&mut thread_pool);
+
+        dispatcher.dispatch(
+            &mut thread_pool,
+            BufferMut::from_slice(&mut buffer, 512, 512),
+        );
 
         if i == 0 {
             println!("memory per draw: {}KB", arena.allocated_bytes() / 1024);

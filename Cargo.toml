@@ -33,7 +33,7 @@ pugl-rs = { workspace = true }
 image = { workspace = true }
 
 [features]
-default = ["derive", "collect"]
+default = ["derive", "collect", "backend-software"]
 collect = ["picodraw-core/collect"]
 derive = ["dep:picodraw-derive"]
 

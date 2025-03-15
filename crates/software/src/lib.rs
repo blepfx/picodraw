@@ -1,9 +1,11 @@
 mod backend;
+mod buffer;
 mod dispatch;
 mod util;
 mod vm;
 
 pub use backend::*;
+pub use buffer::*;
 pub use dispatch::*;
 pub use util::*;
 pub use vm::*;
