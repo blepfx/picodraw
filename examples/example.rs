@@ -43,6 +43,7 @@ impl App {
             );
             gl.render(0, 0, |mut x| {
                 x.register::<Circle>();
+                x.register::<Pixel>();
             });
 
             context.make_not_current();
@@ -68,37 +69,27 @@ impl WindowHandler for App {
                 self.size.width.ceil() as u32,
                 self.size.height.ceil() as u32,
                 |mut render| {
-                    render.draw(
-                        &Circle {
-                            center: [256.0, 256.0],
-                            radius: 100.0,
+                    for i in 0..512 {
+                        for j in 0..512 {
+                            let even = (i + j) % 2 == 0;
 
-                            ignored: 0,
-                            alpha: 0.5,
-                        },
-                        Bounds {
-                            left: (256.0 - 100.0) as u16,
-                            top: (256.0 - 100.0) as u16,
-                            bottom: (256.0 + 100.0) as u16,
-                            right: (256.0 + 100.0) as u16,
-                        },
-                    );
-
-                    render.draw(
-                        &Circle {
-                            center: [320.0, 320.0],
-                            radius: 50.0,
-
-                            ignored: 0,
-                            alpha: 0.5,
-                        },
-                        Bounds {
-                            left: (320.0 - 50.0) as u16,
-                            top: (320.0 - 50.0) as u16,
-                            bottom: (320.0 + 50.0) as u16,
-                            right: (320.0 + 50.0) as u16,
-                        },
-                    );
+                            render.draw(
+                                &Pixel {
+                                    r: 1.0,
+                                    g: if even { 0.0 } else { 1.0 },
+                                    b: if even { 1.0 } else { 0.0 },
+                                    a: 1.0,
+                                    _extra: [0; 12],
+                                },
+                                Bounds {
+                                    top: i,
+                                    left: j,
+                                    bottom: i + 1,
+                                    right: j + 1,
+                                },
+                            );
+                        }
+                    }
                 },
             );
 
@@ -180,5 +171,20 @@ impl ShaderData for F16_01 {
 impl From<f32> for F16_01 {
     fn from(value: f32) -> Self {
         Self(value)
+    }
+}
+
+#[derive(ShaderData)]
+struct Pixel {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+    pub _extra: [u8; 12],
+}
+
+impl Shader for Pixel {
+    fn draw(shader: ShaderContext<Self::ShaderVars>) -> Float4 {
+        Float4::new(shader.r, shader.g, shader.b, shader.a)
     }
 }

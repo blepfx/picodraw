@@ -266,12 +266,11 @@ impl GlTextureBuffer {
                 (range_start * Self::TEXEL_SIZE_BYTES) as _,
                 ((self.size - range_start) * Self::TEXEL_SIZE_BYTES) as _,
                 MAP_WRITE_BIT
-                    | MAP_UNSYNCHRONIZED_BIT
                     | MAP_FLUSH_EXPLICIT_BIT
                     | (if needs_invalidation {
                         MAP_INVALIDATE_BUFFER_BIT
                     } else {
-                        0
+                        MAP_UNSYNCHRONIZED_BIT
                     }),
             ) as *mut [u32; 4];
             check_error(gl);
