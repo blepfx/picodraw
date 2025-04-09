@@ -1,6 +1,4 @@
-use crate::REGISTER_COUNT;
-
-use super::{VMOp, VMOpcode};
+use super::{REGISTER_COUNT, VMOp, VMOpcode};
 use bumpalo::Bump;
 use picodraw_core::{Graph, graph::OpInput};
 
@@ -8,23 +6,30 @@ use picodraw_core::{Graph, graph::OpInput};
 pub struct CompiledShader {
     opcodes: Vec<VMOpcode>,
     output: [u8; 4],
-    data_slots: u32,
+    slots_data: u32,
+    slots_texture: u8,
 }
 
 impl CompiledShader {
     pub fn compile(arena: &Bump, graph: &Graph) -> Self {
         let mut builder = ir::IRBuilder::new(arena);
-        let mut data_slots = 0;
+        let mut slots_data = 0;
+        let mut slots_texture = 0;
 
-        builder.emit_graph_all(graph, |input, _, _| match input {
+        builder.emit_graph_all(graph, |input, addr, builder| match input {
             OpInput::F32 => {
-                data_slots += 1;
-                ir::emit(arena, VMOp::ReadF(data_slots - 1, ()))
+                builder.set_graph(addr, 0, ir::emit(arena, VMOp::ReadF(slots_data, ())));
+                slots_data += 1;
+            }
+
+            OpInput::TextureRender | OpInput::TextureStatic => {
+                builder.set_texture(addr, slots_texture);
+                slots_texture += 1;
             }
 
             x if x.value_type().is_int() => {
-                data_slots += 1;
-                ir::emit(arena, VMOp::ReadI(data_slots - 1, ()))
+                builder.set_graph(addr, 0, ir::emit(arena, VMOp::ReadI(slots_data, ())));
+                slots_data += 1;
             }
 
             _ => todo!(),
@@ -56,7 +61,8 @@ impl CompiledShader {
                 program.outputs[3],
             ],
             opcodes: program.opcodes.to_vec(),
-            data_slots,
+            slots_data,
+            slots_texture,
         }
     }
 
@@ -69,7 +75,11 @@ impl CompiledShader {
     }
 
     pub fn data_slots(&self) -> u32 {
-        self.data_slots
+        self.slots_data
+    }
+
+    pub fn texture_slots(&self) -> u8 {
+        self.slots_texture
     }
 }
 
@@ -121,6 +131,7 @@ mod ir {
     pub struct IRBuilder<'a> {
         arena: &'a Bump,
         map: HashMap<(OpAddr, u8), IR<'a>>,
+        textures: HashMap<OpAddr, u8>,
     }
 
     impl<'a> IRBuilder<'a> {
@@ -128,6 +139,7 @@ mod ir {
             Self {
                 arena,
                 map: HashMap::new(),
+                textures: HashMap::new(),
             }
         }
 
@@ -139,12 +151,15 @@ mod ir {
             self.map.insert((op, index), value);
         }
 
-        pub fn emit_graph(
-            &mut self,
-            graph: &Graph,
-            op: OpAddr,
-            mut input: impl FnMut(OpInput, &mut IRBuilder<'a>) -> IR<'a>,
-        ) {
+        pub fn set_texture(&mut self, op: OpAddr, index: u8) {
+            self.textures.insert(op, index);
+        }
+
+        pub fn get_texture(&self, op: OpAddr) -> u8 {
+            *self.textures.get(&op).unwrap()
+        }
+
+        pub fn emit_graph(&mut self, graph: &Graph, op: OpAddr, mut input: impl FnMut(OpInput, &mut IRBuilder<'a>)) {
             let ty = graph.type_of(op);
 
             macro_rules! op {
@@ -182,20 +197,43 @@ mod ir {
             use OpValue::*;
             match graph.value_of(op) {
                 Input(i) => {
-                    let ir = input(i, self);
-                    self.set_graph(op, 0, ir);
+                    input(i, self);
                 }
 
-                TextureLinear(_, _) => {
-                    todo!()
+                TextureLinear(t, x) => {
+                    let texture = self.get_texture(t);
+                    let pos_x = self.get_graph(x, 0);
+                    let pos_y = self.get_graph(x, 1);
+                    let tex_r = emit(self.arena, VMOp::TexLinear(texture, 3, pos_x, pos_y, ()));
+                    let tex_g = emit(self.arena, VMOp::TexLinear(texture, 2, pos_x, pos_y, ()));
+                    let tex_b = emit(self.arena, VMOp::TexLinear(texture, 1, pos_x, pos_y, ()));
+                    let tex_a = emit(self.arena, VMOp::TexLinear(texture, 0, pos_x, pos_y, ()));
+                    self.set_graph(op, 0, tex_r);
+                    self.set_graph(op, 1, tex_g);
+                    self.set_graph(op, 2, tex_b);
+                    self.set_graph(op, 3, tex_a);
                 }
 
-                TextureNearest(_, _) => {
-                    todo!()
+                TextureNearest(t, x) => {
+                    let texture = self.get_texture(t);
+                    let pos_x = self.get_graph(x, 0);
+                    let pos_y = self.get_graph(x, 1);
+                    let tex_r = emit(self.arena, VMOp::TexNearest(texture, 3, pos_x, pos_y, ()));
+                    let tex_g = emit(self.arena, VMOp::TexNearest(texture, 2, pos_x, pos_y, ()));
+                    let tex_b = emit(self.arena, VMOp::TexNearest(texture, 1, pos_x, pos_y, ()));
+                    let tex_a = emit(self.arena, VMOp::TexNearest(texture, 0, pos_x, pos_y, ()));
+                    self.set_graph(op, 0, tex_r);
+                    self.set_graph(op, 1, tex_g);
+                    self.set_graph(op, 2, tex_b);
+                    self.set_graph(op, 3, tex_a);
                 }
 
-                TextureSize(_) => {
-                    todo!()
+                TextureSize(t) => {
+                    let texture = self.get_texture(t);
+                    let tex_w = emit(self.arena, VMOp::TexW(texture, ()));
+                    let tex_h = emit(self.arena, VMOp::TexH(texture, ()));
+                    self.set_graph(op, 0, tex_w);
+                    self.set_graph(op, 1, tex_h);
                 }
 
                 Add(a, b) if ty.is_float() => out!(AddF(a, b)),
@@ -229,8 +267,8 @@ mod ir {
                     }
                 }
 
-                Step(a, b) if ty.is_float() => out!(Select(LtF(b, a), LitF(0.0), LitF(1.0))),
-                Step(a, b) => out!(Select(LtI(b, a), LitI(0), LitI(1))),
+                Step(a, b) if ty.is_float() => out!(Select(LtF(a, b), LitF(0.0), LitF(1.0))),
+                Step(a, b) => out!(Select(LtI(a, b), LitI(0), LitI(1))),
                 Neg(a) if ty.is_float() => out!(NegF(a)),
                 Neg(a) => out!(NegI(a)),
                 Sin(a) => out!(SinF(a)),
@@ -451,11 +489,7 @@ mod ir {
             }
         }
 
-        pub fn emit_graph_all(
-            &mut self,
-            graph: &Graph,
-            mut input: impl FnMut(OpInput, OpAddr, &mut IRBuilder<'a>) -> IR<'a>,
-        ) {
+        pub fn emit_graph_all(&mut self, graph: &Graph, mut input: impl FnMut(OpInput, OpAddr, &mut IRBuilder<'a>)) {
             for op in graph.iter() {
                 self.emit_graph(graph, op, |inp, builder| input(inp, op, builder));
             }
@@ -746,6 +780,12 @@ mod ir {
                             std::ptr::hash(b.0, state)
                         }
 
+                        TexW(x, _) | TexH(x, _) => x.hash(state),
+                        TexLinear(x, c, _, _, _) | TexNearest(x, c, _, _, _) => {
+                            x.hash(state);
+                            c.hash(state);
+                        }
+
                         _ => {
                             self.0.map_inputs(|i| std::ptr::hash(i.0, state));
                         }
@@ -881,6 +921,7 @@ mod tests {
                 data: &[VMSlot {
                     float: 0.0 + i as f32 * 0.01,
                 }],
+                textures: &[],
                 pos_x: 0.0,
                 pos_y: 0.0,
                 quad_t: 0.0,

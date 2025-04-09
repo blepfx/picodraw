@@ -11,7 +11,7 @@ use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 pub struct SoftwareBackend {
     shaders: SlotMap<DefaultKey, CompiledShader>,
     textures: SlotMap<DefaultKey, Buffer>,
-    buffers: SlotMap<DefaultKey, Buffer>,
+    buffers: SlotMap<DefaultKey, Option<Buffer>>,
 
     arena: Bump,
     thread_pool: ThreadPool,
@@ -41,7 +41,7 @@ impl SoftwareBackend {
 
 impl<'a> Context for SoftwareContext<'a> {
     fn create_texture_render(&mut self) -> RenderTexture {
-        let id = self.owner.buffers.insert(Buffer::new(0, 0));
+        let id = self.owner.buffers.insert(Some(Buffer::new(0, 0)));
         RenderTexture(id.data().as_ffi())
     }
 
@@ -71,35 +71,52 @@ impl<'a> Context for SoftwareContext<'a> {
     }
 
     fn draw(&mut self, buffer: &CommandBuffer) {
-        struct DispatchGroup<'a> {
-            dispatcher: Dispatcher<'a>,
-            target: Option<RenderTexture>,
-            size: Size,
-        }
-
         let mut commands = buffer.list_commands().iter();
+        let mut target = match commands.next() {
+            Some(Command::SetRenderTarget { texture, size }) => Some((*texture, *size)),
+            None => None,
+            _ => panic!("render target is not set"),
+        };
+
         loop {
-            let mut dispatch = None;
+            let target_buffer = match target {
+                Some((Some(texture), Size { width, height })) => {
+                    let mut buffer = self
+                        .owner
+                        .buffers
+                        .get_mut(KeyData::from_ffi(texture.0).into())
+                        .expect("unknown texture id")
+                        .take()
+                        .expect("render texture is currently in use");
 
-            while let command = commands.next() {
-                match command {
+                    if buffer.width() != width as usize || buffer.height() != height as usize {
+                        buffer.resize(width as usize, height as usize);
+                    }
+
+                    Some((buffer, texture))
+                }
+
+                Some((None, Size { width, height })) => {
+                    assert!(
+                        self.screen.width() == width as usize && self.screen.height() == height as usize,
+                        "screen size mismatch"
+                    );
+
+                    None
+                }
+
+                None => return,
+            };
+
+            let mut dispatcher = Dispatcher::new(&self.owner.arena);
+            loop {
+                match commands.next() {
                     Some(Command::SetRenderTarget { texture, size }) => {
-                        if dispatch.is_some() {
-                            break;
-                        }
-
-                        dispatch = Some(DispatchGroup {
-                            dispatcher: Dispatcher::new(&self.owner.arena),
-                            target: *texture,
-                            size: *size,
-                        });
+                        target = Some((*texture, *size));
+                        break;
                     }
                     Some(Command::ClearBuffer { bounds }) => {
-                        dispatch
-                            .as_mut()
-                            .expect("render target is not set")
-                            .dispatcher
-                            .write_clear(*bounds);
+                        dispatcher.write_clear(*bounds);
                     }
                     Some(Command::BeginQuad { shader, bounds }) => {
                         let shader = self
@@ -108,32 +125,16 @@ impl<'a> Context for SoftwareContext<'a> {
                             .get(KeyData::from_ffi(shader.0).into())
                             .expect("unknown shader id");
 
-                        dispatch
-                            .as_mut()
-                            .expect("render target is not set")
-                            .dispatcher
-                            .write_start(*bounds, &shader);
+                        dispatcher.write_start(*bounds, &shader);
                     }
                     Some(Command::EndQuad) => {
-                        dispatch
-                            .as_mut()
-                            .expect("render target is not set")
-                            .dispatcher
-                            .write_end();
+                        dispatcher.write_end();
                     }
                     Some(Command::WriteFloat(x)) => {
-                        dispatch
-                            .as_mut()
-                            .expect("render target is not set")
-                            .dispatcher
-                            .write_data(&[VMSlot { float: *x }]);
+                        dispatcher.write_data(&[VMSlot { float: *x }]);
                     }
                     Some(Command::WriteInt(x)) => {
-                        dispatch
-                            .as_mut()
-                            .expect("render target is not set")
-                            .dispatcher
-                            .write_data(&[VMSlot { int: *x }]);
+                        dispatcher.write_data(&[VMSlot { int: *x }]);
                     }
                     Some(Command::WriteStaticTexture(tex)) => {
                         let tex = self
@@ -142,55 +143,38 @@ impl<'a> Context for SoftwareContext<'a> {
                             .get(KeyData::from_ffi(tex.0).into())
                             .expect("unknown texture id");
 
-                        dispatch
-                            .as_mut()
-                            .expect("render target is not set")
-                            .dispatcher
-                            .write_texture(tex.as_ref());
+                        dispatcher.write_texture(tex.as_ref());
                     }
                     Some(Command::WriteRenderTexture(tex)) => {
                         let tex = self
                             .owner
                             .buffers
                             .get(KeyData::from_ffi(tex.0).into())
-                            .expect("unknown render texture id");
+                            .expect("unknown render texture id")
+                            .as_ref()
+                            .expect("render texture is currently in use");
 
-                        dispatch
-                            .as_mut()
-                            .expect("render target is not set")
-                            .dispatcher
-                            .write_texture(tex.as_ref());
+                        dispatcher.write_texture(tex.as_ref());
                     }
 
                     None => {
-                        if dispatch.is_some() {
-                            break;
-                        } else {
-                            return;
-                        }
+                        target = None;
+                        break;
                     }
                 }
             }
 
-            if let Some(dispatch) = dispatch.take() {
-                let target = match dispatch.target {
-                    Some(target) => todo!(),
-                    None => {
-                        assert!(
-                            (self.screen.width() == dispatch.size.width as usize)
-                                || (self.screen.height() == dispatch.size.height as usize),
-                            "screen buffer size mismatch"
-                        );
-
-                        self.screen.reborrow()
-                    }
-                };
-
-                dispatch.dispatcher.dispatch(&mut self.owner.thread_pool, target);
-            }
-
-            drop(dispatch);
-            self.owner.arena.reset();
+            match target_buffer {
+                Some((mut buffer, id)) => {
+                    dispatcher.dispatch(&mut self.owner.thread_pool, buffer.as_mut());
+                    *self.owner.buffers.get_mut(KeyData::from_ffi(id.0).into()).unwrap() = Some(buffer);
+                    self.owner.arena.reset();
+                }
+                None => {
+                    dispatcher.dispatch(&mut self.owner.thread_pool, self.screen.reborrow());
+                    self.owner.arena.reset();
+                }
+            };
         }
     }
 }

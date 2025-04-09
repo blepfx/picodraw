@@ -33,12 +33,12 @@ pugl-rs = { workspace = true }
 image = { workspace = true }
 
 [features]
-default = ["derive", "collect", "backend-software"]
+default = ["derive", "collect", "software"]
 collect = ["picodraw-core/collect"]
 derive = ["dep:picodraw-derive"]
 
-backend-opengl = ["dep:picodraw-opengl"]
-backend-software = ["dep:picodraw-software"]
+opengl = ["dep:picodraw-opengl"]
+software = ["dep:picodraw-software"]
 
 [[example]]
 name = "opengl"

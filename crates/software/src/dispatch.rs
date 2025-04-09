@@ -67,7 +67,11 @@ impl<'a> Dispatcher<'a> {
             textures.end = self.textures.len();
 
             if shader.data_slots() as usize != data.len() {
-                panic!("write_data wrote insufficient amount of data for the given shader");
+                panic!("write_data wrote wrong amount of data for the given shader");
+            }
+
+            if shader.texture_slots() as usize != textures.len() {
+                panic!("write_texture added wrong amount of textures for the given shader");
             }
         } else {
             panic!("write_end without corresponding write_start");
@@ -76,8 +80,8 @@ impl<'a> Dispatcher<'a> {
 
     pub fn dispatch(self, pool: &mut ThreadPool, buffer: BufferMut<'a>) {
         // prepare data
-        let slots = self.data.into_bump_slice();
-        let textures = self.textures.into_bump_slice();
+        let data_buffer = self.data.into_bump_slice();
+        let texture_buffer = self.textures.into_bump_slice();
         let (buffer_ptr, width, height, stride) = buffer.into_raw_parts();
         let buffer_ptr = buffer_ptr as usize;
 
@@ -92,8 +96,8 @@ impl<'a> Dispatcher<'a> {
 
             for object in self.objects.iter() {
                 let bounds = match object {
-                    DispatchObject::Draw { bounds, .. } => bounds.offset(-(bounds.left as i32), -(bounds.top as i32)),
-                    DispatchObject::Clear { bounds } => bounds.offset(-(bounds.left as i32), -(bounds.top as i32)),
+                    DispatchObject::Draw { bounds, .. } => bounds,
+                    DispatchObject::Clear { bounds } => bounds,
                 };
 
                 let x0 = bounds.left as usize / TILE_SIZE;
@@ -193,9 +197,10 @@ impl<'a> Dispatcher<'a> {
                                 unsafe {
                                     worker.interpreter.execute(VMContext {
                                         ops: shader.opcodes(),
-                                        data: &slots[data.clone()],
-                                        pos_x: job.x as f32,
-                                        pos_y: job.y as f32,
+                                        data: &data_buffer[data.clone()],
+                                        textures: &texture_buffer[textures.clone()],
+                                        pos_x: job.x as f32 + 0.5,
+                                        pos_y: job.y as f32 + 0.5,
                                         res_x: width as f32,
                                         res_y: height as f32,
                                         quad_t: bounds.top as f32,

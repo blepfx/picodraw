@@ -229,7 +229,7 @@ fn stress_test() {
 fn serialize_test() {
     fn sdf_circle(pos: float2, center: float2, radius: float1, invert: boolean) -> float1 {
         let mask = ((center - pos).len() - radius).smoothstep(-0.707, 0.707);
-        invert.select(1.0 - mask, mask)
+        invert.select(mask, 1.0 - mask)
     }
 
     #[derive(ShaderData)]
@@ -693,9 +693,9 @@ fn run(id: &str, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
 
     let expected = open(format!("./tests/drawtest/expected/{}.webp", id)).expect("no 'expected' image found");
     let results: Vec<(&'static str, DynamicImage)> = vec![
-        #[cfg(feature = "backend-software")]
+        #[cfg(feature = "software")]
         ("software", software::render(CANVAS_SIZE, CANVAS_SIZE, renderer.clone())),
-        #[cfg(feature = "backend-opengl")]
+        #[cfg(feature = "opengl")]
         ("opengl", opengl::render(CANVAS_SIZE, CANVAS_SIZE, renderer.clone())),
     ];
 
@@ -716,7 +716,7 @@ fn run(id: &str, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
     }
 }
 
-#[cfg(feature = "backend-opengl")]
+#[cfg(feature = "opengl")]
 mod opengl {
     use super::CANVAS_SIZE;
     use image::{DynamicImage, Rgb, RgbImage};
@@ -800,7 +800,7 @@ mod opengl {
     }
 }
 
-#[cfg(feature = "backend-software")]
+#[cfg(feature = "software")]
 mod software {
     use image::{DynamicImage, Rgb, RgbImage};
     use picodraw::{

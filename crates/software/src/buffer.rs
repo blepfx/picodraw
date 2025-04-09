@@ -43,6 +43,14 @@ impl Buffer {
         self.height = height;
     }
 
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
     pub fn as_ref(&self) -> BufferRef {
         BufferRef::from_slice(&self.data, self.width, self.height)
     }
@@ -76,12 +84,8 @@ impl<'a> From<ImageData<'a>> for Buffer {
                 for y in 0..buffer.height {
                     for x in 0..buffer.width {
                         let offset = (y * buffer.width + x) * 3;
-                        buffer.data[y * buffer.width + x] = u32::from_le_bytes([
-                            0xFF,
-                            data[offset + 0],
-                            data[offset + 1],
-                            data[offset + 2],
-                        ]);
+                        buffer.data[y * buffer.width + x] =
+                            u32::from_le_bytes([0xFF, data[offset + 0], data[offset + 1], data[offset + 2]]);
                     }
                 }
             }
@@ -91,8 +95,7 @@ impl<'a> From<ImageData<'a>> for Buffer {
                 for y in 0..buffer.height {
                     for x in 0..buffer.width {
                         let offset = y * buffer.width + x;
-                        buffer.data[offset] =
-                            u32::from_le_bytes([0xFF, data[offset], data[offset], data[offset]]);
+                        buffer.data[offset] = u32::from_le_bytes([0xFF, data[offset], data[offset], data[offset]]);
                     }
                 }
             }
@@ -113,12 +116,7 @@ impl<'a> BufferRef<'a> {
         }
     }
 
-    pub unsafe fn from_raw_parts(
-        data: *mut u32,
-        width: usize,
-        height: usize,
-        stride: usize,
-    ) -> Self {
+    pub unsafe fn from_raw_parts(data: *mut u32, width: usize, height: usize, stride: usize) -> Self {
         Self {
             data,
             width,
@@ -129,12 +127,7 @@ impl<'a> BufferRef<'a> {
     }
 
     pub fn into_raw_parts(self) -> (*const u32, usize, usize, usize) {
-        (
-            self.data as *const u32,
-            self.width,
-            self.height,
-            self.stride,
-        )
+        (self.data as *const u32, self.width, self.height, self.stride)
     }
     pub fn width(&self) -> usize {
         self.width
@@ -161,6 +154,58 @@ impl<'a> BufferRef<'a> {
             phantom: PhantomData,
         }
     }
+
+    #[inline]
+    pub fn sample_neasert(&self, x: f32, y: f32) -> u32 {
+        if self.width == 0 || self.height == 0 {
+            return 0;
+        }
+
+        let x = x.min(self.width as f32 - 1.0).max(0.0);
+        let y = y.min(self.height as f32 - 1.0).max(0.0);
+        self[(x as usize, y as usize)]
+    }
+
+    #[inline]
+    pub fn sample_linear(&self, x: f32, y: f32) -> u32 {
+        let lerp = |a: u8, b: u8, x: u8| {
+            let a = a as u16;
+            let b = b as u16;
+            let x = x as u16;
+            ((a * (255 - x) + b * x) / 255) as u8
+        };
+
+        let p00 = self.sample_neasert(x, y).to_ne_bytes();
+        let p10 = self.sample_neasert(x + 1.0, y).to_ne_bytes();
+        let p01 = self.sample_neasert(x, y + 1.0).to_ne_bytes();
+        let p11 = self.sample_neasert(x + 1.0, y + 1.0).to_ne_bytes();
+
+        let x0 = (x.fract() * 255.0) as u8;
+        let y0 = (y.fract() * 255.0) as u8;
+
+        let a = [
+            lerp(p00[0], p10[0], x0),
+            lerp(p00[1], p10[1], x0),
+            lerp(p00[2], p10[2], x0),
+            lerp(p00[3], p10[3], x0),
+        ];
+
+        let b = [
+            lerp(p01[0], p11[0], x0),
+            lerp(p01[1], p11[1], x0),
+            lerp(p01[2], p11[2], x0),
+            lerp(p01[3], p11[3], x0),
+        ];
+
+        let c = [
+            lerp(a[0], b[0], y0),
+            lerp(a[1], b[1], y0),
+            lerp(a[2], b[2], y0),
+            lerp(a[3], b[3], y0),
+        ];
+
+        u32::from_ne_bytes(c)
+    }
 }
 
 impl<'a> BufferMut<'a> {
@@ -174,12 +219,7 @@ impl<'a> BufferMut<'a> {
         })
     }
 
-    pub unsafe fn from_raw_parts(
-        data: *mut u32,
-        width: usize,
-        height: usize,
-        stride: usize,
-    ) -> Self {
+    pub unsafe fn from_raw_parts(data: *mut u32, width: usize, height: usize, stride: usize) -> Self {
         Self(BufferRef {
             data,
             width,
@@ -190,12 +230,7 @@ impl<'a> BufferMut<'a> {
     }
 
     pub fn into_raw_parts(self) -> (*mut u32, usize, usize, usize) {
-        (
-            self.0.data as *mut u32,
-            self.0.width,
-            self.0.height,
-            self.0.stride,
-        )
+        (self.0.data as *mut u32, self.0.width, self.0.height, self.0.stride)
     }
 
     pub fn reborrow(&mut self) -> Self {

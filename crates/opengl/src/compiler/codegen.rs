@@ -94,7 +94,7 @@ impl FragmentCodegen {
             write!(&mut self.buffer, "else ").ok();
         }
 
-        write!(&mut self.buffer, "if(fragType == {}){{", layout.branch_id).ok();
+        write!(&mut self.buffer, "if(fragType == {}){{\n", layout.branch_id).ok();
 
         for (offset, _) in layout.fields.iter() {
             self.graph_inputs.push_back(*offset);
@@ -105,7 +105,7 @@ impl FragmentCodegen {
         }
 
         for i in 0..layout.size.div_ceil(16) {
-            write!(&mut self.buffer, "uvec4 _i{:x}=data({});", i, i).ok();
+            write!(&mut self.buffer, "uvec4 _i{:x}=data({});\n", i, i).ok();
         }
     }
 
@@ -132,7 +132,7 @@ impl FragmentCodegen {
             let result = self.emit_atom_value(graph, op);
             let typestr = self.emit_type(graph.type_of(op));
 
-            write!(&mut self.buffer, "{} {}={};", typestr, ident, result).ok();
+            write!(&mut self.buffer, "{} {}={};\n", typestr, ident, result).ok();
             self.graph_atoms.insert(op, ident);
         }
     }
@@ -140,24 +140,21 @@ impl FragmentCodegen {
     pub fn emit_end_graph(&mut self, graph: &Graph) {
         write!(
             &mut self.buffer,
-            "outColor={};",
-            self.graph_atoms
-                .get(&graph.output())
-                .expect("codegen error")
+            "outColor={};\n}}",
+            self.graph_atoms.get(&graph.output()).expect("codegen error")
         )
         .ok();
 
         self.graph_first = false;
         self.graph_atoms.clear();
         self.graph_inputs.clear();
-        self.buffer.push('}');
     }
 
     pub fn finish(mut self) -> String {
         if self.graph_first {
-            self.buffer.push_str("outColor=vec4(1,1,0,1);}");
+            self.buffer.push_str("outColor=vec4(1,1,0,1);\n}");
         } else {
-            self.buffer.push_str("else{outColor=vec4(1,1,0,1);}}");
+            self.buffer.push_str("else{\noutColor=vec4(1,1,0,1);\n}\n}");
         }
 
         self.buffer

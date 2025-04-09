@@ -1,10 +1,12 @@
 use super::{PIXEL_COUNT, REGISTER_COUNT, TILE_SIZE, VMOp, VMOpcode, VMReg};
+use crate::BufferRef;
 use bumpalo::{Bump, boxed::Box};
 use std::alloc::Layout;
 
 pub struct VMContext<'a> {
     pub ops: &'a [VMOpcode],
     pub data: &'a [VMSlot],
+    pub textures: &'a [BufferRef<'a>],
 
     pub pos_x: f32,
     pub pos_y: f32,
@@ -23,7 +25,14 @@ pub struct VMInterpreter<'a> {
 impl<'a> VMInterpreter<'a> {
     pub fn new(arena: &'a Bump) -> Self {
         Self {
-            data: unsafe { Box::from_raw(arena.alloc_layout(Layout::new::<[VMTile; 32]>()).cast().as_ptr()) },
+            data: unsafe {
+                Box::from_raw(
+                    arena
+                        .alloc_layout(Layout::new::<[VMTile; REGISTER_COUNT]>())
+                        .cast()
+                        .as_ptr(),
+                )
+            },
         }
     }
 
@@ -411,6 +420,56 @@ impl<'a> VMInterpreter<'a> {
                         }
                     }
                 }
+
+                TexW(tex, reg) => {
+                    let (reg,) = registers!(mut reg);
+                    reg.as_i32_mut().fill(program.textures[tex as usize].width() as i32);
+                }
+
+                TexH(tex, reg) => {
+                    let (reg,) = registers!(mut reg);
+                    reg.as_i32_mut().fill(program.textures[tex as usize].height() as i32);
+                }
+
+                TexLinear(tex, chan, x, y, reg) => {
+                    let (x, y, out) = registers!(x, y, mut reg);
+                    let tex = program.textures[tex as usize];
+                    let out = out.as_f32_mut();
+                    let x = x.as_f32();
+                    let y = y.as_f32();
+
+                    for i in 0..TILE_SIZE {
+                        for j in 0..TILE_SIZE {
+                            unsafe {
+                                out[i * TILE_SIZE + j] =
+                                    *tex.sample_linear(x[i * TILE_SIZE + j] - 0.5, y[i * TILE_SIZE + j] - 0.5)
+                                        .to_le_bytes()
+                                        .get_unchecked(chan as usize) as f32
+                                        / 255.0
+                            }
+                        }
+                    }
+                }
+
+                TexNearest(tex, chan, x, y, reg) => {
+                    let (x, y, out) = registers!(x, y, mut reg);
+                    let tex = program.textures[tex as usize];
+                    let out = out.as_f32_mut();
+                    let x = x.as_f32();
+                    let y = y.as_f32();
+
+                    for i in 0..TILE_SIZE {
+                        for j in 0..TILE_SIZE {
+                            unsafe {
+                                out[i * TILE_SIZE + j] =
+                                    *tex.sample_neasert(x[i * TILE_SIZE + j], y[i * TILE_SIZE + j])
+                                        .to_le_bytes()
+                                        .get_unchecked(chan as usize) as f32
+                                        / 255.0
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -463,6 +522,7 @@ mod test {
         let program = VMContext {
             ops: &[VMOp::LitF(1.0, 0), VMOp::ReadF(0, 1), VMOp::AddF(0, 1, 2)],
             data: &[VMSlot { float: -1.5 }],
+            textures: &[],
             pos_x: 0.0,
             pos_y: 0.0,
             quad_t: 0.0,

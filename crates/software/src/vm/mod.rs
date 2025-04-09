@@ -5,7 +5,7 @@ pub use compiler::*;
 pub use interpreter::*;
 
 pub const TILE_SIZE: usize = 16;
-pub const REGISTER_COUNT: usize = 32;
+pub const REGISTER_COUNT: usize = 64;
 pub const PIXEL_COUNT: usize = TILE_SIZE * TILE_SIZE;
 
 #[repr(align(8))]
@@ -97,15 +97,16 @@ pub enum VMOp<I, O> {
     LtF(I, I, O),
     GtI(I, I, O),
     GtF(I, I, O),
+
+    TexW(u8, O),
+    TexH(u8, O),
+    TexNearest(u8, u8, I, I, O),
+    TexLinear(u8, u8, I, I, O),
 }
 
 impl<I, O> VMOp<I, O> {
     #[doc(hidden)]
-    fn map_inner<I0, O0>(
-        self,
-        mut inp: impl FnMut(I) -> I0,
-        out: impl FnOnce(O) -> O0,
-    ) -> VMOp<I0, O0> {
+    fn map_inner<I0, O0>(self, mut inp: impl FnMut(I) -> I0, out: impl FnOnce(O) -> O0) -> VMOp<I0, O0> {
         use VMOp::*;
         match self {
             PosX(o) => PosX(out(o)),
@@ -182,6 +183,11 @@ impl<I, O> VMOp<I, O> {
             LtF(a, b, o) => LtF(inp(a), inp(b), out(o)),
             GtI(a, b, o) => GtI(inp(a), inp(b), out(o)),
             GtF(a, b, o) => GtF(inp(a), inp(b), out(o)),
+
+            TexW(a, o) => TexW(a, out(o)),
+            TexH(a, o) => TexH(a, out(o)),
+            TexNearest(a, b, c, d, o) => TexNearest(a, b, inp(c), inp(d), out(o)),
+            TexLinear(a, b, c, d, o) => TexLinear(a, b, inp(c), inp(d), out(o)),
         }
     }
 
