@@ -18,6 +18,8 @@ pub struct GlStatistics {
     pub area_pixels: u64,
     pub quads: u32,
     pub drawcalls: u32,
+
+    pub buffer_pointer: usize,
 }
 
 pub struct OpenGl {
@@ -195,6 +197,7 @@ impl GlData {
 
         let mut stats_drawcalls = 0;
         let mut stats_quads = 0;
+        let mut buffer_pointer = 0;
 
         self.gpu_time = self
             .query
@@ -232,6 +235,8 @@ impl GlData {
                             writer.mark_full();
                         }
 
+                        buffer_pointer = writer.space_left();
+
                         (data_start, quad_data_start)
                     });
 
@@ -259,6 +264,7 @@ impl GlData {
             drawcalls: stats_drawcalls,
             area_pixels: self.pass_encoding.total_area(),
             size_bytes: (self.pass_encoding.size_texels() * size_of::<[u32; 4]>()) as u64,
+            buffer_pointer,
         };
 
         self.pass_viewport = None;
