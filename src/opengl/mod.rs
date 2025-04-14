@@ -214,6 +214,7 @@ impl GlData {
                             if writer.space_left()
                                 < quad.data_range.len() + 1 * (quads + 1 - quads_start)
                             {
+                                writer.invalidate();
                                 break;
                             }
 
@@ -231,8 +232,6 @@ impl GlData {
                                     (quad.data_range.start - local_data_start) as u32,
                                 ]]);
                             }
-                        } else {
-                            writer.mark_full();
                         }
 
                         buffer_pointer = writer.space_left();

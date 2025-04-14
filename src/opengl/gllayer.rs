@@ -191,6 +191,7 @@ pub struct GlTextureBuffer {
 
     size: usize,
     ptr: Cell<usize>,
+    invalidate: Cell<bool>,
 }
 
 impl GlTextureBuffer {
@@ -208,7 +209,7 @@ impl GlTextureBuffer {
                 TEXTURE_BUFFER,
                 (Self::TEXEL_SIZE_BYTES * size) as _,
                 null(),
-                STREAM_DRAW,
+                DYNAMIC_DRAW,
             );
             check_error(gl);
 
@@ -230,6 +231,7 @@ impl GlTextureBuffer {
                 tbo_texture,
                 size,
                 ptr: Cell::new(0),
+                invalidate: Cell::new(false),
             }
         }
     }
@@ -245,7 +247,7 @@ impl GlTextureBuffer {
     }
 
     pub fn update<R>(
-        &self,
+        &mut self,
         gl: GlContext,
         c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R,
     ) -> R {
@@ -253,25 +255,16 @@ impl GlTextureBuffer {
             gl.bind_buffer(TEXTURE_BUFFER, self.tbo_buffer);
             check_error(gl);
 
-            let needs_invalidation = if self.ptr.get() == self.size {
+            if self.invalidate.replace(false) {
                 self.ptr.set(0);
-                true
-            } else {
-                false
-            };
+            }
 
             let range_start = self.ptr.get();
             let range_mapped = gl.map_buffer_range(
                 TEXTURE_BUFFER,
                 (range_start * Self::TEXEL_SIZE_BYTES) as _,
                 ((self.size - range_start) * Self::TEXEL_SIZE_BYTES) as _,
-                MAP_WRITE_BIT
-                    | MAP_FLUSH_EXPLICIT_BIT
-                    | (if needs_invalidation {
-                        MAP_INVALIDATE_BUFFER_BIT
-                    } else {
-                        MAP_UNSYNCHRONIZED_BIT
-                    }),
+                MAP_WRITE_BIT | MAP_FLUSH_EXPLICIT_BIT,
             ) as *mut [u32; 4];
             check_error(gl);
 
@@ -321,8 +314,8 @@ impl<'a> GlTextureBufferWriter<'a> {
         self.owner.size - self.owner.ptr.get()
     }
 
-    pub fn mark_full(&self) {
-        self.owner.ptr.set(self.owner.size);
+    pub fn invalidate(&self) {
+        self.owner.invalidate.set(true);
     }
 
     pub fn write(&self, data: &[[u32; 4]]) {
