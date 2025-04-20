@@ -15,10 +15,7 @@ pub use bindings::GlBindings;
 #[derive(Clone, Copy)]
 pub struct GlContext<'a>(&'a GlBindings);
 impl<'a> GlContext<'a> {
-    pub unsafe fn within<R>(
-        bindings: &'a GlBindings,
-        c: impl for<'x> FnOnce(GlContext<'x>) -> R,
-    ) -> R {
+    pub unsafe fn within<R>(bindings: &'a GlBindings, c: impl for<'x> FnOnce(GlContext<'x>) -> R) -> R {
         c(GlContext(bindings))
     }
 }
@@ -45,12 +42,7 @@ impl GlProgram {
                     check_error(gl);
                     let shader_drop = Defer(|| gl.delete_shader(shader));
 
-                    gl.shader_source(
-                        shader,
-                        1,
-                        &(source.as_ptr() as *const GLchar),
-                        &(source.len() as GLint),
-                    );
+                    gl.shader_source(shader, 1, &(source.as_ptr() as *const GLchar), &(source.len() as GLint));
                     check_error(gl);
 
                     gl.compile_shader(shader);
@@ -66,21 +58,12 @@ impl GlProgram {
                         check_error(gl);
 
                         let mut buffer = vec![0u8; max_length as usize];
-                        gl.get_shader_info_log(
-                            shader,
-                            max_length,
-                            &mut max_length,
-                            buffer.as_mut_ptr() as *mut _,
-                        );
+                        gl.get_shader_info_log(shader, max_length, &mut max_length, buffer.as_mut_ptr() as *mut _);
                         check_error(gl);
 
                         panic!(
                             "picodraw opengl internal error ({} shader compilation)\n {}",
-                            if type_ == VERTEX_SHADER {
-                                "vertex"
-                            } else {
-                                "fragment"
-                            },
+                            if type_ == VERTEX_SHADER { "vertex" } else { "fragment" },
                             String::from_utf8_lossy(&buffer)
                         );
                     }
@@ -116,12 +99,7 @@ impl GlProgram {
                 gl.get_program_iv(program, INFO_LOG_LENGTH, &mut max_length);
 
                 let mut buffer = vec![0u8; max_length as usize];
-                gl.get_program_info_log(
-                    program,
-                    max_length,
-                    &mut max_length,
-                    buffer.as_mut_ptr() as *mut _,
-                );
+                gl.get_program_info_log(program, max_length, &mut max_length, buffer.as_mut_ptr() as *mut _);
 
                 panic!(
                     "picodraw opengl internal error (shader linking)\n {}",
@@ -203,6 +181,7 @@ pub struct GlTextureBuffer {
 
     size: usize,
     ptr: Cell<usize>,
+    invalidate: Cell<bool>,
 }
 
 impl GlTextureBuffer {
@@ -242,6 +221,7 @@ impl GlTextureBuffer {
                 tbo_texture,
                 size,
                 ptr: Cell::new(size),
+                invalidate: Cell::new(false),
             }
         }
     }
@@ -256,35 +236,23 @@ impl GlTextureBuffer {
         }
     }
 
-    pub fn update<R>(
-        &mut self,
-        gl: GlContext,
-        c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R,
-    ) -> R {
+    pub fn update<R>(&mut self, gl: GlContext, c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R) -> R {
         unsafe {
             gl.bind_buffer(TEXTURE_BUFFER, self.tbo_buffer);
             check_error(gl);
 
-            let needs_invalidation = if self.ptr.get() == self.size {
+            if self.invalidate.replace(false) || self.ptr.get() >= self.size {
                 self.ptr.set(0);
-                true
-            } else {
-                false
-            };
+            }
 
             let range_start = self.ptr.get();
             let range_mapped = gl.map_buffer_range(
                 TEXTURE_BUFFER,
                 (range_start * Self::TEXEL_SIZE_BYTES) as _,
                 ((self.size - range_start) * Self::TEXEL_SIZE_BYTES) as _,
-                MAP_WRITE_BIT
-                    | MAP_FLUSH_EXPLICIT_BIT
-                    | (if needs_invalidation {
-                        MAP_INVALIDATE_BUFFER_BIT
-                    } else {
-                        MAP_UNSYNCHRONIZED_BIT
-                    }),
+                MAP_WRITE_BIT | MAP_FLUSH_EXPLICIT_BIT,
             ) as *mut [u32; 4];
+
             check_error(gl);
 
             let result = c(GlTextureBufferWriter {
@@ -333,8 +301,8 @@ impl<'a> GlTextureBufferWriter<'a> {
         (self.owner.size - self.owner.ptr.get()) * GlTextureBuffer::TEXEL_SIZE_BYTES
     }
 
-    pub fn mark_full(&self) {
-        self.owner.ptr.set(self.owner.size);
+    pub fn invalidate(&self) {
+        self.owner.invalidate.set(true);
     }
 
     pub fn request(&self, byte_size: usize) -> &mut [MaybeUninit<u8>] {
@@ -473,10 +441,7 @@ impl GlFramebuffer {
             forget(texture_drop);
             forget(framebuffer_drop);
 
-            Self {
-                texture,
-                framebuffer,
-            }
+            Self { texture, framebuffer }
         }
     }
 
@@ -573,10 +538,7 @@ impl GlInfo {
             gl.get_integer_v(MAX_TEXTURE_BUFFER_SIZE, &mut max_texture_buffer_size);
             gl.get_integer_v(MAX_TEXTURE_SIZE, &mut max_texture_size);
             gl.get_integer_v(MAX_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units);
-            gl.get_integer_v(
-                MAX_COMBINED_TEXTURE_IMAGE_UNITS,
-                &mut max_texture_image_units_combined,
-            );
+            gl.get_integer_v(MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units_combined);
             check_error(gl);
 
             // sanity checks

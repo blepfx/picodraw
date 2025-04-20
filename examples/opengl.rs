@@ -54,8 +54,7 @@ fn main() {
                         }
 
                         let circle = ShaderDataCircle::read();
-                        let mask =
-                            sdf_circle(io::position(), float2((circle.x, circle.y)), circle.radius);
+                        let mask = sdf_circle(io::position(), float2((circle.x, circle.y)), circle.radius);
 
                         float4((1.0, 0.5, 1.0, mask * circle.alpha))
                     }));
@@ -77,8 +76,7 @@ fn main() {
                 let alpha = 1.0 / n as f32;
 
                 for i in 0..(n as i32) {
-                    let angle =
-                        (i as f32 / (n - 1.0) + data.scroll * 0.05) * std::f32::consts::PI * 2.0;
+                    let angle = (i as f32 / (n - 1.0) + data.scroll * 0.05) * std::f32::consts::PI * 2.0;
                     let x = data.width as f32 * 0.5 + angle.cos() * 200.0;
                     let y = data.height as f32 * 0.5 + angle.sin() * 200.0;
 
@@ -88,11 +86,7 @@ fn main() {
                             x,
                             y,
                             radius: 200.0,
-                            alpha: if i + 1 == (n as i32) {
-                                alpha * n.fract()
-                            } else {
-                                alpha
-                            },
+                            alpha: if i + 1 == (n as i32) { alpha * n.fract() } else { alpha },
                         });
                 }
 

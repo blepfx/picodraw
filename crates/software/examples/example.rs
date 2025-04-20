@@ -45,10 +45,7 @@ fn main() {
             dispatcher.write_end();
         }
 
-        dispatcher.dispatch(
-            &mut thread_pool,
-            BufferMut::from_slice(&mut buffer, 512, 512),
-        );
+        dispatcher.dispatch(&mut thread_pool, BufferMut::from_slice(&mut buffer, 512, 512));
 
         if i == 0 {
             println!("memory per draw: {}KB", arena.allocated_bytes() / 1024);
@@ -62,7 +59,7 @@ fn main() {
                     (color >> 24) as u8,
                 ])
             })
-            .save("test.png")
+            .save("test.webp")
             .unwrap();
         }
 

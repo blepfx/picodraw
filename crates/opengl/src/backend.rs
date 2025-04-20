@@ -57,8 +57,7 @@ impl OpenGlBackend {
     /// This function should be called only if the OpenGL context is currently active for the current thread.
     pub unsafe fn new(proc_addr: &dyn Fn(&CStr) -> *const c_void) -> Result<Self, OpenGlError> {
         unsafe {
-            let gl_bindings = GlBindings::load_from(proc_addr)
-                .map_err(|name| OpenGlError::InvalidBinding { name })?;
+            let gl_bindings = GlBindings::load_from(proc_addr).map_err(|name| OpenGlError::InvalidBinding { name })?;
             let (gl_info, gl_buffer, gl_vao) = GlContext::within(&gl_bindings, |gl| {
                 clear_error(gl);
 
@@ -67,8 +66,8 @@ impl OpenGlBackend {
                     let buffer_texture = gl_info.version >= (3, 1)
                         || gl_info.extensions.contains("ARB_texture_buffer_object")
                         || gl_info.extensions.contains("EXT_texture_buffer");
-                    let shader_bit_encoding = gl_info.version >= (3, 3)
-                        || gl_info.extensions.contains("ARB_shader_bit_encoding");
+                    let shader_bit_encoding =
+                        gl_info.version >= (3, 3) || gl_info.extensions.contains("ARB_shader_bit_encoding");
 
                     buffer_texture && shader_bit_encoding && gl_info.version >= (3, 0)
                 };
@@ -80,8 +79,7 @@ impl OpenGlBackend {
                     });
                 }
 
-                let gl_buffer =
-                    GlTextureBuffer::new(gl, gl_info.max_texture_buffer_size.min(262144));
+                let gl_buffer = GlTextureBuffer::new(gl, gl_info.max_texture_buffer_size.min(262144));
                 let gl_vao = GlVertexArrayObject::new(gl);
 
                 Ok((gl_info, gl_buffer, gl_vao))
@@ -255,8 +253,7 @@ impl<'a> Context for OpenGlContext<'a> {
                         compiler.compile()
                     };
 
-                    let program =
-                        GlProgram::new(gl, &compiled.shader_vertex, &compiled.shader_fragment);
+                    let program = GlProgram::new(gl, &compiled.shader_vertex, &compiled.shader_fragment);
                     program.bind(gl);
 
                     uniform_1i(
@@ -268,11 +265,7 @@ impl<'a> Context for OpenGlContext<'a> {
                     for i in 1..self.0.gl_info.max_texture_image_units {
                         uniform_1i(
                             gl,
-                            program.get_uniform_loc_array(
-                                gl,
-                                compiler::UNIFORM_TEXTURE_SAMPLERS,
-                                i - 1,
-                            ),
+                            program.get_uniform_loc_array(gl, compiler::UNIFORM_TEXTURE_SAMPLERS, i - 1),
                             i as _,
                         );
                     }
@@ -280,20 +273,15 @@ impl<'a> Context for OpenGlContext<'a> {
                     CompiledProgram {
                         uni_buffer_offset_instance: program
                             .get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_INSTANCE),
-                        uni_buffer_offset_data: program
-                            .get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_DATA),
-                        uni_frame_resolution: program
-                            .get_uniform_loc(gl, compiler::UNIFORM_FRAME_RESOLUTION),
-                        uni_frame_screen: program
-                            .get_uniform_loc(gl, compiler::UNIFORM_FRAME_SCREEN),
+                        uni_buffer_offset_data: program.get_uniform_loc(gl, compiler::UNIFORM_BUFFER_OFFSET_DATA),
+                        uni_frame_resolution: program.get_uniform_loc(gl, compiler::UNIFORM_FRAME_RESOLUTION),
+                        uni_frame_screen: program.get_uniform_loc(gl, compiler::UNIFORM_FRAME_SCREEN),
 
                         program,
                         layouts: compiled
                             .shader_layout
                             .into_iter()
-                            .map(|(shader, layout)| {
-                                (DefaultKey::from(KeyData::from_ffi(shader.0)), layout)
-                            })
+                            .map(|(shader, layout)| (DefaultKey::from(KeyData::from_ffi(shader.0)), layout))
                             .collect(),
                     }
                 });
@@ -306,16 +294,12 @@ impl<'a> Context for OpenGlContext<'a> {
                 self.0.scratch_quads.clear();
                 self.0.scratch_textures.clear();
 
-                let mut state_size = Size {
-                    width: 0,
-                    height: 0,
-                };
+                let mut state_size = Size { width: 0, height: 0 };
                 let mut state_screen = false;
                 let mut commands = CommandStream(buffer.list_commands());
                 while commands.peek().is_some() {
                     let quads_to_draw = self.0.gl_buffer.update(gl, |writer| {
                         let offset_data_start = writer.pointer();
-                        let mut buffer_full = false;
 
                         'main: while let Some(cmd) = commands.peek() {
                             match cmd {
@@ -327,10 +311,11 @@ impl<'a> Context for OpenGlContext<'a> {
                                     GlFramebuffer::bind_default(gl);
                                     viewport(gl, 0, 0, size.width as u32, size.height as u32);
                                     uniform_1i(gl, program.uni_frame_screen, 1);
-                                    uniform_2f(gl, program.uni_frame_resolution, [
-                                        size.width as f32,
-                                        size.height as f32,
-                                    ]);
+                                    uniform_2f(
+                                        gl,
+                                        program.uni_frame_resolution,
+                                        [size.width as f32, size.height as f32],
+                                    );
 
                                     state_screen = true;
                                     state_size = size;
@@ -365,10 +350,11 @@ impl<'a> Context for OpenGlContext<'a> {
                                     fb_data.framebuffer.bind(gl);
                                     viewport(gl, 0, 0, size.width as u32, size.height as u32);
                                     uniform_1i(gl, program.uni_frame_screen, 0);
-                                    uniform_2f(gl, program.uni_frame_resolution, [
-                                        size.width as f32,
-                                        size.height as f32,
-                                    ]);
+                                    uniform_2f(
+                                        gl,
+                                        program.uni_frame_resolution,
+                                        [size.width as f32, size.height as f32],
+                                    );
 
                                     state_screen = false;
                                     state_size = size;
@@ -454,7 +440,7 @@ impl<'a> Context for OpenGlContext<'a> {
                                         + (layout.size as usize)
                                         > writer.space_left()
                                     {
-                                        buffer_full = true;
+                                        writer.invalidate();
                                         break 'main;
                                     }
 
@@ -499,17 +485,14 @@ impl<'a> Context for OpenGlContext<'a> {
                             let quads_count = self.0.scratch_quads.len();
 
                             {
-                                let quad_data_bytes = QuadDescriptorStruct::as_byte_slice(self.0.scratch_quads.as_slice());
+                                let quad_data_bytes =
+                                    QuadDescriptorStruct::as_byte_slice(self.0.scratch_quads.as_slice());
                                 let dst = writer.request(quad_data_bytes.len());
                                 write_uninit(dst, quad_data_bytes);
                             }
 
                             self.0.scratch_textures.clear();
                             self.0.scratch_quads.clear();
-
-                            if buffer_full {
-                                writer.mark_full();
-                            }
 
                             uniform_1i(gl, program.uni_buffer_offset_instance, offset_quads_start as i32);
                             uniform_1i(gl, program.uni_buffer_offset_data, offset_data_start as i32);

@@ -9,6 +9,7 @@ members = [
 [workspace.dependencies]
 pugl-rs = { git = "https://github.com/blepfx/pugl-rs", features = ["opengl"] }
 image = { version = "0.25.5", default-features = false, features = ["webp"] }
+bumpalo = { version = "3.17", features = ["boxed", "collections"] }
 slotmap = "1.0.7"
 proc-macro2 = "1"
 quote = "1"
@@ -33,7 +34,7 @@ pugl-rs = { workspace = true }
 image = { workspace = true }
 
 [features]
-default = ["derive", "collect", "software"]
+default = ["derive", "collect"]
 collect = ["picodraw-core/collect"]
 derive = ["dep:picodraw-derive"]
 
@@ -42,4 +43,4 @@ software = ["dep:picodraw-software"]
 
 [[example]]
 name = "opengl"
-required-features = ["backend-opengl", "derive"]
+required-features = ["opengl", "derive"]
