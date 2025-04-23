@@ -22,6 +22,17 @@ struct ShaderDataCircle {
     alpha: f32,
 }
 
+fn shader_circle() -> float4 {
+    fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
+        ((center - pos).len() - radius).smoothstep(0.707, -0.707)
+    }
+
+    let circle = ShaderDataCircle::read();
+    let mask = sdf_circle(io::position(), float2((circle.x, circle.y)), circle.radius);
+
+    float4((1.0, 0.5, 1.0, mask * circle.alpha))
+}
+
 fn main() {
     let mut data: Option<Data> = None;
     let mut world = World::new_program().unwrap();
@@ -48,16 +59,7 @@ fn main() {
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 let data = data.get_or_insert_with(|| unsafe {
                     let mut gl = OpenGlBackend::new(&|c| backend.get_proc_address(c)).unwrap();
-                    let shader = gl.open().create_shader(Graph::collect(|| {
-                        fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
-                            ((center - pos).len() - radius).smoothstep(0.707, -0.707)
-                        }
-
-                        let circle = ShaderDataCircle::read();
-                        let mask = sdf_circle(io::position(), float2((circle.x, circle.y)), circle.radius);
-
-                        float4((1.0, 0.5, 1.0, mask * circle.alpha))
-                    }));
+                    let shader = gl.open().create_shader(Graph::collect(shader_circle));
 
                     Data {
                         gl,
@@ -92,7 +94,9 @@ fn main() {
 
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 unsafe {
-                    data.gl.open().draw(&commands);
+                    let mut gl = data.gl.open();
+                    gl.draw(&commands);
+                    println!("frame: {:?}", gl.gpu_time());
                 }
 
                 data.scroll += 1.0 / 60.0;

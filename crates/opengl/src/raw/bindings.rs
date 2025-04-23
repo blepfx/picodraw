@@ -1500,4 +1500,17 @@ generate_bindings! {
     fn get_uniform_location(program: GLuint, name: *const GLchar) -> GLint: [glGetUniformLocation, glGetUniformLocationARB];
 
     fn draw_arrays(mode: GLenum, first: GLint, count: GLsizei): [glDrawArrays, glDrawArraysEXT];
+
+    fn gen_queries(n: GLsizei, ids: *mut GLuint): [glGenQueries, glGenQueriesARB];
+    fn delete_queries(n: GLsizei, ids: *const GLuint): [glDeleteQueries, glDeleteQueriesARB];
+    fn begin_query(target: GLenum, id: GLuint): [glBeginQuery, glBeginQueryARB];
+    fn end_query(target: GLenum): [glEndQuery, glEndQueryARB];
+    fn get_query_object_uiv(
+        id: GLuint,
+        pname: GLenum,
+        params: *mut GLuint
+    ): [glGetQueryObjectuiv];
+    fn get_query_object_iv(
+        id: GLuint, pname: GLenum, params: *mut GLint
+    ): [glGetQueryObjectiv];
 }

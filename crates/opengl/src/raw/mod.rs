@@ -477,6 +477,64 @@ impl GlFramebuffer {
     }
 }
 
+pub struct GlQuery {
+    query: GLuint,
+    last: Cell<u32>,
+    check: Cell<bool>,
+}
+
+impl GlQuery {
+    pub fn new(gl: GlContext) -> Self {
+        unsafe {
+            let mut query = 0;
+            gl.gen_queries(1, &mut query);
+            check_error(gl);
+            Self {
+                query,
+                last: Cell::new(0),
+                check: Cell::new(true),
+            }
+        }
+    }
+
+    pub fn query(&self) -> u32 {
+        self.last.get()
+    }
+
+    pub fn wrap(&self, gl: GlContext, c: impl FnOnce()) {
+        unsafe {
+            if self.check.replace(false) {
+                gl.begin_query(TIME_ELAPSED, self.query);
+                check_error(gl);
+                c();
+                gl.end_query(TIME_ELAPSED);
+                check_error(gl);
+            } else {
+                c();
+            }
+
+            let mut available = 0;
+            gl.get_query_object_iv(self.query, QUERY_RESULT_AVAILABLE, &mut available);
+            check_error(gl);
+
+            if available != 0 {
+                let mut result = 0;
+                gl.get_query_object_uiv(self.query, QUERY_RESULT, &mut result);
+                check_error(gl);
+                self.last.set(result);
+                self.check.set(true);
+            }
+        }
+    }
+
+    pub fn delete(self, gl: GlContext) {
+        unsafe {
+            gl.delete_queries(1, &self.query);
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct GlInfo {
     pub version: (i32, i32),
     pub extensions: HashSet<String>,

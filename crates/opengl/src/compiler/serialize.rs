@@ -1,6 +1,5 @@
-use std::mem::MaybeUninit;
-
 use picodraw_core::graph::*;
+use std::mem::MaybeUninit;
 
 #[derive(Debug)]
 pub struct ShaderDataLayout {
@@ -63,31 +62,18 @@ impl<'a> ShaderDataEncoder<'a> {
     }
 
     pub fn write_i32(&mut self, value: i32) {
-        let (offset, input) = self
-            .layout
-            .fields
-            .get(self.pointer)
-            .expect("malformed write stream");
+        let (offset, input) = self.layout.fields.get(self.pointer).expect("malformed write stream");
         let offset = *offset as usize;
 
         match input {
             OpInput::I32 | OpInput::U32 => {
-                write_uninit(
-                    &mut self.data[offset..offset + 4],
-                    &(value as u32).to_ne_bytes(),
-                );
+                write_uninit(&mut self.data[offset..offset + 4], &(value as u32).to_ne_bytes());
             }
             OpInput::I16 | OpInput::U16 => {
-                write_uninit(
-                    &mut self.data[offset..offset + 2],
-                    &(value as u16).to_ne_bytes(),
-                );
+                write_uninit(&mut self.data[offset..offset + 2], &(value as u16).to_ne_bytes());
             }
             OpInput::I8 | OpInput::U8 => {
-                write_uninit(
-                    &mut self.data[offset..offset + 1],
-                    &(value as u8).to_ne_bytes(),
-                );
+                write_uninit(&mut self.data[offset..offset + 1], &(value as u8).to_ne_bytes());
             }
             _ => panic!("malformed write stream"),
         }
@@ -96,11 +82,7 @@ impl<'a> ShaderDataEncoder<'a> {
     }
 
     pub fn write_f32(&mut self, value: f32) {
-        let (offset, input) = self
-            .layout
-            .fields
-            .get(self.pointer)
-            .expect("malformed write stream");
+        let (offset, input) = self.layout.fields.get(self.pointer).expect("malformed write stream");
         let offset = *offset as usize;
 
         match input {
