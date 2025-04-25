@@ -235,7 +235,7 @@ impl FragmentCodegen {
             }
             Input(OpInput::I8) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2i({},256u)", self.emit_input(offset, 1))
+                format!("u2i({},128u)", self.emit_input(offset, 1))
             }
             Input(OpInput::U32) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");

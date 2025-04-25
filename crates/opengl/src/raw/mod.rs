@@ -339,13 +339,15 @@ impl GlTexture {
 
             gl.tex_parameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR);
             gl.tex_parameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+            gl.tex_parameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+            gl.tex_parameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
             check_error(gl);
 
             gl.tex_image_2d(
                 TEXTURE_2D,
                 0,
                 match data.format {
-                    picodraw_core::ImageFormat::Gray8 => R8,
+                    picodraw_core::ImageFormat::R8 => R8,
                     picodraw_core::ImageFormat::RGB8 => RGB8,
                     picodraw_core::ImageFormat::RGBA8 => RGBA8,
                 },
@@ -353,7 +355,7 @@ impl GlTexture {
                 data.height as _,
                 0,
                 match data.format {
-                    picodraw_core::ImageFormat::Gray8 => RED,
+                    picodraw_core::ImageFormat::R8 => RED,
                     picodraw_core::ImageFormat::RGB8 => RGB,
                     picodraw_core::ImageFormat::RGBA8 => RGBA,
                 },
@@ -410,6 +412,8 @@ impl GlFramebuffer {
 
             gl.tex_parameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR);
             gl.tex_parameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+            gl.tex_parameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+            gl.tex_parameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
             check_error(gl);
 
             gl.tex_image_2d(

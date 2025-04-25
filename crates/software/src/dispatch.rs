@@ -1,5 +1,6 @@
 use crate::{
     buffer::{BufferMut, BufferRef},
+    pack_rgba,
     util::{ThreadPool, dispatch_simd},
     vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMContext, VMInterpreter, VMSlot},
 };
@@ -317,7 +318,7 @@ fn finish_tile(
                 let g = g[j * TILE_SIZE + i].to_int_unchecked::<u8>();
                 let b = b[j * TILE_SIZE + i].to_int_unchecked::<u8>();
                 let a = a[j * TILE_SIZE + i].to_int_unchecked::<u8>();
-                buffer[(i, j)] = u32::from_le_bytes([b, g, r, a]);
+                buffer[(i, j)] = pack_rgba(r, g, b, a);
             }
         }
     }

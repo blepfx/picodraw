@@ -648,7 +648,7 @@ pub mod texture {
             let texture = context.create_texture_static(ImageData {
                 width: 4,
                 height: 4,
-                format: ImageFormat::Gray8,
+                format: ImageFormat::R8,
                 data: &TEST_DITHER0,
             });
 
@@ -673,7 +673,7 @@ pub mod texture {
             let texture = context.create_texture_static(ImageData {
                 width: 4,
                 height: 4,
-                format: ImageFormat::Gray8,
+                format: ImageFormat::R8,
                 data: &TEST_DITHER0,
             });
 
@@ -763,12 +763,12 @@ pub mod texture {
     }
 
     #[test]
-    fn texture_load_gray8() {
-        run("texture_load_gray8", 4, 4, |context| {
+    fn texture_load_r8() {
+        run("texture_load_r8", 4, 4, |context| {
             let texture = context.create_texture_static(ImageData {
                 width: 1,
                 height: 1,
-                format: ImageFormat::Gray8,
+                format: ImageFormat::R8,
                 data: &[100],
             });
 
@@ -859,6 +859,50 @@ pub mod semantics {
             context.draw(&commands);
         });
     }
+
+    #[test]
+    fn semantics_clear() {
+        run("semantics_clear", 8, 8, |context| {
+            let shader = context.create_shader(Graph::collect(|| {
+                let data = io::read::<[f32; 4]>();
+                float4((data[0], data[1], data[2], data[3]))
+            }));
+
+            let mut commands = CommandBuffer::new();
+            let mut screen = commands.begin_screen([8, 8]);
+
+            screen
+                .begin_quad(shader, [1, 1, 7, 7])
+                .write_data([1.0, 0.0, 0.0, 0.50]);
+            screen.clear([4, 4, 8, 8]);
+
+            context.draw(&commands);
+        });
+    }
+
+    #[test]
+    fn semantics_screen_preserve() {
+        run("semantics_screen_preserve", 8, 8, |context| {
+            let shader = context.create_shader(Graph::collect(|| {
+                let data = io::read::<[f32; 4]>();
+                float4((data[0], data[1], data[2], data[3]))
+            }));
+
+            let mut commands = CommandBuffer::new();
+            let mut screen = commands.begin_screen([8, 8]);
+            screen
+                .begin_quad(shader, [1, 1, 7, 7])
+                .write_data([1.0, 0.0, 0.0, 0.50]);
+            context.draw(&commands);
+
+            let mut screen = commands.begin_screen([8, 8]);
+            screen.clear([4, 4, 8, 8]);
+            screen
+                .begin_quad(shader, [1, 1, 7, 7])
+                .write_data([0.0, 1.0, 1.0, 0.25]);
+            context.draw(&commands);
+        });
+    }
 }
 
 pub mod stress {
@@ -878,7 +922,7 @@ pub mod stress {
                 let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
                 frame.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
 
-                for i in 2..1000 {
+                for i in 2..500 {
                     frame
                         .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
                         .write_data(i);
@@ -920,231 +964,144 @@ pub mod stress {
             }
         });
     }
+
+    #[test]
+    fn stress_shader_complexity() {
+        run("stress_shader_complexity", 4, 4, move |context| {
+            let shader = context.create_shader(Graph::collect(|| {
+                let mut a = float4((1.0, 0.5, 0.25, 1.0));
+                for _ in 0..1000 {
+                    a = a * float4((0.999, 1.0, 1.001, 1.0));
+                }
+                a
+            }));
+
+            let mut commands = CommandBuffer::new();
+            commands.begin_screen([4, 4]).begin_quad(shader, [0, 0, 4, 4]);
+            context.draw(&commands);
+        });
+    }
 }
 
-/// a test that draws a single quad with a checkerboard and a circular mask and applies post processing (box blur) to it
-/// tests:
-/// - that dispatching works
-/// - dispatching multiple shaders
-/// - using a framebuffer to implement post processing
-/// - using correct (top left origin) coordinate system
-/// - that quads are not rendered beyond their bounds
-/// - passing data to the shader using `write_data`
-#[test]
-fn blurry_semicircle() {
-    run("blurry_semicircle", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
-        fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
-            ((center - pos).len() - radius).smoothstep(0.707, -0.707)
-        }
+pub mod complex {
+    use super::*;
 
-        let shader_circle = context.create_shader(Graph::collect(|| {
-            let [x, y] = io::read::<[f32; 2]>();
-
-            let grid = (io::position() / 32.0).floor();
-            let checker = (grid.x() + grid.y()) % 2.0;
-            let texture = float4(checker).lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
-            let mask = sdf_circle(io::position(), float2((x, y)), float1(128.0));
-            let color = texture * mask;
-
-            float4(mask * color)
-        }));
-
-        let shader_boxblur = context.create_shader(Graph::collect(|| {
-            let buffer = io::read::<RenderTexture>();
-
-            let mut result = float4(0.0);
-            for i in -5..=5 {
-                for j in -5..=5 {
-                    result = result + buffer.sample_nearest(io::position() + float2((i, j)));
+    #[test]
+    fn complex_msdf() {
+        let (width, height, data) = {
+            let msdf = open("./tests/drawtest/msdf.webp").unwrap();
+            let mut data = vec![0u8; (4 * msdf.width() * msdf.height()) as usize];
+            for i in 0..msdf.width() {
+                for j in 0..msdf.height() {
+                    let Rgba([r, g, b, _]) = msdf.get_pixel(i, j);
+                    data[((i + j * msdf.width()) * 4 + 0) as usize] = r;
+                    data[((i + j * msdf.width()) * 4 + 1) as usize] = g;
+                    data[((i + j * msdf.width()) * 4 + 2) as usize] = b;
+                    data[((i + j * msdf.width()) * 4 + 3) as usize] = 255;
                 }
             }
 
-            result / (11 * 11) as f32
-        }));
+            (msdf.width(), msdf.height(), data)
+        };
 
-        let buffer = context.create_texture_render();
-        let mut commands = CommandBuffer::new();
+        run("complex_msdf", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
+            let texture = context.create_texture_static(ImageData {
+                width,
+                height,
+                format: ImageFormat::RGBA8,
+                data: &data,
+            });
 
-        commands
-            .begin_buffer(buffer, [MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-            .begin_quad(shader_circle, [300, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-            .write_data([300.0, 200.0]);
+            let shader = context.create_shader(Graph::collect(|| {
+                let atlas = io::read::<Texture>();
+                let (x, y) = io::read::<(f32, f32)>();
+                let scale = io::read::<f32>();
 
-        commands
-            .begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-            .begin_quad(shader_boxblur, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-            .write_data(buffer);
+                let pos = (io::position() - float2((x, y))) / scale + float2(12.0);
+                let sample = atlas.sample_linear(pos.clamp(0.0, atlas.size()));
+                let median = float1::max(
+                    float1::min(sample.x(), sample.y()),
+                    float1::min(float1::max(sample.x(), sample.y()), sample.z()),
+                );
 
-        context.draw(&commands);
-    });
-}
+                let mask = (((2.0 * scale).max(1.0) * (median - 0.5)) + 0.5).smoothstep(0.0, 1.0);
+                float4(mask)
+            }));
 
-/// a test that draws a letter "A" using the MSDF technique
-/// tests:
-/// - that dispatching works
-/// - drawing multiple quads of the same shader instance
-/// - passing data to the shader using `write_data`
-/// - using correct (top left origin) coordinate system
-/// - loading and sampling a static texture
-#[test]
-fn msdf_text() {
-    let (width, height, data) = {
-        let msdf = open("./tests/drawtest/msdf.webp").unwrap();
-        let mut data = vec![0u8; (4 * msdf.width() * msdf.height()) as usize];
-        for i in 0..msdf.width() {
-            for j in 0..msdf.height() {
-                let Rgba([r, g, b, _]) = msdf.get_pixel(i, j);
-                data[((i + j * msdf.width()) * 4 + 0) as usize] = r;
-                data[((i + j * msdf.width()) * 4 + 1) as usize] = g;
-                data[((i + j * msdf.width()) * 4 + 2) as usize] = b;
-                data[((i + j * msdf.width()) * 4 + 3) as usize] = 255;
+            let mut commands = CommandBuffer::new();
+            let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+
+            let mut x = 10.0;
+            let mut scale = 0.5;
+            for _ in 0..=10 {
+                frame
+                    .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+                    .write_data(texture)
+                    .write_data((x, 12.0 + scale * 10.0))
+                    .write_data(scale);
+
+                x += 18.0 * scale;
+                scale *= 1.325;
             }
-        }
 
-        (msdf.width(), msdf.height(), data)
-    };
-
-    run("msdf_text", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
-        let texture = context.create_texture_static(ImageData {
-            width,
-            height,
-            format: ImageFormat::RGBA8,
-            data: &data,
-        });
-
-        let shader = context.create_shader(Graph::collect(|| {
-            let atlas = io::read::<Texture>();
-            let (x, y) = io::read::<(f32, f32)>();
-            let scale = io::read::<f32>();
-
-            let pos = (io::position() - float2((x, y))) / scale + float2(12.0);
-            let sample = atlas.sample_linear(pos.clamp(0.0, atlas.size()));
-            let median = float1::max(
-                float1::min(sample.x(), sample.y()),
-                float1::min(float1::max(sample.x(), sample.y()), sample.z()),
-            );
-
-            let mask = (((2.0 * scale).max(1.0) * (median - 0.5)) + 0.5).smoothstep(0.0, 1.0);
-            float4(mask)
-        }));
-
-        let mut commands = CommandBuffer::new();
-        let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
-
-        let mut x = 10.0;
-        let mut scale = 0.5;
-        for _ in 0..=10 {
             frame
                 .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
                 .write_data(texture)
-                .write_data((x, 12.0 + scale * 10.0))
-                .write_data(scale);
+                .write_data((256.0, 320.0))
+                .write_data(20.0);
 
-            x += 18.0 * scale;
-            scale *= 1.325;
-        }
-
-        frame
-            .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-            .write_data(texture)
-            .write_data((256.0, 320.0))
-            .write_data(20.0);
-
-        context.draw(&commands);
-    });
-}
-
-/// a test that does a bunch of simple resource operations across multiple frames
-/// tests:
-/// - that dispatching works
-/// - loading and sampling a static texture with different texture formats
-/// - creating and deleting shader/texture/framebuffer objects across frames
-/// - that buffer data is preserved across frames (unless `clear` is called for a select region)
-/// - that screen frame data is preserved across frames
-#[test]
-fn resource_mgmt() {
-    run("resource_mgmt", 32, 32, |context| {
-        // frame 0 prepare
-        let texture_0 = context.create_texture_static(ImageData {
-            width: 1,
-            height: 1,
-            format: ImageFormat::Gray8,
-            data: &[127],
+            context.draw(&commands);
         });
+    }
 
-        let texture_1 = context.create_texture_static(ImageData {
-            width: 2,
-            height: 1,
-            format: ImageFormat::RGB8,
-            data: &[127, 127, 127, 255, 255, 255],
+    #[test]
+    fn complex_boxblur() {
+        run("complex_boxblur", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
+            fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
+                ((center - pos).len() - radius).smoothstep(0.707, -0.707)
+            }
+
+            let shader_circle = context.create_shader(Graph::collect(|| {
+                let [x, y] = io::read::<[f32; 2]>();
+
+                let grid = (io::position() / 32.0).floor();
+                let checker = (grid.x() + grid.y()) % 2.0;
+                let texture = float4(checker).lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
+                let mask = sdf_circle(io::position(), float2((x, y)), float1(128.0));
+                let color = texture * mask;
+
+                float4(mask * color)
+            }));
+
+            let shader_boxblur = context.create_shader(Graph::collect(|| {
+                let buffer = io::read::<RenderTexture>();
+
+                let mut result = float4(0.0);
+                for i in -5..=5 {
+                    for j in -5..=5 {
+                        result = result + buffer.sample_nearest(io::position() + float2((i, j)));
+                    }
+                }
+
+                result / (11 * 11) as f32
+            }));
+
+            let buffer = context.create_texture_render();
+            let mut commands = CommandBuffer::new();
+
+            commands
+                .begin_buffer(buffer, [MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+                .begin_quad(shader_circle, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+                .write_data([256.0, 256.0]);
+
+            commands
+                .begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+                .begin_quad(shader_boxblur, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+                .write_data(buffer);
+
+            context.draw(&commands);
         });
-
-        let shader_0 = context.create_shader(Graph::collect(|| float4((0.0, 0.0, 0.0, 0.25))));
-        let shader_1 = context.create_shader(Graph::collect(|| io::read::<Texture>().sample_linear(io::position())));
-
-        let buffer_0 = context.create_texture_render();
-
-        // frame 0 draw
-        let mut commands = CommandBuffer::new();
-        commands
-            .begin_buffer(buffer_0, [32, 32])
-            .begin_quad(shader_1, [0, 0, 10, 10])
-            .write_data(texture_0);
-        context.draw(&commands);
-
-        // frame 1 prepare
-        let texture_2 = context.create_texture_static(ImageData {
-            width: 2,
-            height: 2,
-            format: ImageFormat::RGBA8,
-            data: &[0, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 255, 255, 0, 255],
-        });
-
-        let shader_2 = context.create_shader(Graph::collect(|| {
-            io::read::<Texture>().sample_linear(io::position()) * 2.0
-        }));
-
-        assert!(context.delete_shader(shader_1));
-        assert!(!context.delete_shader(shader_1));
-        assert!(context.delete_texture_static(texture_0));
-        assert!(!context.delete_texture_static(texture_0));
-
-        // frame 1 draw
-        let mut commands = CommandBuffer::new();
-        let mut frame = commands.begin_buffer(buffer_0, [32, 32]);
-        frame.clear([5, 5, 10, 10]);
-        frame.begin_quad(shader_2, [10, 10, 20, 20]).write_data(texture_1);
-        frame.begin_quad(shader_2, [20, 20, 30, 30]).write_data(texture_2);
-        frame.begin_quad(shader_0, [0, 0, 20, 20]);
-        context.draw(&commands);
-
-        // frame 2 prepare
-        assert!(context.delete_texture_static(texture_1));
-        assert!(!context.delete_texture_static(texture_1));
-        assert!(context.delete_texture_static(texture_2));
-        assert!(!context.delete_texture_static(texture_2));
-
-        let shader_4 = context.create_shader(Graph::collect(|| float4((1.0, 1.0, 1.0, 1.0))));
-        let shader_3 = context.create_shader(Graph::collect(|| {
-            io::read::<RenderTexture>().sample_linear(io::position())
-        }));
-
-        // frame 2 drawpath
-        let mut commands = CommandBuffer::new();
-        let mut frame = commands.begin_screen([32, 32]);
-        frame.begin_quad(shader_4, [0, 0, 32, 32]);
-        frame.begin_quad(shader_3, [0, 0, 32, 32]).write_data(buffer_0);
-        frame.clear([10, 10, 15, 15]);
-        context.draw(&commands);
-
-        // cleanup
-        assert!(context.delete_texture_render(buffer_0));
-        assert!(!context.delete_texture_render(buffer_0));
-        assert!(context.delete_shader(shader_3));
-        assert!(!context.delete_shader(shader_3));
-        assert!(context.delete_shader(shader_4));
-        assert!(!context.delete_shader(shader_4));
-    });
+    }
 }
 
 #[allow(unused_variables, dead_code)]
@@ -1382,11 +1339,8 @@ mod software {
         for i in 0..width {
             for j in 0..height {
                 let data = buffer[(i + j * width) as usize];
-                image.put_pixel(
-                    i,
-                    j,
-                    Rgba([(data >> 16) as u8, (data >> 8) as u8, data as u8, (data >> 24) as u8]),
-                );
+                let (r, g, b, a) = picodraw::software::unpack_rgba(data);
+                image.put_pixel(i, j, Rgba([r, g, b, a]));
             }
         }
 

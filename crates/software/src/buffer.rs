@@ -68,12 +68,8 @@ impl<'a> From<ImageData<'a>> for Buffer {
                 for y in 0..buffer.height {
                     for x in 0..buffer.width {
                         let offset = (y * buffer.width + x) * 4;
-                        buffer.data[y * buffer.width + x] = u32::from_le_bytes([
-                            data[offset + 3],
-                            data[offset + 0],
-                            data[offset + 1],
-                            data[offset + 2],
-                        ]);
+                        buffer.data[y * buffer.width + x] =
+                            pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], data[offset + 3]);
                     }
                 }
             }
@@ -84,17 +80,17 @@ impl<'a> From<ImageData<'a>> for Buffer {
                     for x in 0..buffer.width {
                         let offset = (y * buffer.width + x) * 3;
                         buffer.data[y * buffer.width + x] =
-                            u32::from_le_bytes([0xFF, data[offset + 0], data[offset + 1], data[offset + 2]]);
+                            pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], 0xFF);
                     }
                 }
             }
 
-            ImageFormat::Gray8 => {
+            ImageFormat::R8 => {
                 let data = data.data.as_ref();
                 for y in 0..buffer.height {
                     for x in 0..buffer.width {
                         let offset = y * buffer.width + x;
-                        buffer.data[offset] = u32::from_le_bytes([0xFF, data[offset], data[offset], data[offset]]);
+                        buffer.data[offset] = pack_rgba(data[offset], 0, 0, 0xFF);
                     }
                 }
             }
@@ -284,4 +280,19 @@ impl<'a> Deref for BufferMut<'a> {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+#[inline(always)]
+pub fn pack_rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
+    (r as u32) << 16 | (g as u32) << 8 | (b as u32) | ((a as u32) << 24)
+}
+
+#[inline(always)]
+pub fn unpack_rgba(color: u32) -> (u8, u8, u8, u8) {
+    (
+        ((color >> 16) & 0xFF) as u8,
+        ((color >> 8) & 0xFF) as u8,
+        (color & 0xFF) as u8,
+        ((color >> 24) & 0xFF) as u8,
+    )
 }
