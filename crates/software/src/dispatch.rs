@@ -276,10 +276,11 @@ fn blend_tile(
         };
 
         let a1 = if mask { a1[i] } else { 0.0 };
-        a0[i] = a0[i] + ((a1 - a0[i]) * a1);
-        r0[i] = r0[i] + ((r1[i] - r0[i]) * a1);
-        g0[i] = g0[i] + ((g1[i] - g0[i]) * a1);
-        b0[i] = b0[i] + ((b1[i] - b0[i]) * a1);
+
+        a0[i] = (1.0 - a0[i]) * a1 + a0[i];
+        r0[i] = (r1[i] - r0[i]) * a1 + r0[i];
+        g0[i] = (g1[i] - g0[i]) * a1 + g0[i];
+        b0[i] = (b1[i] - b0[i]) * a1 + b0[i];
     }
 }
 

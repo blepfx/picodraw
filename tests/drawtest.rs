@@ -512,7 +512,7 @@ pub mod ops {
 
     gen_simple!(op_clamp, 128, 8, {
         let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
-        (float3((x.clamp(0.0, 1.0), x.clamp(1.0, -1.0), x.clamp(-1.0, 0.0))) + 5.0) / 10.0
+        (float3((x.clamp(0.0, 1.0), x.clamp(-1.0, 1.0), x.clamp(-1.0, 0.0))) + 5.0) / 10.0
     });
 
     gen_simple!(op_lerp, 128, 8, {
@@ -855,6 +855,7 @@ pub mod semantics {
             screen
                 .begin_quad(shader, [3, 3, 7, 7])
                 .write_data([0.0, 1.0, 1.0, 0.25]);
+            screen.begin_quad(shader, [0, 0, 8, 8]).write_data([1.0, 1.0, 1.0, 0.1]);
 
             context.draw(&commands);
         });
@@ -1208,7 +1209,7 @@ mod opengl {
         let close = Arc::new(AtomicBool::new(false));
         let mut gl_backend = None;
         let mut world = World::new_program().unwrap();
-        let mut close_send = close.clone();
+        let close_send = close.clone();
         let view = world
             .new_view(OpenGl {
                 bits_alpha: 8,

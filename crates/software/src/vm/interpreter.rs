@@ -402,12 +402,14 @@ impl<'a> VMInterpreter<'a> {
                     let reg = reg.as_f32();
                     let out = out.as_f32_mut();
 
-                    for i in 0..TILE_SIZE {
+                    for i in (0..TILE_SIZE).step_by(2) {
                         for j in (0..TILE_SIZE).step_by(2) {
-                            let a = reg[i * TILE_SIZE + j];
-                            let b = reg[i * TILE_SIZE + j + 1];
-                            out[i * TILE_SIZE + j] = b - a;
-                            out[i * TILE_SIZE + j + 1] = b - a;
+                            let d = reg[i * TILE_SIZE + j + 1] - reg[i * TILE_SIZE + j];
+
+                            out[i * TILE_SIZE + j] = d;
+                            out[i * TILE_SIZE + j + 1] = d;
+                            out[(i + 1) * TILE_SIZE + j] = d;
+                            out[(i + 1) * TILE_SIZE + j + 1] = d;
                         }
                     }
                 }
@@ -418,11 +420,13 @@ impl<'a> VMInterpreter<'a> {
                     let out = out.as_f32_mut();
 
                     for i in (0..TILE_SIZE).step_by(2) {
-                        for j in 0..TILE_SIZE {
-                            let a = reg[(i + 1) * TILE_SIZE + j];
-                            let b = reg[i * TILE_SIZE + j];
-                            out[i * TILE_SIZE + j] = b - a;
-                            out[(i + 1) * TILE_SIZE + j] = b - a;
+                        for j in (0..TILE_SIZE).step_by(2) {
+                            let d = reg[i * TILE_SIZE + j] - reg[(i + 1) * TILE_SIZE + j];
+
+                            out[i * TILE_SIZE + j] = d;
+                            out[(i + 1) * TILE_SIZE + j] = d;
+                            out[i * TILE_SIZE + j + 1] = d;
+                            out[(i + 1) * TILE_SIZE + j + 1] = d;
                         }
                     }
                 }
