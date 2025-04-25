@@ -1,235 +1,182 @@
-use std::sync::Arc;
-
 use image::{DynamicImage, GenericImageView, Rgba, open};
 use picodraw::{
     CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData, ShaderDataWriter, Texture,
     shader::*,
 };
+use std::{f32::consts::PI, sync::Arc};
 
-const CANVAS_SIZE: u32 = 512;
+const MAX_CANVAS_SIZE: u32 = 512;
 
-/// a basic test that draws a single full screen solid colored quad
-/// - tests that dispatching even works
-#[test]
-fn fill_purple() {
-    run("fill-purple", |context| {
-        let shader = context.create_shader(Graph::collect(|| float4((1.0, 0.0, 1.0, 1.0))));
+macro_rules! gen_simple {
+    ($id:ident, $width:expr, $height:expr, $render:block) => {
+        #[test]
+        fn $id() {
+            run(stringify!($id), $width, $height, |context| {
+                let shader = context.create_shader(Graph::collect(|| {
+                    let z = $render;
+                    float4((z.x(), z.y(), z.z(), 1.0))
+                }));
 
-        let mut commands = CommandBuffer::new();
-        commands
-            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
-        context.draw(&commands);
-    });
-}
-
-/// a basic test that draws a single full screen quad with a checkerboard pattern
-/// - tests that dispatching works
-/// - non trivial pixel position dependent shaders can run
-#[test]
-fn fill_checker() {
-    run("fill-checker", |context| {
-        let shader = context.create_shader(Graph::collect(|| {
-            let grid = (io::position() / 16.0).floor();
-            let checker = (grid.x() + grid.y()) % 2.0;
-
-            float4(checker).lerp(float4((0.0, 0.0, 0.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)))
-        }));
-
-        let mut commands = CommandBuffer::new();
-        commands
-            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
-        context.draw(&commands);
-    });
-}
-
-/// a test that draws a single quad with a checkerboard and a circular mask and applies post processing (box blur) to it
-/// tests:
-/// - that dispatching works
-/// - dispatching multiple shaders
-/// - using a framebuffer to implement post processing
-/// - using correct (top left origin) coordinate system
-/// - that quads are not rendered beyond their bounds
-/// - passing data to the shader using `write_data`
-#[test]
-fn blurry_semicircle() {
-    run("blurry-semicircle", |context| {
-        fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
-            ((center - pos).len() - radius).smoothstep(0.707, -0.707)
+                let mut commands = CommandBuffer::new();
+                commands
+                    .begin_screen([$width, $height])
+                    .begin_quad(shader, [0, 0, $width, $height]);
+                context.draw(&commands);
+            });
         }
-
-        let shader_circle = context.create_shader(Graph::collect(|| {
-            let [x, y] = io::read::<[f32; 2]>();
-
-            let grid = (io::position() / 32.0).floor();
-            let checker = (grid.x() + grid.y()) % 2.0;
-            let texture = float4(checker).lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
-            let mask = sdf_circle(io::position(), float2((x, y)), float1(128.0));
-            let color = texture * mask;
-
-            float4(mask * color)
-        }));
-
-        let shader_boxblur = context.create_shader(Graph::collect(|| {
-            let buffer = io::read::<RenderTexture>();
-
-            let mut result = float4(0.0);
-            for i in -5..=5 {
-                for j in -5..=5 {
-                    result = result + buffer.sample_nearest(io::position() + float2((i, j)));
-                }
-            }
-
-            result / (11 * 11) as f32
-        }));
-
-        let buffer = context.create_texture_render();
-        let mut commands = CommandBuffer::new();
-
-        commands
-            .begin_buffer(buffer, [CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader_circle, [300, 0, CANVAS_SIZE, CANVAS_SIZE])
-            .write_data([300.0, 200.0]);
-
-        commands
-            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader_boxblur, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
-            .write_data(buffer);
-
-        context.draw(&commands);
-    });
-}
-
-/// a test that draws a letter "A" using the MSDF technique
-/// tests:
-/// - that dispatching works
-/// - drawing multiple quads of the same shader instance
-/// - passing data to the shader using `write_data`
-/// - using correct (top left origin) coordinate system
-/// - loading and sampling a static texture
-#[test]
-fn msdf_text() {
-    let (width, height, data) = {
-        let msdf = open("./tests/drawtest/msdf.webp").unwrap();
-        let mut data = vec![0u8; (4 * msdf.width() * msdf.height()) as usize];
-        for i in 0..msdf.width() {
-            for j in 0..msdf.height() {
-                let Rgba([r, g, b, _]) = msdf.get_pixel(i, j);
-                data[((i + j * msdf.width()) * 4 + 0) as usize] = r;
-                data[((i + j * msdf.width()) * 4 + 1) as usize] = g;
-                data[((i + j * msdf.width()) * 4 + 2) as usize] = b;
-                data[((i + j * msdf.width()) * 4 + 3) as usize] = 255;
-            }
-        }
-
-        (msdf.width(), msdf.height(), data)
     };
-
-    run("msdf-text", move |context| {
-        let texture = context.create_texture_static(ImageData {
-            width,
-            height,
-            format: ImageFormat::RGBA8,
-            data: &data,
-        });
-
-        let shader = context.create_shader(Graph::collect(|| {
-            let atlas = io::read::<Texture>();
-            let (x, y) = io::read::<(f32, f32)>();
-            let scale = io::read::<f32>();
-
-            let pos = (io::position() - float2((x, y))) / scale + float2(12.0);
-            let sample = atlas.sample_linear(pos.clamp(0.0, atlas.size()));
-            let median = float1::max(
-                float1::min(sample.x(), sample.y()),
-                float1::min(float1::max(sample.x(), sample.y()), sample.z()),
-            );
-
-            let mask = (((2.0 * scale).max(1.0) * (median - 0.5)) + 0.5).smoothstep(0.0, 1.0);
-            float4(mask)
-        }));
-
-        let mut commands = CommandBuffer::new();
-        let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
-
-        let mut x = 10.0;
-        let mut scale = 0.5;
-        for _ in 0..=10 {
-            frame
-                .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
-                .write_data(texture)
-                .write_data((x, 12.0 + scale * 10.0))
-                .write_data(scale);
-
-            x += 18.0 * scale;
-            scale *= 1.325;
-        }
-
-        frame
-            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
-            .write_data(texture)
-            .write_data((256.0, 320.0))
-            .write_data(20.0);
-
-        context.draw(&commands);
-    });
 }
 
-/// tests:
-/// - that dispatching works
-/// - passing data to the shader using `write_data`
-/// - drawing `a lot` of quads works properly
-///   (for example `opengl` backend has to dispatch multiple draw calls and sync the buffers correctly)
-#[test]
-fn stress_test() {
-    run("stress-test", move |context| {
-        let shader = context.create_shader(Graph::collect(|| {
-            let [r, g, b] = io::read::<[f32; 3]>();
-            io::read::<[u32; 8]>();
-            float4((r, g, b, 1.0))
-        }));
+macro_rules! gen_serialize {
+    ($id:ident, $width:expr, $height:expr, $generate:expr, $render:expr) => {
+        #[test]
+        fn $id() {
+            fn imp<T: ShaderData>(
+                context: &mut dyn Context,
+                width: u32,
+                height: u32,
+                value: T,
+                render: impl Fn(T::Data) -> float3,
+            ) {
+                let shader = context.create_shader(Graph::collect(|| {
+                    let z = render(io::read::<T>());
+                    float4((z.x(), z.y(), z.z(), 1.0))
+                }));
 
-        for _ in 0..2 {
-            let mut commands = CommandBuffer::new();
-            let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
-            frame.clear([0, 0, CANVAS_SIZE, CANVAS_SIZE]);
-
-            for i in 0..CANVAS_SIZE {
-                for j in 0..CANVAS_SIZE {
-                    frame
-                        .begin_quad(shader, [i, j, i + 1, j + 1])
-                        .write_data(if (i + j) % 2 == 0 {
-                            [1.0, 1.0, 0.0]
-                        } else {
-                            [0.0, 0.0, 1.0]
-                        })
-                        .write_data([0u32; 8]);
-                }
+                let mut commands = CommandBuffer::new();
+                commands
+                    .begin_screen([width, height])
+                    .begin_quad(shader, [0, 0, width, height])
+                    .write_data(&value);
+                context.draw(&commands);
             }
 
-            context.draw(&commands);
+            run(stringify!($id), $width, $height, |context| {
+                imp(context, $width, $height, $generate, $render);
+            });
         }
-    });
+    };
 }
 
-/// tests:
-/// - that dispatching works
-/// - passing data to the shader using `write_data`
-/// - if `ShaderData` derive proc macro implemented correctly
-/// - primitive types like u8, i16 and f32 are serialized correctly
-/// - literals like 1 and infinity are serialized correctly
-/// - if custom `ShaderData` implementation is honored, including implementations that use resolution/bounds data at serialize time
-/// - if `#[shader(ignore)]` and `#[shader(_)]` attributes work correctly
-/// - if `ShaderData` implementation can be derived for tuple structs and unit structs
-/// - if `ShaderData` proc macro supports custom encoders
-///
-#[test]
+pub mod ser {
+    use super::*;
+
+    struct TestStruct {
+        x: f32,
+        y: u8,
+        z: (f32, f32),
+    }
+
+    struct TestStructShader {
+        x: float1,
+        y: float1,
+        z: (float1, float1),
+    }
+
+    impl ShaderData for TestStruct {
+        type Data = TestStructShader;
+
+        fn read() -> Self::Data {
+            let x = io::read::<f32>();
+            let y = float1(io::read::<u8>()) / 255.0;
+            let z = io::read::<(f32, f32)>();
+            TestStructShader { x, y, z }
+        }
+
+        fn write(&self, writer: &mut dyn ShaderDataWriter) {
+            self.x.write(writer);
+            self.y.write(writer);
+            self.z.write(writer);
+        }
+    }
+
+    gen_serialize!(ser_u32, 4, 4, 0xCAFEBABEu32, |x| {
+        float3((
+            float1(x & 255) / 255.0,
+            float1((x >> 8) & 255) / 255.0,
+            float1((x >> 16) & 255) / 255.0,
+        ))
+    });
+
+    gen_serialize!(ser_i32, 4, 4, 0xCAFEBEEFu32 as i32, |x| {
+        float3((
+            float1(x & 255) / 255.0,
+            float1((x >> 8) & 255) / 255.0,
+            x.le(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_serialize!(ser_u16, 4, 4, 0xCAFEu16, |x| {
+        float3((float1(x & 255) / 255.0, float1((x >> 8) & 255) / 255.0, 1.0))
+    });
+
+    gen_serialize!(ser_i16, 4, 4, 0xBABEu16 as i16, |x| {
+        float3((
+            float1(x & 255) / 255.0,
+            float1((x >> 8) & 255) / 255.0,
+            x.le(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_serialize!(ser_u8, 4, 4, 0xCAu8, |x| {
+        float3((float1(x & 16) / 16.0, float1((x >> 4) & 16) / 16.0, 1.0))
+    });
+
+    gen_serialize!(ser_i8, 4, 4, 0xEFu8 as i8, |x| {
+        float3((
+            float1(x & 16) / 16.0,
+            float1((x >> 4) & 16) / 16.0,
+            x.le(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_serialize!(ser_bool, 4, 4, true, |x| {
+        float3((
+            x.select(float1(1.0), 0.0),
+            x.select(float1(0.5), 0.0),
+            x.select(float1(0.25), 0.0),
+        ))
+    });
+
+    gen_serialize!(ser_f32_pos, 4, 4, 0.3333333f32, |x| { float3((x, 2.0 * x, 3.0 * x)) });
+    gen_serialize!(ser_f32_neg, 4, 4, -0.3333333f32, |x| { float3((x, -2.0 * x, 3.0 * x)) });
+    gen_serialize!(ser_f32_zero, 4, 4, 0.0, |x| { float3((x, 1.0f32 - x, 0.5f32 - x)) });
+    gen_serialize!(ser_f32_inf_pos, 4, 4, f32::INFINITY, |x| { float3((x, -x, x)) });
+    gen_serialize!(ser_f32_inf_neg, 4, 4, f32::NEG_INFINITY, |x| { float3((x, -x, x)) });
+    gen_serialize!(ser_f32_nan, 4, 4, f32::NAN, |x| {
+        float3(x.eq(x).select(float1(0.0), 1.0))
+    });
+
+    gen_serialize!(ser_tuple, 4, 4, (0.2, 0.3, 0.5), |x| { float3((x.0, x.1, x.2)) });
+
+    gen_serialize!(
+        ser_struct,
+        4,
+        4,
+        TestStruct {
+            x: 0.6666666666666,
+            y: 0xCAu8,
+            z: (0.25, 0.5)
+        },
+        |x| { float3((x.x, x.y, x.z.0 * 0.5 + x.z.1 * 0.5,)) }
+    );
+}
+
 #[cfg(feature = "derive")]
-fn serialize_test() {
-    fn sdf_circle(pos: float2, center: float2, radius: float1, invert: boolean) -> float1 {
-        let mask = ((center - pos).len() - radius).smoothstep(-0.707, 0.707);
-        invert.select(mask, 1.0 - mask)
+pub mod ser_derive {
+    use super::*;
+
+    #[derive(ShaderData)]
+    struct UnitStruct;
+
+    #[derive(ShaderData)]
+    struct TupleStruct(f32, f32);
+
+    #[derive(ShaderData)]
+    struct TestStruct {
+        a: f32,
+        b: f32,
+        c: u8,
     }
 
     #[derive(ShaderData)]
@@ -283,161 +230,825 @@ fn serialize_test() {
     }
 
     #[derive(ShaderData)]
-    struct Circle {
-        #[shader(FracResolutionEncoder)]
-        point: (f32, f32),
+    struct TestStructWithEncoders {
+        normal: f32,
 
         #[shader(PassthroughEncoder::<f32>)]
-        scale: f32,
+        passthrough: f32,
 
-        invert: bool,
+        #[shader(FracResolutionEncoder)]
+        resolution: (f32, f32),
 
-        #[shader(ignore)]
-        _ignored: f32,
+        #[shader(FracQuadBoundsEncoder)]
+        quad_bounds: (f32, f32),
     }
 
-    #[derive(ShaderData)]
-    struct Point(#[shader(FracQuadBoundsEncoder)] (f32, f32));
+    gen_serialize!(ser_derive_unit_struct, 4, 4, UnitStruct, |_| { float3(1.0) });
 
-    #[derive(ShaderData)]
-    struct Nothing;
+    gen_serialize!(ser_derive_tuple_struct, 4, 4, TupleStruct(0.5, 0.2), |x| {
+        float3((x.0, x.1, 1.0))
+    });
 
-    #[derive(ShaderData)]
-    struct Primitives {
-        i8: i8,
-        i16: i16,
-        i32: i32,
-        u8: u8,
-        u16: u16,
-        u32: u32,
-        f32: f32,
-        bool: bool,
+    gen_serialize!(
+        ser_derive_struct,
+        4,
+        4,
+        TestStruct {
+            a: 0.5,
+            b: 0.2,
+            c: 0xCA
+        },
+        |x| { float3((x.a, x.b, float1(x.c) / 255.0)) }
+    );
+
+    gen_serialize!(
+        ser_derive_struct_with_encoders,
+        4,
+        4,
+        TestStructWithEncoders {
+            normal: 0.5,
+            passthrough: 0.7,
+            resolution: (2.0, 2.6),
+            quad_bounds: (1.0, 3.0),
+        },
+        |x| {
+            float3((
+                x.normal * x.passthrough.0,
+                x.resolution.x() * x.quad_bounds.x(),
+                x.resolution.y() * x.quad_bounds.y(),
+            ))
+        }
+    );
+}
+
+pub mod ops {
+    use super::*;
+
+    gen_simple!(op_nothing, 4, 4, { float3((1.0, 0.0, 1.0)) });
+
+    gen_simple!(op_infinity, 4, 4, {
+        let pos_inf = float1(f32::INFINITY);
+        let neg_inf = float1(f32::NEG_INFINITY);
+        let nan = float1(f32::NAN);
+
+        float3((pos_inf, neg_inf, nan.eq(nan).select(float1(0.0), 1.0)))
+    });
+
+    gen_simple!(op_comp_ge, 64, 64, {
+        let p = io::position() / io::resolution();
+
+        float3((
+            p.x().ge(p.y()).select(float1(1.0), 0.0),
+            p.x().ge(0.5).select(float1(1.0), 0.0),
+            p.y().ge(0.5).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_le, 64, 64, {
+        let p = io::position() / io::resolution();
+
+        float3((
+            p.x().le(p.y()).select(float1(1.0), 0.0),
+            p.x().le(0.5).select(float1(1.0), 0.0),
+            p.y().le(0.5).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_gt, 64, 64, {
+        let p = io::position() / io::resolution();
+
+        float3((
+            p.x().gt(p.y()).select(float1(1.0), 0.0),
+            p.x().gt(0.5).select(float1(1.0), 0.0),
+            p.y().gt(0.5).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_lt, 64, 64, {
+        let p = io::position() / io::resolution();
+
+        float3((
+            p.x().lt(p.y()).select(float1(1.0), 0.0),
+            p.x().lt(0.5).select(float1(1.0), 0.0),
+            p.y().lt(0.5).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_eq, 64, 64, {
+        let p = io::position() / io::resolution();
+
+        float3((
+            p.x().eq(p.y()).select(float1(1.0), 0.0),
+            p.x().eq(0.5).select(float1(1.0), 0.0),
+            p.y().eq(0.5).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_ne, 64, 64, {
+        let p = io::position() / io::resolution();
+
+        float3((
+            p.x().ne(p.y()).select(float1(1.0), 0.0),
+            p.x().ne(0.5).select(float1(1.0), 0.0),
+            p.y().ne(0.5).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_ge_int, 64, 64, {
+        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+
+        float3((
+            int1(p.x()).ge(int1(p.y())).select(float1(1.0), 0.0),
+            int1(p.x()).ge(0).select(float1(1.0), 0.0),
+            int1(p.y()).ge(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_le_int, 64, 64, {
+        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+
+        float3((
+            int1(p.x()).le(int1(p.y())).select(float1(1.0), 0.0),
+            int1(p.x()).le(0).select(float1(1.0), 0.0),
+            int1(p.y()).le(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_gt_int, 64, 64, {
+        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+
+        float3((
+            int1(p.x()).gt(int1(p.y())).select(float1(1.0), 0.0),
+            int1(p.x()).gt(0).select(float1(1.0), 0.0),
+            int1(p.y()).gt(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_lt_int, 64, 64, {
+        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+
+        float3((
+            int1(p.x()).lt(int1(p.y())).select(float1(1.0), 0.0),
+            int1(p.x()).lt(0).select(float1(1.0), 0.0),
+            int1(p.y()).lt(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_eq_int, 64, 64, {
+        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+
+        float3((
+            int1(p.x()).eq(int1(p.y())).select(float1(1.0), 0.0),
+            int1(p.x()).eq(0).select(float1(1.0), 0.0),
+            int1(p.y()).eq(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_comp_ne_int, 64, 64, {
+        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+
+        float3((
+            int1(p.x()).ne(int1(p.y())).select(float1(1.0), 0.0),
+            int1(p.x()).ne(0).select(float1(1.0), 0.0),
+            int1(p.y()).ne(0).select(float1(1.0), 0.0),
+        ))
+    });
+
+    gen_simple!(op_sin, 64, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.sin())
+    });
+
+    gen_simple!(op_cos, 64, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.cos())
+    });
+
+    gen_simple!(op_tan, 64, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.tan())
+    });
+
+    gen_simple!(op_asin, 64, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.asin())
+    });
+
+    gen_simple!(op_acos, 64, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.acos())
+    });
+
+    gen_simple!(op_atan, 64, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.atan())
+    });
+
+    gen_simple!(op_exp, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.exp())
+    });
+
+    gen_simple!(op_sqrt, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.sqrt())
+    });
+
+    gen_simple!(op_ln, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3(x.ln())
+    });
+
+    gen_simple!(op_pow, 64, 64, {
+        let p = (io::position() / io::resolution()) * 4.0;
+
+        float3((p.x().pow(p.y()), p.x().pow(-p.y()), (-p.x()).pow(2.0)))
+    });
+
+    gen_simple!(op_cast, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        let y = int1(x);
+        float3((
+            (float1(y) - x).abs(),
+            float1(y % 2) * 0.5 + 0.5,
+            (float1(y) + 5.0) / 10.0,
+        ))
+    });
+
+    gen_simple!(op_floor, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3((x.floor() + 5.0) / 10.0)
+    });
+
+    gen_simple!(op_abs, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        (float3((x.abs(), x.len(), 0.0)) + 5.0) / 10.0
+    });
+
+    gen_simple!(op_sign, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3((x.sign(), x.norm(), 0.0))
+    });
+
+    gen_simple!(op_step, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3((x.step(0.0), x.step(1.0), x.step(-1.0)))
+    });
+
+    gen_simple!(op_smoothstep, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        float3((x.smoothstep(0.0, 1.0), x.smoothstep(1.0, -1.0), x.smoothstep(-1.0, 0.0)))
+    });
+
+    gen_simple!(op_min, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        (float3((x.min(0.0), x.min(1.0), x.min(-1.0))) + 5.0) / 10.0
+    });
+
+    gen_simple!(op_max, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        (float3((x.max(0.0), x.max(1.0), x.max(-1.0))) + 5.0) / 10.0
+    });
+
+    gen_simple!(op_clamp, 128, 8, {
+        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+        (float3((x.clamp(0.0, 1.0), x.clamp(1.0, -1.0), x.clamp(-1.0, 0.0))) + 5.0) / 10.0
+    });
+
+    gen_simple!(op_lerp, 128, 8, {
+        let x = (io::position() / io::resolution()).x();
+        float3((x.lerp(0.5, 1.0), x.lerp(1.0, 0.0), float1(0.5).lerp(x, 0.5)))
+    });
+
+    gen_simple!(op_bit_and, 32, 32, {
+        let x = int1(io::position().x());
+        let y = int1(io::position().y());
+
+        float3((
+            float1((x & y) % 16) / 16.0,
+            float1((x & y) % 32) / 32.0,
+            float1((x & y) % 64) / 64.0,
+        ))
+    });
+
+    gen_simple!(op_bit_or, 32, 32, {
+        let x = int1(io::position().x());
+        let y = int1(io::position().y());
+
+        float3((
+            float1((x | y) % 16) / 16.0,
+            float1((x | y) % 32) / 32.0,
+            float1((x | y) % 64) / 64.0,
+        ))
+    });
+
+    gen_simple!(op_bit_xor, 32, 32, {
+        let x = int1(io::position().x());
+        let y = int1(io::position().y());
+
+        float3((
+            float1((x ^ y) % 16) / 16.0,
+            float1((x ^ y) % 32) / 32.0,
+            float1((x ^ y) % 64) / 64.0,
+        ))
+    });
+
+    gen_simple!(op_bit_not, 32, 32, {
+        let x = int1(io::position().x());
+        let y = int1(io::position().y());
+
+        float3((
+            float1(!x % 32) / 32.0,
+            float1(!y % 32) / 32.0,
+            float1(!(x + y) % 32) / 32.0,
+        ))
+    });
+
+    gen_simple!(op_bit_shl, 32, 32, {
+        let x = int1(io::position().x());
+        let y = int1(io::position().y()) / 4;
+
+        float3((
+            float1((x << y) % 16) / 16.0,
+            float1((x << y) % 32) / 32.0,
+            float1((x << y) % 64) / 64.0,
+        ))
+    });
+
+    gen_simple!(op_bit_shr, 32, 32, {
+        let x = int1(io::position().x());
+        let y = int1(io::position().y()) / 4;
+
+        float3((
+            float1((x >> y) % 16) / 16.0,
+            float1((x >> y) % 32) / 32.0,
+            float1((x >> y) % 64) / 64.0,
+        ))
+    });
+
+    gen_simple!(op_dydx, 64, 64, {
+        let p = io::position() / io::resolution();
+        let z = (p.x() * 10.0).sin() * (p.y() * 10.0).cos();
+
+        float3((z.dx() + 0.5, z.dy() + 0.5, z.fwidth()))
+    });
+
+    gen_simple!(op_atan2, 64, 64, {
+        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+        float3(p.x().atan2(p.y()) / PI * 0.5 + 0.5)
+    });
+
+    gen_simple!(op_norm2, 64, 64, {
+        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+        float3((p.norm().x() * 0.5 + 0.5, p.norm().y() * 0.5 + 0.5, p.len()))
+    });
+
+    gen_simple!(op_dot2, 64, 64, {
+        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+        let p = float2((p.x(), p.y()));
+        float3((
+            p.dot((1.0, 1.0)) * 0.5 + 0.5,
+            p.dot((0.0, 1.0)) * 0.5 + 0.5,
+            p.dot((1.0, 0.0)) * 0.5 + 0.5,
+        ))
+    });
+
+    gen_simple!(op_cross3, 64, 64, {
+        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+        let p = float3((p.x(), p.y(), 0.0));
+        p.cross((1.0, 1.0, 1.0)) * 0.5 + 0.5
+    });
+}
+
+pub mod texture {
+    use super::*;
+
+    const TEST_DITHER0: [u8; 16] = [
+        0 * 16,
+        8 * 16,
+        2 * 16,
+        10 * 16,
+        12 * 16,
+        4 * 16,
+        14 * 16,
+        6 * 16,
+        3 * 16,
+        11 * 16,
+        1 * 16,
+        9 * 16,
+        15 * 16,
+        7 * 16,
+        13 * 16,
+        5 * 16,
+    ];
+
+    #[test]
+    fn texture_static_nearest() {
+        run("texture_static_nearest", 32, 32, |context| {
+            let texture = context.create_texture_static(ImageData {
+                width: 4,
+                height: 4,
+                format: ImageFormat::Gray8,
+                data: &TEST_DITHER0,
+            });
+
+            let shader = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                let uv = io::position() / io::resolution();
+                texture.sample_nearest(uv * float2(texture.size()))
+            }));
+
+            let mut commands = CommandBuffer::new();
+            commands
+                .begin_screen([32, 32])
+                .begin_quad(shader, [0, 0, 32, 32])
+                .write_data(texture);
+            context.draw(&commands);
+        });
     }
 
-    struct Box {
-        bounds: [u8; 4],
-        color: i16,
+    #[test]
+    fn texture_static_linear() {
+        run("texture_static_linear", 32, 32, |context| {
+            let texture = context.create_texture_static(ImageData {
+                width: 4,
+                height: 4,
+                format: ImageFormat::Gray8,
+                data: &TEST_DITHER0,
+            });
+
+            let shader = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                let uv = io::position() / io::resolution();
+                texture.sample_linear(uv * float2(texture.size()))
+            }));
+
+            let mut commands = CommandBuffer::new();
+            commands
+                .begin_screen([32, 32])
+                .begin_quad(shader, [0, 0, 32, 32])
+                .write_data(texture);
+            context.draw(&commands);
+        });
     }
 
-    struct BoxShader {
-        bounds: float4,
-        color: float1,
+    #[test]
+    fn texture_render_nearest() {
+        run("texture_render_nearest", 32, 32, |context| {
+            let texture = context.create_texture_render();
+
+            let shader_fill = context.create_shader(Graph::collect(|| {
+                let a = float4((1.0, 0.5, 0.25, 1.0));
+                let b = float4((0.5, 0.25, 1.0, 1.0));
+                let p = io::position() / io::resolution();
+                let p = p.dot((0.707, 0.707));
+
+                float4(p).lerp(a, b)
+            }));
+
+            let shader_negative = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                let z = texture.sample_nearest(io::position() / io::resolution() * float2(texture.size()));
+                float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
+            }));
+
+            let mut commands = CommandBuffer::new();
+
+            commands
+                .begin_buffer(texture, [4, 4])
+                .begin_quad(shader_fill, [0, 0, 4, 4]);
+
+            commands
+                .begin_screen([32, 32])
+                .begin_quad(shader_negative, [0, 0, 20, 32])
+                .write_data(texture);
+
+            context.draw(&commands);
+        });
     }
 
-    impl ShaderData for Box {
-        type Data = BoxShader;
-        fn read() -> Self::Data {
-            BoxShader {
-                bounds: float4((u8::read(), u8::read(), u8::read(), u8::read())),
-                color: float1(i16::read()) / (i16::MAX as f32),
+    #[test]
+    fn texture_render_linear() {
+        run("texture_render_linear", 32, 32, |context| {
+            let texture = context.create_texture_render();
+
+            let shader_fill = context.create_shader(Graph::collect(|| {
+                let a = float4((1.0, 0.5, 0.25, 1.0));
+                let b = float4((0.5, 0.25, 1.0, 1.0));
+                let p = io::position() / io::resolution();
+                let p = p.dot((0.707, 0.707));
+
+                float4(p).lerp(a, b)
+            }));
+
+            let shader_negative = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                let z = texture.sample_linear(io::position() / io::resolution() * float2(texture.size()));
+                float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
+            }));
+
+            let mut commands = CommandBuffer::new();
+
+            commands
+                .begin_buffer(texture, [4, 4])
+                .begin_quad(shader_fill, [0, 0, 4, 4]);
+
+            commands
+                .begin_screen([32, 32])
+                .begin_quad(shader_negative, [0, 0, 20, 32])
+                .write_data(texture);
+
+            context.draw(&commands);
+        });
+    }
+
+    #[test]
+    fn texture_load_gray8() {
+        run("texture_load_gray8", 4, 4, |context| {
+            let texture = context.create_texture_static(ImageData {
+                width: 1,
+                height: 1,
+                format: ImageFormat::Gray8,
+                data: &[100],
+            });
+
+            let shader = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                texture.sample_nearest(0.0)
+            }));
+
+            let mut commands = CommandBuffer::new();
+            commands
+                .begin_screen([4, 4])
+                .begin_quad(shader, [0, 0, 4, 4])
+                .write_data(texture);
+            context.draw(&commands);
+        });
+    }
+
+    #[test]
+    fn texture_load_rgb8() {
+        run("texture_load_rgb8", 4, 4, |context| {
+            let texture = context.create_texture_static(ImageData {
+                width: 1,
+                height: 1,
+                format: ImageFormat::RGB8,
+                data: &[100, 50, 200],
+            });
+
+            let shader = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                texture.sample_nearest(0.0)
+            }));
+
+            let mut commands = CommandBuffer::new();
+            commands
+                .begin_screen([4, 4])
+                .begin_quad(shader, [0, 0, 4, 4])
+                .write_data(texture);
+            context.draw(&commands);
+        });
+    }
+
+    #[test]
+    fn texture_load_rgba8() {
+        run("texture_load_rgba8", 4, 4, |context| {
+            let texture = context.create_texture_static(ImageData {
+                width: 1,
+                height: 1,
+                format: ImageFormat::RGBA8,
+                data: &[100, 50, 200, 150],
+            });
+
+            let shader = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                texture.sample_nearest(0.0)
+            }));
+
+            let mut commands = CommandBuffer::new();
+            commands
+                .begin_screen([4, 4])
+                .begin_quad(shader, [0, 0, 4, 4])
+                .write_data(texture);
+            context.draw(&commands);
+        });
+    }
+}
+
+pub mod semantics {
+    use super::*;
+
+    #[test]
+    fn semantics_blend() {
+        run("semantics_blend", 8, 8, |context| {
+            let shader = context.create_shader(Graph::collect(|| {
+                let data = io::read::<[f32; 4]>();
+                float4((data[0], data[1], data[2], data[3]))
+            }));
+
+            let mut commands = CommandBuffer::new();
+            let mut screen = commands.begin_screen([8, 8]);
+
+            screen
+                .begin_quad(shader, [1, 1, 5, 5])
+                .write_data([1.0, 0.0, 0.0, 0.50]);
+            screen
+                .begin_quad(shader, [3, 3, 7, 7])
+                .write_data([0.0, 1.0, 1.0, 0.25]);
+
+            context.draw(&commands);
+        });
+    }
+}
+
+pub mod stress {
+    use super::*;
+
+    #[test]
+    fn stress_fill_rate() {
+        run("stress_fill_rate", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
+            let shader = context.create_shader(Graph::collect(|| {
+                let i = io::read::<i32>();
+                let j = int1(io::position().x()) + int1(io::position().y()) * int1(io::resolution().x());
+                float4((1.0, 1.0, 1.0, (j % i).eq(0).select(float1(i).sqrt() / 255.0, 0.0)))
+            }));
+
+            for _ in 0..2 {
+                let mut commands = CommandBuffer::new();
+                let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+                frame.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+
+                for i in 2..1000 {
+                    frame
+                        .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+                        .write_data(i);
+                }
+
+                context.draw(&commands);
+            }
+        });
+    }
+
+    #[test]
+    fn stress_quad_count() {
+        run("stress_quad_count", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
+            let shader = context.create_shader(Graph::collect(|| {
+                let [r, g, b] = io::read::<[f32; 3]>();
+                io::read::<[u32; 8]>();
+                float4((r, g, b, 1.0))
+            }));
+
+            for _ in 0..2 {
+                let mut commands = CommandBuffer::new();
+                let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+                frame.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+
+                for i in 0..MAX_CANVAS_SIZE {
+                    for j in 0..MAX_CANVAS_SIZE {
+                        frame
+                            .begin_quad(shader, [i, j, i + 1, j + 1])
+                            .write_data(if (i + j) % 2 == 0 {
+                                [1.0, 1.0, 0.0]
+                            } else {
+                                [0.0, 0.0, 1.0]
+                            })
+                            .write_data([0u32; 8]);
+                    }
+                }
+
+                context.draw(&commands);
+            }
+        });
+    }
+}
+
+/// a test that draws a single quad with a checkerboard and a circular mask and applies post processing (box blur) to it
+/// tests:
+/// - that dispatching works
+/// - dispatching multiple shaders
+/// - using a framebuffer to implement post processing
+/// - using correct (top left origin) coordinate system
+/// - that quads are not rendered beyond their bounds
+/// - passing data to the shader using `write_data`
+#[test]
+fn blurry_semicircle() {
+    run("blurry_semicircle", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
+        fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
+            ((center - pos).len() - radius).smoothstep(0.707, -0.707)
+        }
+
+        let shader_circle = context.create_shader(Graph::collect(|| {
+            let [x, y] = io::read::<[f32; 2]>();
+
+            let grid = (io::position() / 32.0).floor();
+            let checker = (grid.x() + grid.y()) % 2.0;
+            let texture = float4(checker).lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
+            let mask = sdf_circle(io::position(), float2((x, y)), float1(128.0));
+            let color = texture * mask;
+
+            float4(mask * color)
+        }));
+
+        let shader_boxblur = context.create_shader(Graph::collect(|| {
+            let buffer = io::read::<RenderTexture>();
+
+            let mut result = float4(0.0);
+            for i in -5..=5 {
+                for j in -5..=5 {
+                    result = result + buffer.sample_nearest(io::position() + float2((i, j)));
+                }
+            }
+
+            result / (11 * 11) as f32
+        }));
+
+        let buffer = context.create_texture_render();
+        let mut commands = CommandBuffer::new();
+
+        commands
+            .begin_buffer(buffer, [MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+            .begin_quad(shader_circle, [300, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+            .write_data([300.0, 200.0]);
+
+        commands
+            .begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+            .begin_quad(shader_boxblur, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+            .write_data(buffer);
+
+        context.draw(&commands);
+    });
+}
+
+/// a test that draws a letter "A" using the MSDF technique
+/// tests:
+/// - that dispatching works
+/// - drawing multiple quads of the same shader instance
+/// - passing data to the shader using `write_data`
+/// - using correct (top left origin) coordinate system
+/// - loading and sampling a static texture
+#[test]
+fn msdf_text() {
+    let (width, height, data) = {
+        let msdf = open("./tests/drawtest/msdf.webp").unwrap();
+        let mut data = vec![0u8; (4 * msdf.width() * msdf.height()) as usize];
+        for i in 0..msdf.width() {
+            for j in 0..msdf.height() {
+                let Rgba([r, g, b, _]) = msdf.get_pixel(i, j);
+                data[((i + j * msdf.width()) * 4 + 0) as usize] = r;
+                data[((i + j * msdf.width()) * 4 + 1) as usize] = g;
+                data[((i + j * msdf.width()) * 4 + 2) as usize] = b;
+                data[((i + j * msdf.width()) * 4 + 3) as usize] = 255;
             }
         }
-        fn write(&self, writer: &mut dyn ShaderDataWriter) {
-            writer.write_i32(self.bounds[0] as i32);
-            writer.write_i32(self.bounds[1] as i32);
-            writer.write_i32(self.bounds[2] as i32);
-            writer.write_i32(self.bounds[3] as i32);
-            writer.write_i32(self.color as i32);
-        }
-    }
 
-    run("serialize-test", move |context| {
+        (msdf.width(), msdf.height(), data)
+    };
+
+    run("msdf_text", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
+        let texture = context.create_texture_static(ImageData {
+            width,
+            height,
+            format: ImageFormat::RGBA8,
+            data: &data,
+        });
+
         let shader = context.create_shader(Graph::collect(|| {
-            let data_circle = io::read::<Circle>();
-            let data_box = io::read::<Box>();
-            let data_point = io::read::<Point>();
-            let data_primitives = io::read::<Primitives>();
-            let data_extra = io::read::<&f64>();
-            let _ = io::read::<Nothing>();
-            let _ = io::read::<()>(); //wow
+            let atlas = io::read::<Texture>();
+            let (x, y) = io::read::<(f32, f32)>();
+            let scale = io::read::<f32>();
 
-            let position = io::position();
-            let mask_box = data_box.color
-                * position.x().step(data_box.bounds.x())
-                * position.y().step(data_box.bounds.y())
-                * (1.0 - position.x().step(data_box.bounds.z()))
-                * (1.0 - position.y().step(data_box.bounds.w()));
+            let pos = (io::position() - float2((x, y))) / scale + float2(12.0);
+            let sample = atlas.sample_linear(pos.clamp(0.0, atlas.size()));
+            let median = float1::max(
+                float1::min(sample.x(), sample.y()),
+                float1::min(float1::max(sample.x(), sample.y()), sample.z()),
+            );
 
-            let mask_circle = 0.5 * sdf_circle(position, data_circle.point, data_circle.scale.0, data_circle.invert);
-
-            let mask_point = sdf_circle(position, data_point.0, float1(5.0), boolean(false));
-
-            let background = {
-                let nan_soup = float1(f32::INFINITY) + float1(f32::NEG_INFINITY) + float1(f32::NAN);
-                let literal_soup = float1(1.0)
-                    + float1(0.0)
-                    + float1(-1.0)
-                    + float1(0.5)
-                    + float1(int1(1) + int1(0) + int1(-1) + int1(2) + int1(-2) + int1(3) + int1(-3))
-                    + boolean(true).select(float1(0.25), 0.0)
-                    + boolean(false).select(float1(0.0), 0.5);
-
-                let pos = io::position() * 0.001;
-                let a = pos.x() * data_primitives.f32
-                    + pos.y() * float1(data_primitives.i8)
-                    + float1(data_primitives.i16)
-                    + float1(data_primitives.i32)
-                    + float1(data_primitives.u8)
-                    + float1(data_primitives.u16)
-                    + float1(data_primitives.u32)
-                    + data_primitives.bool.select(float1(1.0), 2.0)
-                    + nan_soup.eq(nan_soup).select(nan_soup, 0.0)
-                    + literal_soup % 0.1
-                    + data_extra;
-
-                float4((1.0, 1.0, 1.0, a.sin().abs() * 0.2))
-            };
-
-            let bounding_box = {
-                let (start, end) = io::bounds();
-                let start = start + 2.0;
-                let end = end - 2.0;
-
-                let mask = position.x().step(start.x())
-                    * position.y().step(start.y())
-                    * (1.0 - position.x().step(end.x()))
-                    * (1.0 - position.y().step(end.y()));
-
-                1.0 - mask
-            };
-
-            float4(bounding_box + background + mask_box + mask_circle + mask_point)
+            let mask = (((2.0 * scale).max(1.0) * (median - 0.5)) + 0.5).smoothstep(0.0, 1.0);
+            float4(mask)
         }));
 
         let mut commands = CommandBuffer::new();
+        let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
 
-        // should not be dispatched! we reset the command buffer before the dispatch
-        // dispatching this will lead to `malformed write stream` panic
-        commands.begin_screen([1, 1]).begin_quad(shader, [0, 0, 1, 1]);
-        commands.reset_commands();
+        let mut x = 10.0;
+        let mut scale = 0.5;
+        for _ in 0..=10 {
+            frame
+                .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+                .write_data(texture)
+                .write_data((x, 12.0 + scale * 10.0))
+                .write_data(scale);
 
-        commands
-            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader, [20, 20, CANVAS_SIZE - 20, CANVAS_SIZE - 20])
-            .write_data(Circle {
-                point: (256.0, 256.0),
-                scale: 150.0,
-                invert: false,
-                _ignored: 1.0,
-            })
-            .write_data(Box {
-                bounds: [100, 100, 250, 250],
-                color: i16::MAX / 2,
-            })
-            .write_data(Point((350.0, 350.0)))
-            .write_data(Primitives {
-                i8: 12,
-                i16: -327,
-                i32: 2147,
-                u8: 255,
-                u16: 655,
-                u32: 4294,
-                f32: 3.14159,
-                bool: true,
-            })
-            .write_data(&0.1f64)
-            .write_data(Nothing)
-            .write_data(());
+            x += 18.0 * scale;
+            scale *= 1.325;
+        }
+
+        frame
+            .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
+            .write_data(texture)
+            .write_data((256.0, 320.0))
+            .write_data(20.0);
 
         context.draw(&commands);
     });
@@ -452,7 +1063,7 @@ fn serialize_test() {
 /// - that screen frame data is preserved across frames
 #[test]
 fn resource_mgmt() {
-    run("resource-mgmt", |context| {
+    run("resource_mgmt", 32, 32, |context| {
         // frame 0 prepare
         let texture_0 = context.create_texture_static(ImageData {
             width: 1,
@@ -476,7 +1087,7 @@ fn resource_mgmt() {
         // frame 0 draw
         let mut commands = CommandBuffer::new();
         commands
-            .begin_buffer(buffer_0, [CANVAS_SIZE, CANVAS_SIZE])
+            .begin_buffer(buffer_0, [32, 32])
             .begin_quad(shader_1, [0, 0, 10, 10])
             .write_data(texture_0);
         context.draw(&commands);
@@ -500,7 +1111,7 @@ fn resource_mgmt() {
 
         // frame 1 draw
         let mut commands = CommandBuffer::new();
-        let mut frame = commands.begin_buffer(buffer_0, [CANVAS_SIZE, CANVAS_SIZE]);
+        let mut frame = commands.begin_buffer(buffer_0, [32, 32]);
         frame.clear([5, 5, 10, 10]);
         frame.begin_quad(shader_2, [10, 10, 20, 20]).write_data(texture_1);
         frame.begin_quad(shader_2, [20, 20, 30, 30]).write_data(texture_2);
@@ -520,11 +1131,9 @@ fn resource_mgmt() {
 
         // frame 2 drawpath
         let mut commands = CommandBuffer::new();
-        let mut frame = commands.begin_screen([CANVAS_SIZE, CANVAS_SIZE]);
-        frame.begin_quad(shader_4, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
-        frame
-            .begin_quad(shader_3, [0, 0, CANVAS_SIZE, CANVAS_SIZE])
-            .write_data(buffer_0);
+        let mut frame = commands.begin_screen([32, 32]);
+        frame.begin_quad(shader_4, [0, 0, 32, 32]);
+        frame.begin_quad(shader_3, [0, 0, 32, 32]).write_data(buffer_0);
         frame.clear([10, 10, 15, 15]);
         context.draw(&commands);
 
@@ -538,135 +1147,8 @@ fn resource_mgmt() {
     });
 }
 
-#[test]
-fn shader_ops() {
-    run("shader-ops", |context| {
-        let shader = context.create_shader(Graph::collect(|| {
-            let funcs: [fn(float1, float1) -> float3; 11] = [
-                |x, _| {
-                    // trig functions
-                    let x = x * 10.0 - 5.0;
-                    float3((x.sin(), x.cos(), x.tan()))
-                },
-                |x, _| {
-                    // trig functions
-                    let x = x * 10.0 - 5.0;
-                    float3((x.asin(), x.acos(), x.atan()))
-                },
-                |x, _| {
-                    // exponentiation and powers
-                    let x = x * 10.0 - 5.0;
-                    float3((x.exp(), x.sqrt(), x.ln()))
-                },
-                |x, _| {
-                    // exponentiation and powers
-                    let x = x * 10.0 - 5.0;
-                    float3((x.pow(20.1), x.pow(2.0), x.pow(-0.333)))
-                },
-                |x, _| {
-                    // boolean masks and scalar comparisons
-                    let x = x * 10.0 - 5.0;
-                    let y = int1(x);
-
-                    let a = x.lt(1.0).select(float1(0.9), 0.1);
-                    let b = x.gt(2.0).select(float1(0.8), 0.2);
-                    let c = x.ge(3.0).select(float1(0.7), 0.3);
-                    let d = x.le(4.0).select(float1(0.6), 0.4);
-
-                    let i = y.lt(-1).select(float1(0.9), 0.1);
-                    let j = y.gt(-2).select(float1(0.8), 0.2);
-                    let k = y.ge(-3).select(float1(0.7), 0.3);
-                    let l = y.le(-4).select(float1(0.6), 0.4);
-                    let m = y.eq(-5).select(float1(0.5), 0.5);
-                    let n = y.ne(-6).select(float1(0.4), 0.6);
-
-                    float3((a + b + c + d, i + j + k, l + m + n)) * 0.25
-                },
-                |x, _| {
-                    // floor/abs/sign
-                    let x = x * 10.0 - 5.0;
-                    float3((
-                        x.floor(),
-                        x.sign() + x.norm(), /* same as sign */
-                        x.abs() + x.len(),   /* same as abs */
-                    )) * 0.25
-                },
-                |x, _| {
-                    // min/max/clamp/lerp
-                    let x = x * 10.0 - 5.0;
-                    float3((x.min(1.0) + x.max(2.0), x.clamp(-1.0, 1.0), x.lerp(-0.5, 1.0))) * 0.25 + 0.25
-                },
-                |j, i| {
-                    // integer bitwise operations
-                    let x = int1(j * 128.0);
-                    let y = int1(i * 64.0);
-                    let z = int1((i + j) * 32.0);
-
-                    float3((
-                        float1((x | y & z) % 16) / 16.0,
-                        float1((x & y ^ z) % 16) / 16.0,
-                        float1((x ^ y | !z) % 16) / 16.0,
-                    ))
-                },
-                |x, y| {
-                    // screen space derivatives
-                    let r = io::resolution();
-                    let x = x * 10.0 - 5.0;
-                    let a = x.sin();
-                    let b = x.cos();
-                    let c = (y * 5.0).tan();
-
-                    float3((a.dx() * r.x() / 10.0, b, a.fwidth() * r.x() / 10.0))
-                        + float3((c.dx() * r.x() / 10.0, c, c.dy() * r.y() / 10.0))
-                },
-                |x, y| {
-                    // 2d vector operations
-                    let x = x * 10.0 - 5.0;
-                    let y = y * 10.0;
-
-                    let p = y.atan2(x);
-                    let n = float2((x, y)).norm();
-                    let l = float2((x, y)).len();
-
-                    float3((p, n.y(), l)) * 0.5 + 0.5
-                },
-                |x, y| {
-                    // 3d vector operations
-                    let x = x * 10.0 - 5.0;
-                    let y = y * 10.0;
-
-                    let p = float3((x, y, 0.0)).cross(float3((1.0, 1.0, 1.0)));
-                    let n = float3((x, y, 0.0)).dot(float3((1.0, 1.0, 1.0)));
-                    let l = float3((x, y, 0.0)).len();
-
-                    float3((p.x(), n, l)) * 0.5 + 0.5
-                },
-            ];
-
-            let pos = io::position() / io::resolution();
-            let idx = int1(pos.y() * funcs.len() as f32);
-
-            let mut color = float3(0.0);
-            for i in 0..funcs.len() {
-                color = color
-                    + idx
-                        .eq(i as i32)
-                        .select(funcs[i](pos.x(), pos.y() % (1.0 / funcs.len() as f32)), 0.0);
-            }
-
-            float4((color.x(), color.y(), color.z(), 1.0))
-        }));
-
-        let mut commands = CommandBuffer::new();
-        commands
-            .begin_screen([CANVAS_SIZE, CANVAS_SIZE])
-            .begin_quad(shader, [0, 0, CANVAS_SIZE, CANVAS_SIZE]);
-        context.draw(&commands);
-    });
-}
-
 #[allow(unused_variables, dead_code)]
-fn run(id: &str, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
+fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
     fn difference(a: &DynamicImage, b: &DynamicImage) -> f64 {
         let mut sum = 0;
         for i in 0..a.width() {
@@ -686,88 +1168,145 @@ fn run(id: &str, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
         return;
     }
 
-    std::fs::create_dir_all("./tests/drawtest/failures").ok();
-    std::fs::create_dir_all("./tests/drawtest/successes").ok();
-
     let renderer = Arc::new(render);
-
-    let expected = open(format!("./tests/drawtest/expected/{}.webp", id)).expect("no 'expected' image found");
+    let expected = open(format!("./tests/drawtest/expected/{}.webp", id)).ok();
     let results: Vec<(&'static str, DynamicImage)> = vec![
         #[cfg(feature = "software")]
-        ("software", software::render(CANVAS_SIZE, CANVAS_SIZE, renderer.clone())),
+        ("software", software::render(width, height, renderer.clone())),
         #[cfg(feature = "opengl")]
-        ("opengl", opengl::render(CANVAS_SIZE, CANVAS_SIZE, renderer.clone())),
+        ("opengl", opengl::render(width, height, renderer.clone())),
     ];
 
+    let mut failures = vec![];
     for (backend, result) in results {
-        let diff = difference(&result, &expected);
-        if diff > 3.0 {
+        let failure = match &expected {
+            Some(expected) => {
+                if expected.width() != result.width() || expected.height() != result.height() {
+                    Some(format!(
+                        "expected image size {}x{} but got {}x{}",
+                        expected.width(),
+                        expected.height(),
+                        result.width(),
+                        result.height()
+                    ))
+                } else {
+                    let diff = difference(&result, &expected);
+                    if diff > 3.0 {
+                        Some(format!("diff: {}", diff))
+                    } else {
+                        None
+                    }
+                }
+            }
+            None => Some("no expected image".to_string()),
+        };
+
+        std::fs::create_dir_all(format!("./tests/drawtest/failures/{}/", backend)).ok();
+        std::fs::create_dir_all(format!("./tests/drawtest/successes/{}/", backend)).ok();
+
+        if let Some(failure) = failure {
+            failures.push((backend, failure));
             result
-                .save(format!("./tests/drawtest/failures/{}-{}.webp", backend, id))
+                .save(format!("./tests/drawtest/failures/{}/{}.webp", backend, id))
                 .unwrap();
-            std::fs::remove_file(format!("./tests/drawtest/successes/{}-{}.webp", backend, id)).ok();
-            panic!("{} backend: {:.2} difference", backend, diff);
+            std::fs::remove_file(format!("./tests/drawtest/successes/{}/{}.webp", backend, id)).ok();
         } else {
             result
-                .save(format!("./tests/drawtest/successes/{}-{}.webp", backend, id))
+                .save(format!("./tests/drawtest/successes/{}/{}.webp", backend, id))
                 .unwrap();
-            std::fs::remove_file(format!("./tests/drawtest/failures/{}-{}.webp", backend, id)).ok();
+            std::fs::remove_file(format!("./tests/drawtest/failures/{}/{}.webp", backend, id)).ok();
         }
+    }
+
+    if let Some((backend, message)) = failures.first() {
+        panic!(
+            "Test {} failed on {} ({}). See ./tests/drawtest/failures/{}/{}.webp for the result.",
+            id, backend, message, backend, id
+        )
     }
 }
 
 #[cfg(feature = "opengl")]
 mod opengl {
-    use super::CANVAS_SIZE;
-    use image::{DynamicImage, Rgb, RgbImage};
-    use picodraw::{Context, opengl::OpenGlBackend};
+    use super::MAX_CANVAS_SIZE;
+    use image::{DynamicImage, Rgba, RgbaImage};
+    use picodraw::{CommandBuffer, Context, opengl::OpenGlBackend};
     use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
-    use std::sync::Arc;
-    use std::{
-        sync::mpsc::{TryRecvError, sync_channel},
-        time::Duration,
+    use std::sync::{
+        Arc, Condvar, Mutex,
+        atomic::{AtomicBool, Ordering},
     };
+    use std::time::Duration;
 
-    pub fn render(width: u32, height: u32, render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>) -> DynamicImage {
-        let (sender, receiver) = sync_channel::<RgbImage>(1);
+    static JOB_QUEUE: Mutex<Vec<Arc<Job>>> = Mutex::new(Vec::new());
+    struct Job {
+        width: u32,
+        height: u32,
+        render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>,
+        result: Mutex<Option<DynamicImage>>,
+        condvar: Condvar,
+    }
+
+    fn runner_thread() {
+        let close = Arc::new(AtomicBool::new(false));
         let mut gl_backend = None;
-
         let mut world = World::new_program().unwrap();
+        let mut close_send = close.clone();
         let view = world
             .new_view(OpenGl {
-                bits_alpha: 0,
+                bits_alpha: 8,
                 bits_depth: 0,
                 bits_stencil: 0,
                 version: OpenGlVersion::Core(3, 3),
                 debug: true,
                 ..Default::default()
             })
-            .with_size(CANVAS_SIZE, CANVAS_SIZE)
+            .with_size(MAX_CANVAS_SIZE, MAX_CANVAS_SIZE)
             .with_event_handler(move |view, event| match event {
                 Event::Expose { backend, .. } => {
+                    let job = match JOB_QUEUE.lock().unwrap().pop() {
+                        Some(job) => job,
+                        None => {
+                            close_send.store(true, Ordering::SeqCst);
+                            return;
+                        }
+                    };
+
                     let mut gl_backend = unsafe {
                         gl_backend
                             .get_or_insert_with(|| OpenGlBackend::new(&|c| backend.get_proc_address(c)).unwrap())
                             .open()
                     };
 
-                    render(&mut gl_backend);
+                    {
+                        let mut commands = CommandBuffer::new();
+                        commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]).clear([
+                            0,
+                            0,
+                            MAX_CANVAS_SIZE,
+                            MAX_CANVAS_SIZE,
+                        ]);
+                        gl_backend.draw(&commands);
+                    }
+
+                    (job.render)(&mut gl_backend);
 
                     {
-                        let screenshot: Vec<u32> = gl_backend.screenshot([0, 0, width, height]);
-                        let mut image = RgbImage::new(width, height);
-                        for i in 0..width {
-                            for j in 0..height {
-                                let data = screenshot[(i + j * width) as usize];
+                        let screenshot: Vec<u32> = gl_backend.screenshot([0, 0, job.width, job.height]);
+                        let mut image = RgbaImage::new(job.width, job.height);
+                        for i in 0..job.width {
+                            for j in 0..job.height {
+                                let data = screenshot[(i + j * job.width) as usize];
                                 image.put_pixel(
                                     i,
-                                    height - 1 - j,
-                                    Rgb([data as u8, (data >> 8) as u8, (data >> 16) as u8]),
+                                    job.height - 1 - j,
+                                    Rgba([data as u8, (data >> 8) as u8, (data >> 16) as u8, (data >> 24) as u8]),
                                 );
                             }
                         }
 
-                        let _ = sender.send(image);
+                        job.result.lock().unwrap().replace(image.into());
+                        job.condvar.notify_one();
                     }
                 }
                 Event::Update => {
@@ -789,20 +1328,43 @@ mod opengl {
 
         view.show_passive();
 
-        loop {
+        while !close.load(Ordering::SeqCst) {
             world.update(Some(Duration::ZERO)).unwrap();
-            match receiver.try_recv() {
-                Ok(image) => return image.into(),
-                Err(TryRecvError::Empty) => continue,
-                Err(TryRecvError::Disconnected) => panic!("receiver disconnected"),
+        }
+    }
+
+    pub fn render(width: u32, height: u32, render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>) -> DynamicImage {
+        let job = Arc::new(Job {
+            width,
+            height,
+            render,
+            result: Mutex::new(None),
+            condvar: Condvar::new(),
+        });
+
+        {
+            let mut queue = JOB_QUEUE.lock().unwrap();
+            if queue.len() < 4 {
+                std::thread::spawn(runner_thread);
             }
+
+            queue.push(job.clone());
+        }
+
+        let mut result = job.result.lock().unwrap();
+        loop {
+            if result.is_some() {
+                break result.take().unwrap();
+            }
+
+            result = job.condvar.wait(result).unwrap();
         }
     }
 }
 
 #[cfg(feature = "software")]
 mod software {
-    use image::{DynamicImage, Rgb, RgbImage};
+    use image::{DynamicImage, Rgba, RgbaImage};
     use picodraw::{
         Context,
         software::{BufferMut, SoftwareBackend},
@@ -816,11 +1378,15 @@ mod software {
 
         render(&mut context);
 
-        let mut image = RgbImage::new(width, height);
+        let mut image = RgbaImage::new(width, height);
         for i in 0..width {
             for j in 0..height {
                 let data = buffer[(i + j * width) as usize];
-                image.put_pixel(i, j, Rgb([(data >> 16) as u8, (data >> 8) as u8, data as u8]));
+                image.put_pixel(
+                    i,
+                    j,
+                    Rgba([(data >> 16) as u8, (data >> 8) as u8, data as u8, (data >> 24) as u8]),
+                );
             }
         }
 

@@ -82,6 +82,8 @@ pub enum VMOp<I, O> {
     OrI(I, I, O),
     XorI(I, I, O),
     NotI(I, O),
+    ShlI(I, I, O),
+    ShrI(I, I, O),
 
     Select(I, I, I, O),
 
@@ -172,6 +174,8 @@ impl<I, O> VMOp<I, O> {
             OrI(a, b, o) => OrI(inp(a), inp(b), out(o)),
             XorI(a, b, o) => XorI(inp(a), inp(b), out(o)),
             NotI(a, o) => NotI(inp(a), out(o)),
+            ShlI(a, b, o) => ShlI(inp(a), inp(b), out(o)),
+            ShrI(a, b, o) => ShrI(inp(a), inp(b), out(o)),
             Select(a, b, c, o) => Select(inp(a), inp(b), inp(c), out(o)),
             CastF(a, o) => CastF(inp(a), out(o)),
             CastI(a, o) => CastI(inp(a), out(o)),

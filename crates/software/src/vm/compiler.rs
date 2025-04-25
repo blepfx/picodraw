@@ -285,6 +285,8 @@ mod ir {
                 And(a, b) => out!(AndI(a, b)),
                 Or(a, b) => out!(OrI(a, b)),
                 Xor(a, b) => out!(XorI(a, b)),
+                Shl(a, b) => out!(ShlI(a, b)),
+                Shr(a, b) => out!(ShrI(a, b)),
                 Not(a) => out!(NotI(a)),
                 Eq(a, b) if graph.type_of(a).is_float() => out!(EqF(a, b)),
                 Eq(a, b) => out!(EqI(a, b)),

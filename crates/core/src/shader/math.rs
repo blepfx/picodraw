@@ -3,7 +3,7 @@
 pub use types::*;
 pub mod types {
     use crate::graph::{Graph, OpAddr, OpLiteral, OpValue};
-    use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Sub};
+    use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
     #[doc(hidden)]
     pub trait Select {
@@ -468,26 +468,69 @@ pub mod types {
         };
     }
 
-    macro_rules! impl_bit_ops {
+    macro_rules! impl_bit_binop {
+        ($type:ty, $elem:ty) => {
+            impl BitAnd<$elem> for $type {
+                type Output = $type;
+                fn bitand(self, rhs: $elem) -> Self::Output {
+                    Self(Graph::push_collect(OpValue::And(self.0, Self::from(rhs).0)))
+                }
+            }
+
+            impl BitOr<$elem> for $type {
+                type Output = $type;
+                fn bitor(self, rhs: $elem) -> Self::Output {
+                    Self(Graph::push_collect(OpValue::Or(self.0, Self::from(rhs).0)))
+                }
+            }
+
+            impl BitXor<$elem> for $type {
+                type Output = $type;
+                fn bitxor(self, rhs: $elem) -> Self::Output {
+                    Self(Graph::push_collect(OpValue::Xor(self.0, Self::from(rhs).0)))
+                }
+            }
+        };
+    }
+
+    macro_rules! impl_bit_shift {
+        ($type:ty, $elem:ty) => {
+            impl Shl<$elem> for $type {
+                type Output = $type;
+                fn shl(self, rhs: $elem) -> Self::Output {
+                    Self(Graph::push_collect(OpValue::Shl(self.0, Self::from(rhs).0)))
+                }
+            }
+
+            impl Shr<$elem> for $type {
+                type Output = $type;
+                fn shr(self, rhs: $elem) -> Self::Output {
+                    Self(Graph::push_collect(OpValue::Shr(self.0, Self::from(rhs).0)))
+                }
+            }
+        };
+    }
+
+    macro_rules! impl_bit_base {
         ($type:ty) => {
-            impl BitAnd for $type {
+            impl BitAnd<$type> for $type {
                 type Output = $type;
                 fn bitand(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(OpValue::And(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::And(self.0, Self::from(rhs).0)))
                 }
             }
 
-            impl BitOr for $type {
+            impl BitOr<$type> for $type {
                 type Output = $type;
                 fn bitor(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(OpValue::Or(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Or(self.0, Self::from(rhs).0)))
                 }
             }
 
-            impl BitXor for $type {
+            impl BitXor<$type> for $type {
                 type Output = $type;
                 fn bitxor(self, rhs: Self) -> Self::Output {
-                    Self(Graph::push_collect(OpValue::Xor(self.0, rhs.0)))
+                    Self(Graph::push_collect(OpValue::Xor(self.0, Self::from(rhs).0)))
                 }
             }
 
@@ -497,6 +540,19 @@ pub mod types {
                     Self(Graph::push_collect(OpValue::Not(self.0)))
                 }
             }
+        };
+    }
+
+    macro_rules! impl_bit_vec {
+        ($type:ty, $elem:ty, $scalar:ty, 1) => {
+            impl_bit_base!($type);
+            impl_bit_binop!($type, $elem);
+        };
+
+        ($type:ty, $elem:ty, $scalar:ty, $n:literal) => {
+            impl_bit_base!($type);
+            impl_bit_binop!($type, $elem);
+            impl_bit_binop!($type, $scalar);
         };
     }
 
@@ -515,14 +571,24 @@ pub mod types {
     impl_num_vec!(int3, i32, int1, 3);
     impl_num_vec!(int4, i32, int1, 4);
 
-    impl_bit_ops!(boolean);
-    impl_bit_ops!(int1);
-    impl_bit_ops!(int2);
-    impl_bit_ops!(int3);
+    impl_bit_vec!(boolean, bool, boolean, 1);
+    impl_bit_vec!(int1, i32, int1, 1);
+    impl_bit_vec!(int2, i32, int1, 2);
+    impl_bit_vec!(int3, i32, int1, 3);
+    impl_bit_vec!(int4, i32, int1, 4);
+
+    impl_bit_shift!(int1, int1);
+    impl_bit_shift!(int2, int1);
+    impl_bit_shift!(int3, int1);
+    impl_bit_shift!(int4, int1);
+    impl_bit_shift!(int1, i32);
+    impl_bit_shift!(int2, i32);
+    impl_bit_shift!(int3, i32);
+    impl_bit_shift!(int4, i32);
 
     impl float3 {
-        pub fn cross(self, rhs: Self) -> Self {
-            Self(Graph::push_collect(OpValue::Cross(self.0, rhs.0)))
+        pub fn cross(self, rhs: impl Into<Self>) -> Self {
+            Self(Graph::push_collect(OpValue::Cross(self.0, rhs.into().0)))
         }
     }
 

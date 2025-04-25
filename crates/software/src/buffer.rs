@@ -1,9 +1,8 @@
+use picodraw_core::{ImageData, ImageFormat};
 use std::{
     marker::PhantomData,
     ops::{Deref, Index, IndexMut},
 };
-
-use picodraw_core::{ImageData, ImageFormat};
 
 #[derive(Clone)]
 pub struct Buffer {
@@ -129,6 +128,7 @@ impl<'a> BufferRef<'a> {
     pub fn into_raw_parts(self) -> (*const u32, usize, usize, usize) {
         (self.data as *const u32, self.width, self.height, self.stride)
     }
+
     pub fn width(&self) -> usize {
         self.width
     }

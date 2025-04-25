@@ -61,6 +61,8 @@ pub enum OpValue {
     And(OpAddr, OpAddr),
     Or(OpAddr, OpAddr),
     Xor(OpAddr, OpAddr),
+    Shl(OpAddr, OpAddr),
+    Shr(OpAddr, OpAddr),
     Not(OpAddr),
 
     Vec2(OpAddr, OpAddr),
@@ -211,14 +213,7 @@ impl OpValue {
             Literal(OpLiteral::Int(_)) => I1,
             Literal(OpLiteral::Bool(_)) => Boolean,
 
-            Add(a, b)
-            | Sub(a, b)
-            | Mul(a, b)
-            | Div(a, b)
-            | Rem(a, b)
-            | Min(a, b)
-            | Max(a, b)
-            | Step(a, b) => {
+            Add(a, b) | Sub(a, b) | Mul(a, b) | Div(a, b) | Rem(a, b) | Min(a, b) | Max(a, b) | Step(a, b) => {
                 let l = arg(a)?;
                 let r = arg(b)?;
                 if l.is_numeric() && l == r {
@@ -228,8 +223,8 @@ impl OpValue {
                 }
             }
 
-            Sin(x) | Cos(x) | Tan(x) | Asin(x) | Acos(x) | Atan(x) | Sqrt(x) | Exp(x) | Ln(x)
-            | Floor(x) | DerivX(x) | DerivY(x) | DerivWidth(x) | Normalize(x) => {
+            Sin(x) | Cos(x) | Tan(x) | Asin(x) | Acos(x) | Atan(x) | Sqrt(x) | Exp(x) | Ln(x) | Floor(x)
+            | DerivX(x) | DerivY(x) | DerivWidth(x) | Normalize(x) => {
                 let x = arg(x)?;
                 if x.is_float() {
                     x
@@ -312,7 +307,17 @@ impl OpValue {
             And(x, y) | Or(x, y) | Xor(x, y) => {
                 let l = arg(x)?;
                 let r = arg(y)?;
-                if (l == Boolean || l.is_numeric()) && l == r {
+                if (l == Boolean || l.is_int()) && l == r {
+                    l
+                } else {
+                    return None;
+                }
+            }
+
+            Shl(x, y) | Shr(x, y) => {
+                let l = arg(x)?;
+                let r = arg(y)?;
+                if l.is_int() && l == r {
                     l
                 } else {
                     return None;
@@ -459,11 +464,10 @@ impl OpValue {
         match *self {
             Position | Resolution | QuadStart | QuadEnd | Input(_) | Literal(_) => None,
 
-            Sin(x) | Cos(x) | Tan(x) | Asin(x) | Acos(x) | Atan(x) | Sqrt(x) | Exp(x) | Ln(x)
-            | Not(x) | Neg(x) | Abs(x) | Sign(x) | Floor(x) | DerivX(x) | DerivY(x)
-            | DerivWidth(x) | Normalize(x) | ExtractX(x) | ExtractY(x) | ExtractZ(x)
-            | ExtractW(x) | Length(x) | Splat2(x) | Splat3(x) | Splat4(x) | CastFloat(x)
-            | CastInt(x) | TextureSize(x) => {
+            Sin(x) | Cos(x) | Tan(x) | Asin(x) | Acos(x) | Atan(x) | Sqrt(x) | Exp(x) | Ln(x) | Not(x) | Neg(x)
+            | Abs(x) | Sign(x) | Floor(x) | DerivX(x) | DerivY(x) | DerivWidth(x) | Normalize(x) | ExtractX(x)
+            | ExtractY(x) | ExtractZ(x) | ExtractW(x) | Length(x) | Splat2(x) | Splat3(x) | Splat4(x)
+            | CastFloat(x) | CastInt(x) | TextureSize(x) => {
                 if idx == 0 {
                     Some(x)
                 } else {
@@ -493,6 +497,8 @@ impl OpValue {
             | Gt(a, b)
             | Ge(a, b)
             | Vec2(a, b)
+            | Shl(a, b)
+            | Shr(a, b)
             | TextureLinear(a, b)
             | TextureNearest(a, b) => {
                 if idx == 0 {
@@ -504,11 +510,7 @@ impl OpValue {
                 }
             }
 
-            Vec3(x, y, z)
-            | Lerp(x, y, z)
-            | Clamp(x, y, z)
-            | Select(x, y, z)
-            | Smoothstep(x, y, z) => {
+            Vec3(x, y, z) | Lerp(x, y, z) | Clamp(x, y, z) | Select(x, y, z) | Smoothstep(x, y, z) => {
                 if idx == 0 {
                     Some(x)
                 } else if idx == 1 {
@@ -551,9 +553,7 @@ impl Eq for OpLiteral {}
 impl PartialEq for OpLiteral {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Float(a), Self::Float(b)) => {
-                (a.is_nan() && b.is_nan()) || a.to_bits() == b.to_bits()
-            }
+            (Self::Float(a), Self::Float(b)) => (a.is_nan() && b.is_nan()) || a.to_bits() == b.to_bits(),
             (Self::Int(a), Self::Int(b)) => a == b,
             (Self::Bool(a), Self::Bool(b)) => a == b,
             _ => false,

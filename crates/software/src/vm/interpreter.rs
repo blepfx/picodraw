@@ -177,10 +177,10 @@ impl<'a> VMInterpreter<'a> {
                     op!(|a: i32, b: i32, c: mut i32| a.wrapping_div(b));
                 }
                 ModF(a, b, c) => {
-                    op!(|a: f32, b: f32, c: mut f32| a % b);
+                    op!(|a: f32, b: f32, c: mut f32| a.rem_euclid(b));
                 }
                 ModI(a, b, c) => {
-                    op!(|a: i32, b: i32, c: mut i32| a.wrapping_rem(b));
+                    op!(|a: i32, b: i32, c: mut i32| a.wrapping_rem_euclid(b));
                 }
                 MinF(a, b, c) => {
                     op!(|a: f32, b: f32, c: mut f32| a.min(b));
@@ -295,6 +295,12 @@ impl<'a> VMInterpreter<'a> {
                 }
                 NotI(a, b) => {
                     op!(|a: i32, b: mut i32| !a);
+                }
+                ShlI(a, b, c) => {
+                    op!(|a: i32, b: i32, c: mut i32| a << b);
+                }
+                ShrI(a, b, c) => {
+                    op!(|a: i32, b: i32, c: mut i32| a >> b);
                 }
                 CastF(a, b) => {
                     op!(|a: i32, b: mut f32| a as f32);
@@ -413,8 +419,8 @@ impl<'a> VMInterpreter<'a> {
 
                     for i in (0..TILE_SIZE).step_by(2) {
                         for j in 0..TILE_SIZE {
-                            let a = reg[i * TILE_SIZE + j];
-                            let b = reg[(i + 1) * TILE_SIZE + j];
+                            let a = reg[(i + 1) * TILE_SIZE + j];
+                            let b = reg[i * TILE_SIZE + j];
                             out[i * TILE_SIZE + j] = b - a;
                             out[(i + 1) * TILE_SIZE + j] = b - a;
                         }
