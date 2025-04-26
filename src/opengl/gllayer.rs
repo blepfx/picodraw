@@ -2,7 +2,6 @@ use super::bindings::*;
 use std::{
     cell::Cell,
     ffi::CString,
-    marker::PhantomData,
     mem::{forget, size_of},
     ops::Deref,
     ptr::{copy_nonoverlapping, null},
@@ -393,8 +392,8 @@ impl GlTexture {
 
 pub struct GlQuery {
     query: GLuint,
-    waiting: Cell<u8>,
-    phantom: PhantomData<*const ()>,
+    last: Cell<u32>,
+    check: Cell<bool>,
 }
 
 impl GlQuery {
@@ -403,51 +402,40 @@ impl GlQuery {
             let mut query = 0;
             gl.gen_queries(1, &mut query);
             check_error(gl);
-
             Self {
                 query,
-                waiting: Cell::new(255),
-                phantom: PhantomData,
+                last: Cell::new(0),
+                check: Cell::new(true),
             }
         }
     }
 
-    pub fn time_elapsed(&self, gl: GlContext, c: impl FnOnce()) -> Option<u64> {
+    pub fn query(&self) -> u32 {
+        self.last.get()
+    }
+
+    pub fn wrap(&self, gl: GlContext, c: impl FnOnce()) {
         unsafe {
-            if self.waiting.get() == 255 {
+            if self.check.replace(false) {
                 gl.begin_query(TIME_ELAPSED, self.query);
                 check_error(gl);
-
                 c();
-
                 gl.end_query(TIME_ELAPSED);
                 check_error(gl);
-
-                self.waiting.set(3);
-                None
-            } else if self.waiting.get() == 0 {
-                c();
-
-                let mut available = 0;
-
-                gl.get_query_object_iv(self.query, QUERY_RESULT_AVAILABLE, &mut available);
-                check_error(gl);
-
-                if available != 0 {
-                    let mut elapsed = 0;
-
-                    gl.get_query_object_ui64v(self.query, QUERY_RESULT, &mut elapsed);
-                    gl.get_error();
-
-                    self.waiting.set(255);
-                    Some(elapsed)
-                } else {
-                    None
-                }
             } else {
                 c();
-                self.waiting.set(self.waiting.get() - 1);
-                None
+            }
+
+            let mut available = 0;
+            gl.get_query_object_iv(self.query, QUERY_RESULT_AVAILABLE, &mut available);
+            check_error(gl);
+
+            if available != 0 {
+                let mut result = 0;
+                gl.get_query_object_uiv(self.query, QUERY_RESULT, &mut result);
+                check_error(gl);
+                self.last.set(result);
+                self.check.set(true);
             }
         }
     }
@@ -455,7 +443,6 @@ impl GlQuery {
     pub fn delete(self, gl: GlContext) {
         unsafe {
             gl.delete_queries(1, &self.query);
-            check_error(gl);
         }
     }
 }

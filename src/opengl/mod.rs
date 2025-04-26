@@ -39,8 +39,6 @@ struct GlData {
     shaders: ShaderMap,
     pass_encoding: QuadEncoder,
     pass_viewport: Option<CurrentPass>,
-
-    gpu_time: u64,
 }
 
 struct GlProgramData {
@@ -199,66 +197,62 @@ impl GlData {
         let mut stats_quads = 0;
         let mut buffer_pointer = 0;
 
-        self.gpu_time = self
-            .query
-            .time_elapsed(gl, || {
-                let mut quads = 0;
-                while quads < self.pass_encoding.quads.len() {
-                    let quads_start = quads;
+        self.query.wrap(gl, || {
+            let mut quads = 0;
+            while quads < self.pass_encoding.quads.len() {
+                let quads_start = quads;
 
-                    let (data_start, quad_data_start) = self.buffer.update(gl, |writer| {
-                        let data_start = writer.pointer();
-                        let local_data_start =
-                            self.pass_encoding.quads[quads_start].data_range.start;
-                        for quad in &self.pass_encoding.quads[quads_start..] {
-                            if writer.space_left()
-                                < quad.data_range.len() + 1 * (quads + 1 - quads_start)
-                            {
-                                writer.invalidate();
-                                break;
-                            }
-
-                            writer.write(&self.pass_encoding.data[quad.data_range.clone()]);
-                            quads += 1;
+                let (data_start, quad_data_start) = self.buffer.update(gl, |writer| {
+                    let data_start = writer.pointer();
+                    let local_data_start = self.pass_encoding.quads[quads_start].data_range.start;
+                    for quad in &self.pass_encoding.quads[quads_start..] {
+                        if writer.space_left()
+                            < quad.data_range.len() + 1 * (quads + 1 - quads_start)
+                        {
+                            writer.invalidate();
+                            break;
                         }
 
-                        let quad_data_start = writer.pointer();
-                        if quads != quads_start {
-                            for quad in &self.pass_encoding.quads[quads_start..quads] {
-                                writer.write(&[[
-                                    (quad.bounds[0] as u32) | ((quad.bounds[1] as u32) << 16),
-                                    (quad.bounds[2] as u32) | ((quad.bounds[3] as u32) << 16),
-                                    quad.shader_id,
-                                    (quad.data_range.start - local_data_start) as u32,
-                                ]]);
-                            }
-                        }
-
-                        buffer_pointer = writer.space_left();
-
-                        (data_start, quad_data_start)
-                    });
-
-                    if quads != quads_start {
-                        stats_quads += (quads - quads_start) as u32;
-                        stats_drawcalls += 1;
-
-                        uniform_1i(
-                            gl,
-                            program_data.uni_buffer_offset_instance,
-                            quad_data_start as i32,
-                        );
-                        uniform_1i(gl, program_data.uni_buffer_offset_data, data_start as i32);
-                        draw_arrays_triangles(gl, (quads - quads_start) * 6);
+                        writer.write(&self.pass_encoding.data[quad.data_range.clone()]);
+                        quads += 1;
                     }
+
+                    let quad_data_start = writer.pointer();
+                    if quads != quads_start {
+                        for quad in &self.pass_encoding.quads[quads_start..quads] {
+                            writer.write(&[[
+                                (quad.bounds[0] as u32) | ((quad.bounds[1] as u32) << 16),
+                                (quad.bounds[2] as u32) | ((quad.bounds[3] as u32) << 16),
+                                quad.shader_id,
+                                (quad.data_range.start - local_data_start) as u32,
+                            ]]);
+                        }
+                    }
+
+                    buffer_pointer = writer.space_left();
+
+                    (data_start, quad_data_start)
+                });
+
+                if quads != quads_start {
+                    stats_quads += (quads - quads_start) as u32;
+                    stats_drawcalls += 1;
+
+                    uniform_1i(
+                        gl,
+                        program_data.uni_buffer_offset_instance,
+                        quad_data_start as i32,
+                    );
+                    uniform_1i(gl, program_data.uni_buffer_offset_data, data_start as i32);
+                    draw_arrays_triangles(gl, (quads - quads_start) * 6);
                 }
-            })
-            .unwrap_or(self.gpu_time);
+            }
+        });
 
         check_error(gl);
 
         let stats = GlStatistics {
-            gpu_time_msec: (self.gpu_time as f64 / 1e6) as f32,
+            gpu_time_msec: (self.query.query() as f64 / 1e6) as f32,
             quads: stats_quads,
             drawcalls: stats_drawcalls,
             area_pixels: self.pass_encoding.total_area(),
@@ -284,7 +278,6 @@ impl GlData {
 
         Self {
             config,
-            gpu_time: 0,
             program: None,
             buffer: GlTextureBuffer::new(gl, info.max_texture_buffer_size.min(262144)),
             vao: GlVertexArrayObject::new(gl),

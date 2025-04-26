@@ -1483,11 +1483,11 @@ generate_bindings! {
     fn delete_queries(n: GLsizei, ids: *const GLuint): [glDeleteQueries, glDeleteQueriesARB];
     fn begin_query(target: GLenum, id: GLuint): [glBeginQuery, glBeginQueryARB];
     fn end_query(target: GLenum): [glEndQuery, glEndQueryARB];
-    fn get_query_object_ui64v(
+    fn get_query_object_uiv(
         id: GLuint,
         pname: GLenum,
-        params: *mut GLuint64
-    ): [glGetQueryObjectui64v];
+        params: *mut GLuint
+    ): [glGetQueryObjectuiv];
     fn get_query_object_iv(
         id: GLuint, pname: GLenum, params: *mut GLint
     ): [glGetQueryObjectiv];
