@@ -3,6 +3,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use crate::TextureFilter;
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OpAddr(u32);
 
@@ -88,8 +90,7 @@ pub enum OpValue {
     DerivY(OpAddr),
     DerivWidth(OpAddr),
 
-    TextureLinear(OpAddr, OpAddr),
-    TextureNearest(OpAddr, OpAddr),
+    TextureSample(OpAddr, OpAddr, TextureFilter),
     TextureSize(OpAddr),
 }
 
@@ -441,7 +442,7 @@ impl OpValue {
                 _ => return None,
             },
 
-            TextureLinear(x, y) | TextureNearest(x, y) => {
+            TextureSample(x, y, _) => {
                 let x = arg(x)?;
                 let y = arg(y)?;
                 if x.is_texture() && y == F2 {
@@ -499,8 +500,7 @@ impl OpValue {
             | Vec2(a, b)
             | Shl(a, b)
             | Shr(a, b)
-            | TextureLinear(a, b)
-            | TextureNearest(a, b) => {
+            | TextureSample(a, b, _) => {
                 if idx == 0 {
                     Some(a)
                 } else if idx == 1 {

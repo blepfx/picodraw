@@ -102,8 +102,7 @@ pub enum VMOp<I, O> {
 
     TexW(u8, O),
     TexH(u8, O),
-    TexNearest(u8, u8, I, I, O),
-    TexLinear(u8, u8, I, I, O),
+    Tex(u8, u8, picodraw_core::TextureFilter, I, I, O),
 }
 
 impl<I, O> VMOp<I, O> {
@@ -190,8 +189,7 @@ impl<I, O> VMOp<I, O> {
 
             TexW(a, o) => TexW(a, out(o)),
             TexH(a, o) => TexH(a, out(o)),
-            TexNearest(a, b, c, d, o) => TexNearest(a, b, inp(c), inp(d), out(o)),
-            TexLinear(a, b, c, d, o) => TexLinear(a, b, inp(c), inp(d), out(o)),
+            Tex(a, b, c, d, e, o) => Tex(a, b, c, inp(d), inp(e), out(o)),
         }
     }
 

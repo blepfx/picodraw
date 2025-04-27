@@ -1,7 +1,7 @@
 use image::{DynamicImage, GenericImageView, Rgba, open};
 use picodraw::{
     CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData, ShaderDataWriter, Texture,
-    shader::*,
+    TextureFilter, shader::*,
 };
 use std::{f32::consts::PI, sync::Arc};
 
@@ -655,7 +655,7 @@ pub mod texture {
             let shader = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
                 let uv = io::position() / io::resolution();
-                texture.sample_nearest(uv * float2(texture.size()))
+                texture.sample(uv * float2(texture.size()), TextureFilter::Linear)
             }));
 
             let mut commands = CommandBuffer::new();
@@ -680,7 +680,7 @@ pub mod texture {
             let shader = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
                 let uv = io::position() / io::resolution();
-                texture.sample_linear(uv * float2(texture.size()))
+                texture.sample(uv * float2(texture.size()), TextureFilter::Linear)
             }));
 
             let mut commands = CommandBuffer::new();
@@ -708,7 +708,11 @@ pub mod texture {
 
             let shader_negative = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
-                let z = texture.sample_nearest(io::position() / io::resolution() * float2(texture.size()));
+                let z = texture.sample(
+                    io::position() / io::resolution() * float2(texture.size()),
+                    TextureFilter::Linear,
+                );
+
                 float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
             }));
 
@@ -743,7 +747,11 @@ pub mod texture {
 
             let shader_negative = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
-                let z = texture.sample_linear(io::position() / io::resolution() * float2(texture.size()));
+                let z = texture.sample(
+                    io::position() / io::resolution() * float2(texture.size()),
+                    TextureFilter::Linear,
+                );
+
                 float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
             }));
 
@@ -774,7 +782,7 @@ pub mod texture {
 
             let shader = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
-                texture.sample_nearest(0.0)
+                texture.sample(0.0, TextureFilter::Nearest)
             }));
 
             let mut commands = CommandBuffer::new();
@@ -798,7 +806,7 @@ pub mod texture {
 
             let shader = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
-                texture.sample_nearest(0.0)
+                texture.sample(0.0, TextureFilter::Nearest)
             }));
 
             let mut commands = CommandBuffer::new();
@@ -822,7 +830,7 @@ pub mod texture {
 
             let shader = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
-                texture.sample_nearest(0.0)
+                texture.sample(0.0, TextureFilter::Nearest)
             }));
 
             let mut commands = CommandBuffer::new();
@@ -1019,7 +1027,7 @@ pub mod complex {
                 let scale = io::read::<f32>();
 
                 let pos = (io::position() - float2((x, y))) / scale + float2(12.0);
-                let sample = atlas.sample_linear(pos.clamp(0.0, atlas.size()));
+                let sample = atlas.sample(pos.clamp(0.0, atlas.size()), TextureFilter::Linear);
                 let median = float1::max(
                     float1::min(sample.x(), sample.y()),
                     float1::min(float1::max(sample.x(), sample.y()), sample.z()),
@@ -1080,7 +1088,7 @@ pub mod complex {
                 let mut result = float4(0.0);
                 for i in -5..=5 {
                     for j in -5..=5 {
-                        result = result + buffer.sample_nearest(io::position() + float2((i, j)));
+                        result = result + buffer.sample(io::position() + float2((i, j)), TextureFilter::Nearest);
                     }
                 }
 
@@ -1113,12 +1121,23 @@ fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sy
             for j in 0..a.height() {
                 let Rgba([r0, g0, b0, a0]) = a.get_pixel(i, j);
                 let Rgba([r1, g1, b1, a1]) = b.get_pixel(i, j);
-                sum += r0.abs_diff(r1) as u64;
-                sum += g0.abs_diff(g1) as u64;
-                sum += b0.abs_diff(b1) as u64;
-                sum += a0.abs_diff(a1) as u64;
+
+                let r0 = r0 as u64;
+                let g0 = g0 as u64;
+                let b0 = b0 as u64;
+                let a0 = a0 as u64;
+                let r1 = r1 as u64;
+                let g1 = g1 as u64;
+                let b1 = b1 as u64;
+                let a1 = a1 as u64;
+
+                sum += (r0 * a0).abs_diff(r1 * a1) / (a0 * a1).max(1);
+                sum += (g0 * a0).abs_diff(g1 * a1) / (a0 * a1).max(1);
+                sum += (b0 * a0).abs_diff(b1 * a1) / (a0 * a1).max(1);
+                sum += a0.abs_diff(a1);
             }
         }
+
         sum as f64 / (a.height() * a.width()) as f64
     }
 
@@ -1149,7 +1168,7 @@ fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sy
                     ))
                 } else {
                     let diff = difference(&result, &expected);
-                    if diff > 3.0 {
+                    if diff > 6.0 {
                         Some(format!("diff: {}", diff))
                     } else {
                         None

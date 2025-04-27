@@ -6,6 +6,12 @@ pub enum ImageFormat {
     RGBA8,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TextureFilter {
+    Linear,
+    Nearest,
+}
+
 /// Image/texture data. Used for uploading static textures to the backend.
 #[derive(Clone, Copy, Debug)]
 pub struct ImageData<'a> {

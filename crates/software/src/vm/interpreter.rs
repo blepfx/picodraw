@@ -441,7 +441,7 @@ impl<'a> VMInterpreter<'a> {
                     reg.as_i32_mut().fill(program.textures[tex as usize].height() as i32);
                 }
 
-                TexLinear(tex, chan, x, y, reg) => {
+                Tex(tex, chan, filt, x, y, reg) => {
                     let (x, y, out) = registers!(x, y, mut reg);
                     let tex = program.textures[tex as usize];
                     let out = out.as_f32_mut();
@@ -452,27 +452,7 @@ impl<'a> VMInterpreter<'a> {
                         for j in 0..TILE_SIZE {
                             unsafe {
                                 out[i * TILE_SIZE + j] =
-                                    *tex.sample_linear(x[i * TILE_SIZE + j] - 0.5, y[i * TILE_SIZE + j] - 0.5)
-                                        .to_le_bytes()
-                                        .get_unchecked(chan as usize) as f32
-                                        / 255.0
-                            }
-                        }
-                    }
-                }
-
-                TexNearest(tex, chan, x, y, reg) => {
-                    let (x, y, out) = registers!(x, y, mut reg);
-                    let tex = program.textures[tex as usize];
-                    let out = out.as_f32_mut();
-                    let x = x.as_f32();
-                    let y = y.as_f32();
-
-                    for i in 0..TILE_SIZE {
-                        for j in 0..TILE_SIZE {
-                            unsafe {
-                                out[i * TILE_SIZE + j] =
-                                    *tex.sample_neasert(x[i * TILE_SIZE + j], y[i * TILE_SIZE + j])
+                                    *tex.sample(x[i * TILE_SIZE + j] - 0.5, y[i * TILE_SIZE + j] - 0.5, filt)
                                         .to_le_bytes()
                                         .get_unchecked(chan as usize) as f32
                                         / 255.0

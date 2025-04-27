@@ -200,28 +200,14 @@ mod ir {
                     input(i, self);
                 }
 
-                TextureLinear(t, x) => {
+                TextureSample(t, x, filter) => {
                     let texture = self.get_texture(t);
                     let pos_x = self.get_graph(x, 0);
                     let pos_y = self.get_graph(x, 1);
-                    let tex_r = emit(self.arena, VMOp::TexLinear(texture, 2, pos_x, pos_y, ()));
-                    let tex_g = emit(self.arena, VMOp::TexLinear(texture, 1, pos_x, pos_y, ()));
-                    let tex_b = emit(self.arena, VMOp::TexLinear(texture, 0, pos_x, pos_y, ()));
-                    let tex_a = emit(self.arena, VMOp::TexLinear(texture, 3, pos_x, pos_y, ()));
-                    self.set_graph(op, 0, tex_r);
-                    self.set_graph(op, 1, tex_g);
-                    self.set_graph(op, 2, tex_b);
-                    self.set_graph(op, 3, tex_a);
-                }
-
-                TextureNearest(t, x) => {
-                    let texture = self.get_texture(t);
-                    let pos_x = self.get_graph(x, 0);
-                    let pos_y = self.get_graph(x, 1);
-                    let tex_r = emit(self.arena, VMOp::TexNearest(texture, 2, pos_x, pos_y, ()));
-                    let tex_g = emit(self.arena, VMOp::TexNearest(texture, 1, pos_x, pos_y, ()));
-                    let tex_b = emit(self.arena, VMOp::TexNearest(texture, 0, pos_x, pos_y, ()));
-                    let tex_a = emit(self.arena, VMOp::TexNearest(texture, 3, pos_x, pos_y, ()));
+                    let tex_r = emit(self.arena, VMOp::Tex(texture, 2, filter, pos_x, pos_y, ()));
+                    let tex_g = emit(self.arena, VMOp::Tex(texture, 1, filter, pos_x, pos_y, ()));
+                    let tex_b = emit(self.arena, VMOp::Tex(texture, 0, filter, pos_x, pos_y, ()));
+                    let tex_a = emit(self.arena, VMOp::Tex(texture, 3, filter, pos_x, pos_y, ()));
                     self.set_graph(op, 0, tex_r);
                     self.set_graph(op, 1, tex_g);
                     self.set_graph(op, 2, tex_b);
@@ -783,9 +769,10 @@ mod ir {
                         }
 
                         TexW(x, _) | TexH(x, _) => x.hash(state),
-                        TexLinear(x, c, _, _, _) | TexNearest(x, c, _, _, _) => {
+                        Tex(x, c, f, _, _, _) => {
                             x.hash(state);
                             c.hash(state);
+                            f.hash(state);
                         }
 
                         _ => {

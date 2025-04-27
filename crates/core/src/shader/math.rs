@@ -2,7 +2,10 @@
 
 pub use types::*;
 pub mod types {
-    use crate::graph::{Graph, OpAddr, OpLiteral, OpValue};
+    use crate::{
+        TextureFilter,
+        graph::{Graph, OpAddr, OpLiteral, OpValue},
+    };
     use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, Sub};
 
     #[doc(hidden)]
@@ -611,12 +614,12 @@ pub mod types {
             int2(Graph::push_collect(OpValue::TextureSize(self.0)))
         }
 
-        pub fn sample_linear(&self, pos: impl Into<float2>) -> float4 {
-            float4(Graph::push_collect(OpValue::TextureLinear(self.0, pos.into().0)))
-        }
-
-        pub fn sample_nearest(&self, pos: impl Into<float2>) -> float4 {
-            float4(Graph::push_collect(OpValue::TextureNearest(self.0, pos.into().0)))
+        pub fn sample(&self, pos: impl Into<float2>, filter: TextureFilter) -> float4 {
+            float4(Graph::push_collect(OpValue::TextureSample(
+                self.0,
+                pos.into().0,
+                filter,
+            )))
         }
     }
 

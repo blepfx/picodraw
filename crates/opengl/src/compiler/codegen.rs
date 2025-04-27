@@ -1,5 +1,5 @@
 use super::serialize::ShaderDataLayout;
-use picodraw_core::graph::*;
+use picodraw_core::{TextureFilter, graph::*};
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Write,
@@ -365,8 +365,8 @@ impl FragmentCodegen {
             DerivY(x) => emit!("dFdy({})", x),
             DerivWidth(x) => emit!("fwidth({})", x),
 
-            TextureLinear(x, y) => emit!("txl(uTextures[{}],{})", x, y),
-            TextureNearest(x, y) => emit!("txn(uTextures[{}],{})", x, y),
+            TextureSample(x, y, TextureFilter::Linear) => emit!("txl(uTextures[{}],{})", x, y),
+            TextureSample(x, y, TextureFilter::Nearest) => emit!("txn(uTextures[{}],{})", x, y),
             TextureSize(x) => emit!("textureSize(uTextures[{}],0)", x),
 
             op => panic!("unreachable op: op={:?}; ty={:?}", op, ty),

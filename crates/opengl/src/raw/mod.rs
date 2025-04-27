@@ -509,22 +509,22 @@ impl GlQuery {
         unsafe {
             if self.check.replace(false) {
                 gl.begin_query(TIME_ELAPSED, self.query);
-                check_error(gl);
+                clear_error(gl);
                 c();
                 gl.end_query(TIME_ELAPSED);
-                check_error(gl);
+                clear_error(gl);
             } else {
                 c();
             }
 
             let mut available = 0;
             gl.get_query_object_iv(self.query, QUERY_RESULT_AVAILABLE, &mut available);
-            check_error(gl);
+            clear_error(gl);
 
             if available != 0 {
                 let mut result = 0;
                 gl.get_query_object_uiv(self.query, QUERY_RESULT, &mut result);
-                check_error(gl);
+                clear_error(gl);
                 self.last.set(result);
                 self.check.set(true);
             }

@@ -299,7 +299,7 @@ fn finish_tile(
 
         for i in 0..PIXEL_COUNT {
             if x[i] == x[i] {
-                x[i] = x[i].clamp(0.0, 1.0) * 255.0;
+                x[i] = (x[i] * 255.0 + 0.5).clamp(0.0, 255.0);
             } else {
                 cold();
                 x[i] = 0.0;
