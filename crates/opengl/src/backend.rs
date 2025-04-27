@@ -165,6 +165,8 @@ impl<'a> OpenGlContext<'a> {
         }
     }
 
+    /// Get the total render time of one of the previous draw calls.
+    /// Does not necessarily correspond to the time of the last draw call (there is a small delay due to the asynchronous nature of GPUs).
     pub fn gpu_time(&self) -> Duration {
         Duration::from_nanos(self.0.gl_query.query() as u64)
     }

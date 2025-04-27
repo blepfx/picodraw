@@ -326,6 +326,15 @@ pub struct GlTexture {
 
 impl GlTexture {
     pub fn new(gl: GlContext, data: picodraw_core::ImageData) -> Self {
+        assert!(
+            data.data.len() == data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
+            "invalid {:?} data length: {} != {} (width x height x {})",
+            data.format,
+            data.data.len(),
+            data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
+            data.format.bytes_per_pixel()
+        );
+
         unsafe {
             let mut texture = 0;
 

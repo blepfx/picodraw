@@ -10,17 +10,14 @@ impl Graph {
     pub fn push_collect(op: OpValue) -> OpAddr {
         COLLECT_GRAPH.with(|graph| {
             let mut graph = graph.borrow_mut();
-            let graph = graph
-                .as_mut()
-                .expect("not executing in a shader graph context");
+            let graph = graph.as_mut().expect("not executing in a shader graph context");
 
             graph.push(op)
         })
     }
 
     pub fn collect(f: impl FnOnce() -> float4) -> Self {
-        let prev = COLLECT_GRAPH
-            .with(|engine| replace(&mut *engine.borrow_mut(), Some(GraphBuilder::new())));
+        let prev = COLLECT_GRAPH.with(|engine| replace(&mut *engine.borrow_mut(), Some(GraphBuilder::new())));
 
         let output = f();
 

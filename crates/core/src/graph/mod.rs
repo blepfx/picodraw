@@ -1,10 +1,10 @@
-#[cfg(feature = "collect")]
 mod collect;
 mod op;
-pub use op::*;
 
 use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
+
+pub use op::*;
 
 /// A shader graph.
 ///

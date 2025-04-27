@@ -6,6 +6,17 @@ pub enum ImageFormat {
     RGBA8,
 }
 
+impl ImageFormat {
+    /// Get the number of bytes per pixel for this format.
+    pub fn bytes_per_pixel(&self) -> usize {
+        match self {
+            ImageFormat::R8 => 1,
+            ImageFormat::RGB8 => 3,
+            ImageFormat::RGBA8 => 4,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TextureFilter {
     Linear,

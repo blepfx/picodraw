@@ -61,6 +61,15 @@ impl Buffer {
 
 impl<'a> From<ImageData<'a>> for Buffer {
     fn from(data: ImageData) -> Self {
+        assert!(
+            data.data.len() == data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
+            "invalid {:?} data length: {} != {} (width x height x {})",
+            data.format,
+            data.data.len(),
+            data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
+            data.format.bytes_per_pixel()
+        );
+
         let mut buffer = Self::new(data.width as usize, data.height as usize);
         match data.format {
             ImageFormat::RGBA8 => {

@@ -34,10 +34,8 @@ pugl-rs = { workspace = true }
 image = { workspace = true }
 
 [features]
-default = ["derive", "collect"]
-collect = ["picodraw-core/collect"]
+default = ["derive"]
 derive = ["dep:picodraw-derive"]
-
 opengl = ["dep:picodraw-opengl"]
 software = ["dep:picodraw-software"]
 
