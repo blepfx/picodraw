@@ -548,6 +548,7 @@ impl GlQuery {
 }
 
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct GlInfo {
     pub version: (i32, i32),
     pub extensions: HashSet<String>,

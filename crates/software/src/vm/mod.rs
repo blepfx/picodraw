@@ -23,8 +23,7 @@ pub enum VMOp<I, O> {
     LitF(f32, O),
     LitI(i32, O),
 
-    ReadF(u32, O),
-    ReadI(u32, O),
+    Read(u32, O),
 
     AddI(I, I, O),
     AddF(I, I, O),
@@ -120,8 +119,7 @@ impl<I, O> VMOp<I, O> {
             QuadR(o) => QuadR(out(o)),
             LitF(val, o) => LitF(val, out(o)),
             LitI(val, o) => LitI(val, out(o)),
-            ReadF(idx, o) => ReadF(idx, out(o)),
-            ReadI(idx, o) => ReadI(idx, out(o)),
+            Read(idx, o) => Read(idx, out(o)),
             AddI(a, b, o) => AddI(inp(a), inp(b), out(o)),
             AddF(a, b, o) => AddF(inp(a), inp(b), out(o)),
             SubI(a, b, o) => SubI(inp(a), inp(b), out(o)),

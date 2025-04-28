@@ -1115,34 +1115,30 @@ pub mod complex {
 
 #[allow(unused_variables, dead_code)]
 fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
+    fn percentile(samples: &mut [u64], percentile: f64) -> u64 {
+        samples.sort();
+        let index = (samples.len() as f64 * percentile).floor() as usize;
+        samples[index] as u64
+    }
+
     fn difference(a: &DynamicImage, b: &DynamicImage) -> f64 {
-        let mut sum = 0;
+        let mut samples = vec![0u64; (a.width() * a.height()) as usize];
+
         for i in 0..a.width() {
             for j in 0..a.height() {
                 let Rgba([r0, g0, b0, a0]) = a.get_pixel(i, j);
                 let Rgba([r1, g1, b1, a1]) = b.get_pixel(i, j);
 
-                let r0 = r0 as u64;
-                let g0 = g0 as u64;
-                let b0 = b0 as u64;
-                let a0 = a0 as u64;
-                let r1 = r1 as u64;
-                let g1 = g1 as u64;
-                let b1 = b1 as u64;
-                let a1 = a1 as u64;
-
-                sum += (r0 * a0).abs_diff(r1 * a1) / (a0 * a1).max(1);
-                sum += (g0 * a0).abs_diff(g1 * a1) / (a0 * a1).max(1);
-                sum += (b0 * a0).abs_diff(b1 * a1) / (a0 * a1).max(1);
-                sum += a0.abs_diff(a1);
+                let mut sum = 0;
+                sum += (r0 as u64 * a0 as u64).abs_diff(r1 as u64 * a1 as u64) / (255 * 255);
+                sum += (g0 as u64 * a0 as u64).abs_diff(g1 as u64 * a1 as u64) / (255 * 255);
+                sum += (b0 as u64 * a0 as u64).abs_diff(b1 as u64 * a1 as u64) / (255 * 255);
+                sum += (a0 as u64).abs_diff(a1 as u64);
+                samples[(i + j * a.width()) as usize] = sum;
             }
         }
 
-        sum as f64 / (a.height() * a.width()) as f64
-    }
-
-    if cfg!(miri) {
-        return;
+        percentile(&mut samples, 0.95) as f64
     }
 
     let renderer = Arc::new(render);
@@ -1168,7 +1164,7 @@ fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sy
                     ))
                 } else {
                     let diff = difference(&result, &expected);
-                    if diff > 6.0 {
+                    if diff > 3.0 {
                         Some(format!("diff: {}", diff))
                     } else {
                         None
@@ -1351,7 +1347,7 @@ mod software {
     pub fn render(width: u32, height: u32, render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>) -> DynamicImage {
         let mut backend = SoftwareBackend::new();
         let mut buffer = vec![0u32; (width * height) as usize];
-        let mut context = backend.begin(BufferMut::from_slice(&mut buffer, width as usize, height as usize));
+        let mut context = backend.open(BufferMut::from_slice(&mut buffer, width as usize, height as usize));
 
         render(&mut context);
 

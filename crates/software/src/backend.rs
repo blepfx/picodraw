@@ -34,7 +34,7 @@ impl SoftwareBackend {
         }
     }
 
-    pub fn begin<'a>(&'a mut self, screen: BufferMut<'a>) -> SoftwareContext<'a> {
+    pub fn open<'a>(&'a mut self, screen: BufferMut<'a>) -> SoftwareContext<'a> {
         SoftwareContext { owner: self, screen }
     }
 }

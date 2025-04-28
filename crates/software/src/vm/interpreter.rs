@@ -5,7 +5,7 @@ use std::alloc::Layout;
 
 pub struct VMContext<'a> {
     pub ops: &'a [VMOpcode],
-    pub data: &'a [VMSlot],
+    pub inputs: &'a [VMSlot],
     pub textures: &'a [BufferRef<'a>],
 
     pub pos_x: f32,
@@ -18,11 +18,11 @@ pub struct VMContext<'a> {
     pub res_y: f32,
 }
 
-pub struct VMInterpreter<'a> {
-    data: Box<'a, [VMTile; REGISTER_COUNT]>,
+pub struct VMInterpreter<'a, T: VMRegister> {
+    data: Box<'a, [T; REGISTER_COUNT]>,
 }
 
-impl<'a> VMInterpreter<'a> {
+impl<'a, T: VMRegister> VMInterpreter<'a, T> {
     pub fn new(arena: &'a Bump) -> Self {
         Self {
             data: unsafe {
@@ -37,7 +37,8 @@ impl<'a> VMInterpreter<'a> {
     }
 
     /// SAFETY: caller must ensure that the program context is valid:
-    /// - the `data` array have at least the amount of elements that `ReadF` and `ReadI` opcodes reference
+    /// - the `inputs` array have at least the amount of elements that the `Read` opcode references
+    /// - the `textures` array have at least the amount of elements that `Tex*` opcodes reference
     /// - every operation references a register that is less than `REGISTER_COUNT`
     /// - every operation writes to a register it doesn't read from (`AddF(0, 1, 1)` is NOT invalid)
     #[allow(unused_unsafe)]
@@ -48,11 +49,13 @@ impl<'a> VMInterpreter<'a> {
         macro_rules! registers {
                 ($($input:expr,)* mut $output:expr) => {
                     unsafe {
+                        let ptr = self.data.as_mut_ptr();
+
                         (
                             $(
-                                &*self.data.as_ptr().add($input as usize),
+                                &*ptr.add($input as usize),
                             )*
-                            &mut *self.data.as_mut_ptr().add($output as usize),
+                            &mut *ptr.add($output as usize),
                         )
                     }
                 };
@@ -332,14 +335,9 @@ impl<'a> VMInterpreter<'a> {
                     op!(|a: i32, b: i32, c: i32, d: mut i32| c ^ ((c ^ b) & a));
                 }
 
-                ReadF(idx, reg) => unsafe {
+                Read(idx, reg) => unsafe {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut().fill(program.data.get_unchecked(idx as usize).float);
-                },
-
-                ReadI(idx, reg) => unsafe {
-                    let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut().fill(program.data.get_unchecked(idx as usize).int);
+                    reg.as_i32_mut().fill(program.inputs.get_unchecked(idx as usize).int);
                 },
 
                 LitF(val, reg) => {
@@ -380,9 +378,9 @@ impl<'a> VMInterpreter<'a> {
                     let (reg,) = registers!(mut reg);
                     let reg = reg.as_f32_mut();
 
-                    for i in 0..TILE_SIZE {
-                        for j in 0..TILE_SIZE {
-                            reg[i * TILE_SIZE + j] = program.pos_x + j as f32;
+                    for i in 0..T::SIZE {
+                        for j in 0..T::SIZE {
+                            reg[i * T::SIZE + j] = program.pos_x + j as f32;
                         }
                     }
                 }
@@ -390,9 +388,9 @@ impl<'a> VMInterpreter<'a> {
                     let (reg,) = registers!(mut reg);
                     let reg = reg.as_f32_mut();
 
-                    for i in 0..TILE_SIZE {
-                        for j in 0..TILE_SIZE {
-                            reg[i * TILE_SIZE + j] = program.pos_y + i as f32;
+                    for i in 0..T::SIZE {
+                        for j in 0..T::SIZE {
+                            reg[i * T::SIZE + j] = program.pos_y + i as f32;
                         }
                     }
                 }
@@ -402,14 +400,14 @@ impl<'a> VMInterpreter<'a> {
                     let reg = reg.as_f32();
                     let out = out.as_f32_mut();
 
-                    for i in (0..TILE_SIZE).step_by(2) {
-                        for j in (0..TILE_SIZE).step_by(2) {
-                            let d = reg[i * TILE_SIZE + j + 1] - reg[i * TILE_SIZE + j];
+                    for i in (0..T::SIZE).step_by(2) {
+                        for j in (0..T::SIZE).step_by(2) {
+                            let d = reg[i * T::SIZE + j + 1] - reg[i * T::SIZE + j];
 
-                            out[i * TILE_SIZE + j] = d;
-                            out[i * TILE_SIZE + j + 1] = d;
-                            out[(i + 1) * TILE_SIZE + j] = d;
-                            out[(i + 1) * TILE_SIZE + j + 1] = d;
+                            out[i * T::SIZE + j] = d;
+                            out[i * T::SIZE + j + 1] = d;
+                            out[(i + 1) * T::SIZE + j] = d;
+                            out[(i + 1) * T::SIZE + j + 1] = d;
                         }
                     }
                 }
@@ -419,14 +417,14 @@ impl<'a> VMInterpreter<'a> {
                     let reg = reg.as_f32();
                     let out = out.as_f32_mut();
 
-                    for i in (0..TILE_SIZE).step_by(2) {
-                        for j in (0..TILE_SIZE).step_by(2) {
-                            let d = reg[i * TILE_SIZE + j] - reg[(i + 1) * TILE_SIZE + j];
+                    for i in (0..T::SIZE).step_by(2) {
+                        for j in (0..T::SIZE).step_by(2) {
+                            let d = reg[i * T::SIZE + j] - reg[(i + 1) * T::SIZE + j];
 
-                            out[i * TILE_SIZE + j] = d;
-                            out[(i + 1) * TILE_SIZE + j] = d;
-                            out[i * TILE_SIZE + j + 1] = d;
-                            out[(i + 1) * TILE_SIZE + j + 1] = d;
+                            out[i * T::SIZE + j] = d;
+                            out[(i + 1) * T::SIZE + j] = d;
+                            out[i * T::SIZE + j + 1] = d;
+                            out[(i + 1) * T::SIZE + j + 1] = d;
                         }
                     }
                 }
@@ -448,11 +446,11 @@ impl<'a> VMInterpreter<'a> {
                     let x = x.as_f32();
                     let y = y.as_f32();
 
-                    for i in 0..TILE_SIZE {
-                        for j in 0..TILE_SIZE {
+                    for i in 0..T::SIZE {
+                        for j in 0..T::SIZE {
                             unsafe {
-                                out[i * TILE_SIZE + j] =
-                                    *tex.sample(x[i * TILE_SIZE + j] - 0.5, y[i * TILE_SIZE + j] - 0.5, filt)
+                                out[i * T::SIZE + j] =
+                                    *tex.sample(x[i * T::SIZE + j] - 0.5, y[i * T::SIZE + j] - 0.5, filt)
                                         .to_le_bytes()
                                         .get_unchecked(chan as usize) as f32
                                         / 255.0
@@ -464,7 +462,7 @@ impl<'a> VMInterpreter<'a> {
         }
     }
 
-    pub fn register(&self, id: VMReg) -> &VMTile {
+    pub fn register(&self, id: VMReg) -> &T {
         &self.data[id as usize]
     }
 }
@@ -501,6 +499,63 @@ impl VMTile {
     }
 }
 
+pub trait VMRegister {
+    const SIZE: usize;
+
+    fn as_f32(&self) -> &[f32];
+    fn as_f32_mut(&mut self) -> &mut [f32];
+    fn as_i32(&self) -> &[i32];
+    fn as_i32_mut(&mut self) -> &mut [i32];
+}
+
+impl VMRegister for VMSlot {
+    const SIZE: usize = 1;
+
+    #[inline(always)]
+    fn as_f32(&self) -> &[f32] {
+        unsafe { &*(&self.float as *const _ as *const [f32; 1]) }
+    }
+
+    #[inline(always)]
+    fn as_f32_mut(&mut self) -> &mut [f32] {
+        unsafe { &mut *(&mut self.float as *mut _ as *mut [f32; 1]) }
+    }
+
+    #[inline(always)]
+    fn as_i32(&self) -> &[i32] {
+        unsafe { &*(&self.int as *const _ as *const [i32; 1]) }
+    }
+
+    #[inline(always)]
+    fn as_i32_mut(&mut self) -> &mut [i32] {
+        unsafe { &mut *(&mut self.int as *mut _ as *mut [i32; 1]) }
+    }
+}
+
+impl VMRegister for VMTile {
+    const SIZE: usize = TILE_SIZE;
+
+    #[inline(always)]
+    fn as_f32(&self) -> &[f32] {
+        self.as_f32()
+    }
+
+    #[inline(always)]
+    fn as_f32_mut(&mut self) -> &mut [f32] {
+        self.as_f32_mut()
+    }
+
+    #[inline(always)]
+    fn as_i32(&self) -> &[i32] {
+        self.as_i32()
+    }
+
+    #[inline(always)]
+    fn as_i32_mut(&mut self) -> &mut [i32] {
+        self.as_i32_mut()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -508,10 +563,10 @@ mod test {
     #[test]
     fn test_vm() {
         let arena = Bump::new();
-        let mut interpreter = VMInterpreter::new(&arena);
+        let mut interpreter = VMInterpreter::<VMSlot>::new(&arena);
         let program = VMContext {
-            ops: &[VMOp::LitF(1.0, 0), VMOp::ReadF(0, 1), VMOp::AddF(0, 1, 2)],
-            data: &[VMSlot { float: -1.5 }],
+            ops: &[VMOp::LitF(1.0, 0), VMOp::Read(0, 1), VMOp::AddF(0, 1, 2)],
+            inputs: &[VMSlot { float: -1.5 }],
             textures: &[],
             pos_x: 0.0,
             pos_y: 0.0,

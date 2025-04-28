@@ -7,6 +7,3 @@ edition = "2024"
 picodraw-core = { path = "../core" }
 slotmap = { workspace = true }
 bumpalo = { workspace = true }
-
-[dev-dependencies]
-image = { workspace = true }

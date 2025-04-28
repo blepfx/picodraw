@@ -163,33 +163,33 @@ impl<'a> BufferRef<'a> {
     #[inline]
     pub fn sample(&self, x: f32, y: f32, filter: TextureFilter) -> u32 {
         #[inline]
-        fn sample_neasert(buffer: BufferRef, x: f32, y: f32) -> u32 {
+        fn sample_neasert(buffer: BufferRef, x: usize, y: usize) -> u32 {
             if buffer.width == 0 || buffer.height == 0 {
                 return 0;
             }
 
-            let x = x.min(buffer.width as f32 - 1.0).max(0.0);
-            let y = y.min(buffer.height as f32 - 1.0).max(0.0);
-            buffer[(x as usize, y as usize)]
+            let x = x.min(buffer.width - 1);
+            let y = y.min(buffer.height - 1);
+            buffer[(x, y)]
         }
 
         match filter {
-            TextureFilter::Nearest => sample_neasert(*self, x, y),
+            TextureFilter::Nearest => sample_neasert(*self, x as usize, y as usize),
             TextureFilter::Linear => {
                 let lerp = |a: u8, b: u8, x: u8| {
                     let a = a as u16;
                     let b = b as u16;
                     let x = x as u16;
-                    ((a * (255 - x) + b * x) / 255) as u8
+                    ((a * (256 - x) + b * x) / 256) as u8
                 };
 
-                let p00 = sample_neasert(*self, x, y).to_ne_bytes();
-                let p10 = sample_neasert(*self, x + 1.0, y).to_ne_bytes();
-                let p01 = sample_neasert(*self, x, y + 1.0).to_ne_bytes();
-                let p11 = sample_neasert(*self, x + 1.0, y + 1.0).to_ne_bytes();
+                let p00 = sample_neasert(*self, x as usize, y as usize).to_ne_bytes();
+                let p10 = sample_neasert(*self, x as usize + 1, y as usize).to_ne_bytes();
+                let p01 = sample_neasert(*self, x as usize, y as usize + 1).to_ne_bytes();
+                let p11 = sample_neasert(*self, x as usize + 1, y as usize + 1).to_ne_bytes();
 
-                let x0 = (x.fract() * 255.0) as u8;
-                let y0 = (y.fract() * 255.0) as u8;
+                let x0 = (x.fract() * 256.0) as u8;
+                let y0 = (y.fract() * 256.0) as u8;
 
                 let a = [
                     lerp(p00[0], p10[0], x0),
@@ -293,6 +293,18 @@ impl<'a> Deref for BufferMut<'a> {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl<'a> Default for BufferRef<'a> {
+    fn default() -> Self {
+        Self::from_slice(&[], 0, 0)
+    }
+}
+
+impl<'a> Default for BufferMut<'a> {
+    fn default() -> Self {
+        Self(BufferRef::default())
     }
 }
 
