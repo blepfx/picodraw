@@ -1,5 +1,6 @@
 mod backend;
 mod compiler;
-mod raw;
+mod dispatch;
+mod opengl;
 
-pub use backend::{OpenGlBackend, OpenGlContext, OpenGlError, OpenGlInfo};
+pub use backend::{OpenGlBackend, OpenGlContext, OpenGlError, OpenGlInfo, OpenGlNativeBackend};

@@ -1,13 +1,13 @@
 use picodraw::{
     CommandBuffer, Context, Graph, Shader, ShaderData,
-    opengl::OpenGlBackend,
+    opengl::OpenGlNativeBackend,
     shader::{float1, float2, float4, io},
 };
 use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
 use std::time::Duration;
 
 struct Data {
-    gl: OpenGlBackend,
+    gl: OpenGlNativeBackend,
     shader: Shader,
     width: u32,
     height: u32,
@@ -20,6 +20,7 @@ struct ShaderDataCircle {
     y: f32,
     radius: f32,
     alpha: f32,
+    test: f32,
 }
 
 fn shader_circle() -> float4 {
@@ -58,7 +59,7 @@ fn main() {
             Event::Expose { backend, .. } => {
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 let data = data.get_or_insert_with(|| unsafe {
-                    let mut gl = OpenGlBackend::new(&|c| backend.get_proc_address(c)).unwrap();
+                    let mut gl = OpenGlNativeBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap();
                     let shader = gl.open().create_shader(Graph::collect(shader_circle));
 
                     Data {
@@ -77,7 +78,7 @@ fn main() {
                 let n = (data.scroll * 0.2).sin() * 14.0 + 20.0;
                 let alpha = 1.0 / n as f32;
 
-                for i in 0..(n as i32) {
+                for i in 0..n as i32 {
                     let angle = (i as f32 / (n - 1.0) + data.scroll * 0.05) * std::f32::consts::PI * 2.0;
                     let x = data.width as f32 * 0.5 + angle.cos() * 200.0;
                     let y = data.height as f32 * 0.5 + angle.sin() * 200.0;
@@ -89,6 +90,7 @@ fn main() {
                             y,
                             radius: 200.0,
                             alpha: if i + 1 == (n as i32) { alpha * n.fract() } else { alpha },
+                            test: 0.0,
                         });
                 }
 

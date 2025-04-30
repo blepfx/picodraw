@@ -175,100 +175,77 @@ impl GlVertexArrayObject {
     }
 }
 
-pub struct GlTextureBuffer {
-    tbo_buffer: GLuint,
-    tbo_texture: GLuint,
+pub struct GlUniformBuffer {
+    ubo_buffer: GLuint,
 
     size: usize,
     ptr: Cell<usize>,
     invalidate: Cell<bool>,
 }
 
-impl GlTextureBuffer {
-    pub const TEXEL_SIZE_BYTES: usize = size_of::<[u32; 4]>();
+impl GlUniformBuffer {
+    pub const WORD_SIZE_BYTES: usize = size_of::<u32>();
 
     pub fn new(gl: GlContext, size: usize) -> Self {
         unsafe {
-            let mut tbo_buffer = 0;
-            gl.gen_buffers(1, &mut tbo_buffer);
+            let mut ubo_buffer = 0;
+            gl.gen_buffers(1, &mut ubo_buffer);
             check_error(gl);
-            let tbo_buffer_drop = Defer(move || gl.delete_buffers(1, &tbo_buffer));
+            let tbo_buffer_drop = Defer(move || gl.delete_buffers(1, &ubo_buffer));
 
-            gl.bind_buffer(TEXTURE_BUFFER, tbo_buffer);
+            gl.bind_buffer(UNIFORM_BUFFER, ubo_buffer);
             gl.buffer_data(
-                TEXTURE_BUFFER,
-                (Self::TEXEL_SIZE_BYTES * size) as _,
+                UNIFORM_BUFFER,
+                (Self::WORD_SIZE_BYTES * size) as _,
                 null(),
                 DYNAMIC_DRAW,
             );
             check_error(gl);
 
-            let mut tbo_texture = 0;
-            gl.gen_textures(1, &mut tbo_texture);
-            check_error(gl);
-            let tbo_texture_drop = Defer(move || gl.delete_textures(1, &tbo_texture));
-
-            gl.bind_texture(TEXTURE_BUFFER, tbo_texture);
-            check_error(gl);
-            gl.tex_buffer(TEXTURE_BUFFER, RGBA32UI, tbo_buffer);
-            check_error(gl);
-
-            forget(tbo_texture_drop);
             forget(tbo_buffer_drop);
 
             Self {
-                tbo_buffer,
-                tbo_texture,
+                ubo_buffer,
                 size,
-                ptr: Cell::new(size),
+                ptr: Cell::new(0),
                 invalidate: Cell::new(false),
             }
         }
     }
 
-    pub fn bind_texture(&self, gl: GlContext, id: u32) {
+    pub fn update<R>(&mut self, gl: GlContext, c: impl for<'a> FnOnce(GlUniformBufferWriter<'a>) -> R) -> R {
         unsafe {
-            gl.active_texture(TEXTURE0 + id);
+            gl.bind_buffer(UNIFORM_BUFFER, self.ubo_buffer);
             check_error(gl);
 
-            gl.bind_texture(TEXTURE_BUFFER, self.tbo_texture);
-            check_error(gl);
-        }
-    }
-
-    pub fn update<R>(&mut self, gl: GlContext, c: impl for<'a> FnOnce(GlTextureBufferWriter<'a>) -> R) -> R {
-        unsafe {
-            gl.bind_buffer(TEXTURE_BUFFER, self.tbo_buffer);
-            check_error(gl);
-
-            if self.invalidate.replace(false) || self.ptr.get() >= self.size {
+            if self.invalidate.replace(false) {
                 self.ptr.set(0);
             }
 
             let range_start = self.ptr.get();
             let range_mapped = gl.map_buffer_range(
-                TEXTURE_BUFFER,
-                (range_start * Self::TEXEL_SIZE_BYTES) as _,
-                ((self.size - range_start) * Self::TEXEL_SIZE_BYTES) as _,
+                UNIFORM_BUFFER,
+                (range_start * Self::WORD_SIZE_BYTES) as _,
+                ((self.size - range_start) * Self::WORD_SIZE_BYTES) as _,
                 MAP_WRITE_BIT | MAP_FLUSH_EXPLICIT_BIT,
-            ) as *mut [u32; 4];
+            );
 
             check_error(gl);
 
-            let result = c(GlTextureBufferWriter {
+            let result = c(GlUniformBufferWriter {
                 owner: self,
                 start: range_start,
-                buffer: range_mapped,
+                buffer: range_mapped as *mut u32,
             });
 
             gl.flush_mapped_buffer_range(
-                TEXTURE_BUFFER,
+                UNIFORM_BUFFER,
                 0,
-                (Self::TEXEL_SIZE_BYTES * (self.ptr.get() - range_start)) as _,
+                (Self::WORD_SIZE_BYTES * (self.ptr.get() - range_start)) as _,
             );
             check_error(gl);
 
-            gl.unmap_buffer(TEXTURE_BUFFER);
+            gl.unmap_buffer(UNIFORM_BUFFER);
             check_error(gl);
 
             result
@@ -277,28 +254,25 @@ impl GlTextureBuffer {
 
     pub fn delete(self, gl: GlContext) {
         unsafe {
-            gl.delete_textures(1, &self.tbo_texture);
-            check_error(gl);
-
-            gl.delete_buffers(1, &self.tbo_buffer);
+            gl.delete_buffers(1, &self.ubo_buffer);
             check_error(gl);
         }
     }
 }
 
-pub struct GlTextureBufferWriter<'a> {
-    owner: &'a GlTextureBuffer,
+pub struct GlUniformBufferWriter<'a> {
+    owner: &'a GlUniformBuffer,
     start: usize,
-    buffer: *mut [u32; 4],
+    buffer: *mut u32,
 }
 
-impl<'a> GlTextureBufferWriter<'a> {
+impl<'a> GlUniformBufferWriter<'a> {
     pub fn pointer(&self) -> usize {
         self.owner.ptr.get()
     }
 
     pub fn space_left(&self) -> usize {
-        (self.owner.size - self.owner.ptr.get()) * GlTextureBuffer::TEXEL_SIZE_BYTES
+        (self.owner.size - self.owner.ptr.get()) * GlUniformBuffer::WORD_SIZE_BYTES
     }
 
     pub fn invalidate(&self) {
@@ -306,7 +280,7 @@ impl<'a> GlTextureBufferWriter<'a> {
     }
 
     pub fn request(&self, byte_size: usize) -> &mut [MaybeUninit<u8>] {
-        let texel_size = byte_size.div_ceil(GlTextureBuffer::TEXEL_SIZE_BYTES);
+        let texel_size = byte_size.div_ceil(GlUniformBuffer::WORD_SIZE_BYTES);
         if self.space_left() >= texel_size {
             unsafe {
                 let ptr = self.buffer.add(self.owner.ptr.get() - self.start);
@@ -552,7 +526,7 @@ impl GlQuery {
 pub struct GlInfo {
     pub version: (i32, i32),
     pub extensions: HashSet<String>,
-    pub max_texture_buffer_size: usize,
+    pub max_ubo_size_bytes: usize,
     pub max_texture_image_units: usize,
 }
 
@@ -605,19 +579,19 @@ impl GlInfo {
             let mut max_texture_size = 0;
             let mut max_texture_image_units = 0;
             let mut max_texture_image_units_combined = 0;
-            let mut max_texture_buffer_size = 0;
+            let mut max_ubo_size_bytes = 0;
 
-            gl.get_integer_v(MAX_TEXTURE_BUFFER_SIZE, &mut max_texture_buffer_size);
             gl.get_integer_v(MAX_TEXTURE_SIZE, &mut max_texture_size);
             gl.get_integer_v(MAX_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units);
             gl.get_integer_v(MAX_COMBINED_TEXTURE_IMAGE_UNITS, &mut max_texture_image_units_combined);
+            gl.get_integer_v(MAX_UNIFORM_BLOCK_SIZE, &mut max_ubo_size_bytes);
             check_error(gl);
 
             // sanity checks
             if max_texture_image_units <= 0
                 || max_texture_image_units_combined <= 0
                 || max_texture_size <= 0
-                || max_texture_buffer_size <= 0
+                || max_ubo_size_bytes <= 0
             {
                 return None;
             }
@@ -626,7 +600,7 @@ impl GlInfo {
                 version,
                 extensions,
                 max_texture_image_units: max_texture_image_units as usize,
-                max_texture_buffer_size: max_texture_buffer_size as usize,
+                max_ubo_size_bytes: max_ubo_size_bytes as usize,
             })
         }
     }

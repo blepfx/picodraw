@@ -138,7 +138,7 @@ impl ShaderData for u32 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_collect(OpValue::Input(OpInput::U32)))
+        types::int1(Graph::push_collect(OpValue::Input(OpInput::I32)))
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {

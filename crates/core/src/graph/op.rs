@@ -1,9 +1,8 @@
+use crate::TextureFilter;
 use std::{
     fmt::{Debug, LowerHex, UpperHex},
     hash::{Hash, Hasher},
 };
-
-use crate::TextureFilter;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct OpAddr(u32);
@@ -103,7 +102,6 @@ pub enum OpInput {
     I32,
     I16,
     I8,
-    U32,
     U16,
     U8,
 }
@@ -182,7 +180,6 @@ impl OpInput {
             Self::I32 => I1,
             Self::I16 => I1,
             Self::I8 => I1,
-            Self::U32 => I1,
             Self::U16 => I1,
             Self::U8 => I1,
             Self::TextureStatic => TextureStatic,
@@ -204,7 +201,6 @@ impl OpValue {
             Input(OpInput::I32) => I1,
             Input(OpInput::I16) => I1,
             Input(OpInput::I8) => I1,
-            Input(OpInput::U32) => I1,
             Input(OpInput::U16) => I1,
             Input(OpInput::U8) => I1,
             Input(OpInput::TextureStatic) => TextureStatic,

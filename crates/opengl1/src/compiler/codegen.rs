@@ -1,17 +1,17 @@
+use super::serialize::ShaderDataLayout;
 use picodraw_core::{TextureFilter, graph::*};
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Write,
 };
 
-use super::CompilerOptions;
-
 const VERTEX_SHADER: &str = r#"
 precision highp float;
 
+uniform int uBufferOffsetInstance;
+uniform int uBufferOffsetData;
 uniform vec2 uResolution;
 uniform bool uScreenTarget;
-uniform int uBufferListOffset;
 
 flat out int fragType;
 flat out int fragData;
@@ -24,7 +24,13 @@ void main() {
     int quadId = triangleId >> 1;
     int cornerId = (triangleId & 1) + vertexId;
 
-    uvec4 packedData = uBufferLst[uBufferListOffset + quadId];
+    uvec4 packedData = uvec4(
+        uBufferU32[uBufferOffsetInstance + quadId << 2 + 0],
+        uBufferU32[uBufferOffsetInstance + quadId << 2 + 1],
+        uBufferU32[uBufferOffsetInstance + quadId << 2 + 2],
+        uBufferU32[uBufferOffsetInstance + quadId << 2 + 3]
+    );
+
     vec2 topLeft = vec2(float(packedData.x & 65535u), float((packedData.x >> 16) & 65535u));
     vec2 bottomRight = vec2(float(packedData.y & 65535u), float((packedData.y >> 16) & 65535u));
     vec2 pos = vec2(float(cornerId >> 1), float(cornerId & 1)) * (bottomRight - topLeft) + topLeft;
@@ -33,14 +39,12 @@ void main() {
     fragPosition = pos;
     fragBounds = vec4(topLeft, bottomRight);
     fragType = int(packedData.z);
-    fragData = int(packedData.w);    
+    fragData = uBufferOffsetData + int(packedData.w);    
 }"#;
 
 const FRAGMENT_SHADER_HEADER: &str = r#"
 precision highp float;
-
 uniform vec2 uResolution;
-uniform int uBufferDataOffset;
 
 flat in int fragType;
 flat in int fragData;
@@ -51,15 +55,21 @@ out vec4 outColor;
 int u2i(uint x,uint m){return int(x)-int((x&m)<<1);}
 vec4 txl(in sampler2D s,vec2 i){return textureLod(s,i/textureSize(s,0),0);}
 vec4 txn(in sampler2D s,vec2 i){return texelFetch(s,ivec2(i),0);}
-uvec4 dti(int i){return uBufferU32[uBufferDataOffset+fragData+i];}
-vec4 dtf(int i){return uBufferF32[uBufferDataOffset+fragData+i];}
+uint datau(int i){return uBufferU32x[fragData+i];}
+float dataf(int i){return uBufferF32x[fragData+i];}
 void main(){
 "#;
 
-pub fn generate_vertex_shader(options: &CompilerOptions) -> String {
+pub struct CodegenOptions {
+    pub glsl_version: u32,
+    pub texture_samplers: u32,
+    pub buffer_size_words: u32,
+}
+
+pub fn generate_vertex_shader(options: &CodegenOptions) -> String {
     let mut buffer = String::new();
     emit_version_header(&mut buffer, options.glsl_version);
-    emit_buffer_list_binding(&mut buffer, options.buffer_size_bytes);
+    emit_buffer_binding(&mut buffer, options.buffer_size_words);
     buffer.push_str(VERTEX_SHADER);
     buffer
 }
@@ -74,13 +84,13 @@ pub struct FragmentCodegen {
 }
 
 impl FragmentCodegen {
-    pub fn new(options: &CompilerOptions) -> Self {
+    pub fn new(options: &CodegenOptions) -> Self {
         Self {
             buffer: {
                 let mut buffer = String::new();
                 emit_version_header(&mut buffer, options.glsl_version);
-                emit_texture_samplers(&mut buffer, options.texture_units);
-                emit_buffer_data_binding(&mut buffer, options.buffer_size_bytes);
+                emit_texture_samplers(&mut buffer, options.texture_samplers);
+                emit_buffer_binding(&mut buffer, options.buffer_size_words);
                 buffer.push_str(FRAGMENT_SHADER_HEADER);
                 buffer
             },
@@ -91,33 +101,24 @@ impl FragmentCodegen {
         }
     }
 
-    pub fn emit_graph_begin(&mut self, branch_id: u32) {
+    pub fn emit_begin_graph(&mut self, layout: &ShaderDataLayout) {
         if !self.graph_first {
             write!(&mut self.buffer, "else ").ok();
         }
 
-        write!(&mut self.buffer, "if(fragType == {}){{\n", branch_id).ok();
-    }
+        write!(&mut self.buffer, "if(fragType == {}){{\n", layout.branch_id).ok();
 
-    pub fn emit_graph_input(&mut self, offset: u32) {
-        self.graph_inputs.push_back(offset);
-    }
+        for (offset, _) in layout.fields.iter() {
+            self.graph_inputs.push_back(*offset);
+        }
 
-    pub fn emit_graph_texture(&mut self, index: u32) {
-        self.graph_textures.push_back(index);
-    }
+        for index in layout.textures.clone() {
+            self.graph_textures.push_back(index);
+        }
 
-    pub fn emit_graph_end(&mut self, graph: &Graph) {
-        write!(
-            &mut self.buffer,
-            "outColor={};\n}}",
-            self.graph_atoms.get(&graph.output()).expect("codegen error")
-        )
-        .ok();
-
-        self.graph_first = false;
-        self.graph_atoms.clear();
-        self.graph_inputs.clear();
+        for i in 0..layout.size.div_ceil(16) {
+            write!(&mut self.buffer, "uvec4 _i{:x}=data({});\n", i, i).ok();
+        }
     }
 
     pub fn emit_atom(&mut self, graph: &Graph, op: OpAddr) {
@@ -146,6 +147,19 @@ impl FragmentCodegen {
             write!(&mut self.buffer, "{} {}={};\n", typestr, ident, result).ok();
             self.graph_atoms.insert(op, ident);
         }
+    }
+
+    pub fn emit_end_graph(&mut self, graph: &Graph) {
+        write!(
+            &mut self.buffer,
+            "outColor={};\n}}",
+            self.graph_atoms.get(&graph.output()).expect("codegen error")
+        )
+        .ok();
+
+        self.graph_first = false;
+        self.graph_atoms.clear();
+        self.graph_inputs.clear();
     }
 
     pub fn finish(mut self) -> String {
@@ -221,27 +235,31 @@ impl FragmentCodegen {
 
             Input(OpInput::F32) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                self.emit_input_float(offset)
+                format!("u2f({})", self.emit_input(offset, 4))
             }
             Input(OpInput::I32) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.emit_input_int(offset, 4))
+                format!("int({})", self.emit_input(offset, 4))
             }
             Input(OpInput::I16) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2i({},32768u)", self.emit_input_int(offset, 2))
+                format!("u2i({},32768u)", self.emit_input(offset, 2))
             }
             Input(OpInput::I8) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2i({},128u)", self.emit_input_int(offset, 1))
+                format!("u2i({},128u)", self.emit_input(offset, 1))
+            }
+            Input(OpInput::U32) => {
+                let offset = self.graph_inputs.pop_front().expect("codegen error");
+                format!("int({})", self.emit_input(offset, 4))
             }
             Input(OpInput::U16) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.emit_input_int(offset, 2))
+                format!("int({})", self.emit_input(offset, 2))
             }
             Input(OpInput::U8) => {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.emit_input_int(offset, 1))
+                format!("int({})", self.emit_input(offset, 1))
             }
             Input(OpInput::TextureRender) | Input(OpInput::TextureStatic) => {
                 let index = self.graph_textures.pop_front().expect("codegen error");
@@ -249,9 +267,9 @@ impl FragmentCodegen {
             }
 
             Literal(x) => match x {
-                OpLiteral::Float(f32::INFINITY) => format!("4e+100"),
-                OpLiteral::Float(f32::NEG_INFINITY) => format!("(-4e+100)"),
-                OpLiteral::Float(x) if x.is_nan() => format!("(0.0/0.0)"),
+                OpLiteral::Float(f32::INFINITY) => format!("u2f(0x7F800000u)"),
+                OpLiteral::Float(f32::NEG_INFINITY) => format!("u2f(0xFF800000u)"),
+                OpLiteral::Float(x) if x.is_nan() => format!("u2f(0xFFFFFFFFu)"),
                 OpLiteral::Float(x) if x.is_sign_positive() => format!("{:?}", x),
                 OpLiteral::Float(x) => format!("({:?})", x),
                 OpLiteral::Int(x) if x >= 0 => format!("{:?}", x),
@@ -367,7 +385,7 @@ impl FragmentCodegen {
         }
     }
 
-    fn emit_input_int(&mut self, offset: u32, size: u32) -> String {
+    fn emit_input(&mut self, offset: u32, size: u32) -> String {
         let (b16, b4, b1) = (offset >> 4, (offset >> 2) & 3, (offset & 3) << 3);
         let b4 = match b4 {
             0 => "x",
@@ -376,50 +394,36 @@ impl FragmentCodegen {
             _ => "w",
         };
 
-        match size {
-            1 if b1 == 0 => format!("(dti({}).{}&255u)", b16, b4),
-            2 if b1 == 0 => format!("(dti({}).{}&65535u)", b16, b4),
-            1 => format!("(dti({}).{}>>{}u)&255u", b16, b4, b1),
-            2 => format!("(dti({}).{}>>{}u)&65535u", b16, b4, b1),
-            4 => format!("dti({}).{}", b16, b4),
-            _ => unreachable!(),
+        if b1 == 0 {
+            match size {
+                1 => format!("(_i{:x}.{}&255u)", b16, b4),
+                2 => format!("(_i{:x}.{}&65535u)", b16, b4),
+                4 => format!("_i{:x}.{}", b16, b4),
+                _ => unreachable!(),
+            }
+        } else {
+            match size {
+                1 => format!("(_i{:x}.{}>>{}u)&255u", b16, b4, b1),
+                2 => format!("(_i{:x}.{}>>{}u)&65535u", b16, b4, b1),
+                4 => format!("_i{:x}.{}", b16, b4),
+                _ => unreachable!(),
+            }
         }
     }
-
-    fn emit_input_float(&mut self, offset: u32) -> String {
-        let (b16, b4) = (offset >> 4, (offset >> 2) & 3);
-        let b4 = match b4 {
-            0 => "x",
-            1 => "y",
-            2 => "z",
-            _ => "w",
-        };
-
-        format!("dtf({}).{}", b16, b4)
-    }
 }
 
-fn emit_buffer_list_binding(buffer: &mut String, bytes: u32) {
+fn emit_buffer_binding(buffer: &mut String, words: u32) {
     writeln!(
         buffer,
-        "layout(std140) uniform uBufferList {{ uvec4 uBufferLst[{}]; }};",
-        bytes / size_of::<[u32; 4]>() as u32
-    )
-    .ok();
-}
-
-fn emit_buffer_data_binding(buffer: &mut String, bytes: u32) {
-    writeln!(
-        buffer,
-        "layout(std140) uniform uBufferDataU32 {{ uvec4 uBufferU32[{}]; }};",
-        bytes / size_of::<[u32; 4]>() as u32
+        "layout(std140) uniform uBufferU32 {{ uint uBufferU32x[{}] }};",
+        words
     )
     .ok();
 
     writeln!(
         buffer,
-        "layout(std140) uniform uBufferDataF32 {{ vec4 uBufferF32[{}]; }};",
-        bytes / size_of::<[u32; 4]>() as u32
+        "layout(std140) uniform uBufferF32 {{ float uBufferF32x[{}] }};",
+        words
     )
     .ok();
 }

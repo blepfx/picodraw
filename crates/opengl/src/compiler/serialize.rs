@@ -1,18 +1,12 @@
+use crate::opengl::BUFFER_ALIGNMENT;
 use picodraw_core::graph::*;
-use std::mem::MaybeUninit;
 
 #[derive(Debug)]
 pub struct ShaderDataLayout {
-    pub fields: Vec<(u32, OpInput)>,
+    pub inputs: Vec<(u32, OpInput)>,
     pub textures: Vec<u32>,
     pub size: u32,
     pub branch_id: u32,
-}
-
-pub struct ShaderDataEncoder<'a> {
-    layout: &'a ShaderDataLayout,
-    data: &'a mut [MaybeUninit<u8>],
-    pointer: usize,
 }
 
 impl ShaderDataLayout {
@@ -28,7 +22,6 @@ impl ShaderDataLayout {
                     OpInput::I32 => (4, 4),
                     OpInput::I16 => (2, 2),
                     OpInput::I8 => (1, 1),
-                    OpInput::U32 => (4, 4),
                     OpInput::U16 => (2, 2),
                     OpInput::U8 => (1, 1),
 
@@ -45,59 +38,9 @@ impl ShaderDataLayout {
 
         Self {
             branch_id: uid,
-            fields,
+            inputs: fields,
             textures,
-            size: bitmap.len() as u32,
-        }
-    }
-}
-
-impl<'a> ShaderDataEncoder<'a> {
-    pub fn new(layout: &'a ShaderDataLayout, data: &'a mut [MaybeUninit<u8>]) -> Self {
-        Self {
-            layout,
-            data,
-            pointer: 0,
-        }
-    }
-
-    pub fn write_i32(&mut self, value: i32) {
-        let (offset, input) = self.layout.fields.get(self.pointer).expect("malformed write stream");
-        let offset = *offset as usize;
-
-        match input {
-            OpInput::I32 | OpInput::U32 => {
-                write_uninit(&mut self.data[offset..offset + 4], &(value as u32).to_ne_bytes());
-            }
-            OpInput::I16 | OpInput::U16 => {
-                write_uninit(&mut self.data[offset..offset + 2], &(value as u16).to_ne_bytes());
-            }
-            OpInput::I8 | OpInput::U8 => {
-                write_uninit(&mut self.data[offset..offset + 1], &(value as u8).to_ne_bytes());
-            }
-            _ => panic!("malformed write stream"),
-        }
-
-        self.pointer += 1;
-    }
-
-    pub fn write_f32(&mut self, value: f32) {
-        let (offset, input) = self.layout.fields.get(self.pointer).expect("malformed write stream");
-        let offset = *offset as usize;
-
-        match input {
-            OpInput::F32 => {
-                write_uninit(&mut self.data[offset..offset + 4], &value.to_ne_bytes());
-            }
-            _ => panic!("malformed write stream"),
-        }
-
-        self.pointer += 1;
-    }
-
-    pub fn finish(self) {
-        if self.pointer != self.layout.fields.len() {
-            panic!("malformed write stream");
+            size: (bitmap.len() as u32).next_multiple_of(BUFFER_ALIGNMENT),
         }
     }
 }
@@ -127,6 +70,35 @@ fn take_offset(bitmap: &mut Vec<bool>, size: u32, align: u32) -> u32 {
     offset
 }
 
+pub fn encode(dst: &mut [u8], layout: &ShaderDataLayout, stream: impl IntoIterator<Item = u32>) -> Result<(), ()> {
+    let mut pointer = 0;
+    for value in stream {
+        let (offset, input) = layout.inputs.get(pointer).copied().ok_or(())?;
+        let offset = offset as usize;
+
+        match input {
+            OpInput::I32 | OpInput::F32 => {
+                dst[offset..offset + 4].copy_from_slice(&(value as u32).to_ne_bytes());
+            }
+            OpInput::I16 | OpInput::U16 => {
+                dst[offset..offset + 2].copy_from_slice(&(value as u16).to_ne_bytes());
+            }
+            OpInput::I8 | OpInput::U8 => {
+                dst[offset..offset + 1].copy_from_slice(&(value as u8).to_ne_bytes());
+            }
+            _ => return Err(()),
+        }
+
+        pointer += 1;
+    }
+
+    if pointer != layout.inputs.len() {
+        return Err(());
+    }
+
+    Ok(())
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct QuadDescriptorStruct {
@@ -139,54 +111,11 @@ pub struct QuadDescriptorStruct {
 }
 
 impl QuadDescriptorStruct {
+    pub const SIZE: usize = std::mem::size_of::<Self>();
+
     pub fn as_byte_slice(slice: &[Self]) -> &[u8] {
-        let len = std::mem::size_of::<Self>() * slice.len();
+        let len = Self::SIZE * slice.len();
         let ptr = slice.as_ptr() as *const u8;
         unsafe { std::slice::from_raw_parts(ptr, len) }
-    }
-}
-
-pub struct ShaderTextureAllocator {
-    data: Vec<Option<ShaderTextureSlot>>,
-}
-
-impl ShaderTextureAllocator {
-    pub fn new(max_samplers: u32) -> Self {
-        Self {
-            data: vec![None; max_samplers as usize],
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.data.fill(None);
-    }
-
-    pub fn try_allocate(&mut self, id: u32, slot: ShaderTextureSlot) -> Result<bool, ()> {
-        if self.data[id as usize] == None {
-            self.data[id as usize] = Some(slot);
-            Ok(true)
-        } else if self.data[id as usize] == Some(slot) {
-            Ok(false)
-        } else {
-            Err(())
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ShaderTextureSlot {
-    Static(picodraw_core::Texture),
-    Render(picodraw_core::RenderTexture),
-}
-
-pub fn write_uninit<'a>(slice: &'a mut [MaybeUninit<u8>], data: &[u8]) -> &'a mut [u8] {
-    unsafe {
-        // SAFETY: &[T] and &[MaybeUninit<T>] have the same layout
-        let uninit_src: &[MaybeUninit<u8>] = std::mem::transmute(data);
-
-        slice.copy_from_slice(uninit_src);
-
-        // SAFETY: Valid elements have just been copied into `self` so it is initialized
-        std::mem::transmute(slice)
     }
 }

@@ -1115,13 +1115,8 @@ pub mod complex {
 
 #[allow(unused_variables, dead_code)]
 fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
-    fn percentile(samples: &mut [u64], percentile: f64) -> u64 {
-        samples.sort();
-        let index = (samples.len() as f64 * percentile).floor() as usize;
-        samples[index] as u64
-    }
-
-    fn difference(a: &DynamicImage, b: &DynamicImage) -> f64 {
+    // 50th 95th 99th percentile
+    fn difference(a: &DynamicImage, b: &DynamicImage) -> (f64, f64, f64) {
         let mut samples = vec![0u64; (a.width() * a.height()) as usize];
 
         for i in 0..a.width() {
@@ -1138,7 +1133,12 @@ fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sy
             }
         }
 
-        percentile(&mut samples, 0.95) as f64
+        samples.sort();
+        let p50 = samples[(samples.len() as f64 * 0.50).floor() as usize];
+        let p95 = samples[(samples.len() as f64 * 0.95).floor() as usize];
+        let p99 = samples[(samples.len() as f64 * 0.99).floor() as usize];
+
+        (p50 as f64, p95 as f64, p99 as f64)
     }
 
     let renderer = Arc::new(render);
@@ -1163,9 +1163,9 @@ fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sy
                         result.height()
                     ))
                 } else {
-                    let diff = difference(&result, &expected);
-                    if diff > 3.0 {
-                        Some(format!("diff: {}", diff))
+                    let (p50, p95, p99) = difference(&result, &expected);
+                    if p95 > 3.0 {
+                        Some(format!("diff: {} [p50], {} [p95], {} [p99]", p50, p95, p99))
                     } else {
                         None
                     }
@@ -1247,7 +1247,9 @@ mod opengl {
 
                     let mut gl_backend = unsafe {
                         gl_backend
-                            .get_or_insert_with(|| OpenGlBackend::new(&|c| backend.get_proc_address(c)).unwrap())
+                            .get_or_insert_with(|| {
+                                OpenGlBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap()
+                            })
                             .open()
                     };
 
@@ -1265,16 +1267,15 @@ mod opengl {
                     (job.render)(&mut gl_backend);
 
                     {
-                        let screenshot: Vec<u32> = gl_backend.screenshot([0, 0, job.width, job.height]);
+                        let screenshot = gl_backend.screenshot(None, [0, 0, job.width, job.height]);
                         let mut image = RgbaImage::new(job.width, job.height);
                         for i in 0..job.width {
                             for j in 0..job.height {
-                                let data = screenshot[(i + j * job.width) as usize];
-                                image.put_pixel(
-                                    i,
-                                    job.height - 1 - j,
-                                    Rgba([data as u8, (data >> 8) as u8, (data >> 16) as u8, (data >> 24) as u8]),
-                                );
+                                let r = screenshot[0 + 4 * (i + j * job.width) as usize];
+                                let g = screenshot[1 + 4 * (i + j * job.width) as usize];
+                                let b = screenshot[2 + 4 * (i + j * job.width) as usize];
+                                let a = screenshot[3 + 4 * (i + j * job.width) as usize];
+                                image.put_pixel(i, job.height - 1 - j, Rgba([r, g, b, a]));
                             }
                         }
 

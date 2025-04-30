@@ -16,6 +16,9 @@ image = { version = "0.25.5", default-features = false, features = ["webp"] }
 # feature(software)
 bumpalo = { version = "3.17", features = ["boxed", "collections"] }
 
+# feature(opengl)
+glow = "0.16.0"
+
 # feature(software) & feature(opengl)
 slotmap = "1.0.7"
 
