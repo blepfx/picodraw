@@ -1,13 +1,16 @@
+use super::{CompilerBufferMode, CompilerOptions};
 use picodraw_core::{TextureFilter, graph::*};
 use std::{
     collections::{HashMap, VecDeque},
     fmt::Write,
 };
 
-use super::CompilerOptions;
-
 const VERTEX_SHADER: &str = r#"
+
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
+precision highp int;
+#endif
 
 uniform vec2 uResolution;
 uniform bool uScreenTarget;
@@ -24,7 +27,7 @@ void main() {
     int quadId = triangleId >> 1;
     int cornerId = (triangleId & 1) + vertexId;
 
-    uvec4 packedData = uBufferLst[uBufferListOffset + quadId];
+    uvec4 packedData = ri(uBufferListOffset + quadId);
     vec2 topLeft = vec2(float(packedData.x & 65535u), float((packedData.x >> 16) & 65535u));
     vec2 bottomRight = vec2(float(packedData.y & 65535u), float((packedData.y >> 16) & 65535u));
     vec2 pos = vec2(float(cornerId >> 1), float(cornerId & 1)) * (bottomRight - topLeft) + topLeft;
@@ -37,7 +40,11 @@ void main() {
 }"#;
 
 const FRAGMENT_SHADER_HEADER: &str = r#"
+
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
+precision highp int;
+#endif
 
 uniform vec2 uResolution;
 uniform int uBufferDataOffset;
@@ -51,15 +58,15 @@ out vec4 outColor;
 int u2i(uint x,uint m){return int(x)-int((x&m)<<1);}
 vec4 txl(in sampler2D s,vec2 i){return textureLod(s,i/textureSize(s,0),0);}
 vec4 txn(in sampler2D s,vec2 i){return texelFetch(s,ivec2(i),0);}
-uvec4 dti(int i){return uBufferU32[uBufferDataOffset+fragData+i];}
-vec4 dtf(int i){return uBufferF32[uBufferDataOffset+fragData+i];}
+vec4 df(int i){return rf(uBufferDataOffset+fragData+i);}
+uvec4 di(int i){return ri(uBufferDataOffset+fragData+i);}
 void main(){
 "#;
 
 pub fn generate_vertex_shader(options: &CompilerOptions) -> String {
     let mut buffer = String::new();
-    emit_version_header(&mut buffer, options.glsl_version);
-    emit_buffer_list_binding(&mut buffer, options.buffer_size_bytes);
+    emit_version_header(&mut buffer, options.glsl_version, options.buffer_mode);
+    emit_buffer_binding(&mut buffer, options.buffer_mode);
     buffer.push_str(VERTEX_SHADER);
     buffer
 }
@@ -78,9 +85,9 @@ impl FragmentCodegen {
         Self {
             buffer: {
                 let mut buffer = String::new();
-                emit_version_header(&mut buffer, options.glsl_version);
+                emit_version_header(&mut buffer, options.glsl_version, options.buffer_mode);
+                emit_buffer_binding(&mut buffer, options.buffer_mode);
                 emit_texture_samplers(&mut buffer, options.texture_units);
-                emit_buffer_data_binding(&mut buffer, options.buffer_size_bytes);
                 buffer.push_str(FRAGMENT_SHADER_HEADER);
                 buffer
             },
@@ -377,11 +384,11 @@ impl FragmentCodegen {
         };
 
         match size {
-            1 if b1 == 0 => format!("(dti({}).{}&255u)", b16, b4),
-            2 if b1 == 0 => format!("(dti({}).{}&65535u)", b16, b4),
-            1 => format!("(dti({}).{}>>{}u)&255u", b16, b4, b1),
-            2 => format!("(dti({}).{}>>{}u)&65535u", b16, b4, b1),
-            4 => format!("dti({}).{}", b16, b4),
+            1 if b1 == 0 => format!("(di({}).{}&255u)", b16, b4),
+            2 if b1 == 0 => format!("(di({}).{}&65535u)", b16, b4),
+            1 => format!("(di({}).{}>>{}u)&255u", b16, b4, b1),
+            2 => format!("(di({}).{}>>{}u)&65535u", b16, b4, b1),
+            4 => format!("di({}).{}", b16, b4),
             _ => unreachable!(),
         }
     }
@@ -395,41 +402,64 @@ impl FragmentCodegen {
             _ => "w",
         };
 
-        format!("dtf({}).{}", b16, b4)
+        format!("df({}).{}", b16, b4)
     }
 }
 
-fn emit_buffer_list_binding(buffer: &mut String, bytes: u32) {
-    writeln!(
-        buffer,
-        "layout(std140) uniform uBufferList {{ uvec4 uBufferLst[{}]; }};",
-        bytes / size_of::<[u32; 4]>() as u32
-    )
-    .ok();
+fn emit_buffer_binding(buffer: &mut String, mode: CompilerBufferMode) {
+    match mode {
+        CompilerBufferMode::UniformBlock { size_bytes } => {
+            let size = size_bytes / size_of::<[u32; 4]>() as u32;
+
+            writeln!(
+                buffer,
+                "
+layout(std140) uniform uBufferU32 {{uvec4 bufferU32[{}];}};
+layout(std140) uniform uBufferF32 {{vec4 bufferF32[{}];}};
+uvec4 ri(int i){{return bufferU32[i];}};
+vec4 rf(int i){{return bufferF32[i];}};
+                ",
+                size, size
+            )
+            .ok();
+        }
+        CompilerBufferMode::TextureBuffer => {
+            writeln!(
+                buffer,
+                "
+uniform usamplerBuffer uBuffer;
+uvec4 ri(int i){{return texelFetch(uBuffer,i);}};
+vec4 rf(int i){{return uintBitsToFloat(ri(i));}};
+                "
+            )
+            .ok();
+        }
+    }
 }
 
-fn emit_buffer_data_binding(buffer: &mut String, bytes: u32) {
-    writeln!(
-        buffer,
-        "layout(std140) uniform uBufferDataU32 {{ uvec4 uBufferU32[{}]; }};",
-        bytes / size_of::<[u32; 4]>() as u32
-    )
-    .ok();
-
-    writeln!(
-        buffer,
-        "layout(std140) uniform uBufferDataF32 {{ vec4 uBufferF32[{}]; }};",
-        bytes / size_of::<[u32; 4]>() as u32
-    )
-    .ok();
-}
-
-fn emit_version_header(buffer: &mut String, version: u32) {
-    if version >= 140 {
-        buffer.push_str("#version 140\n");
-    } else {
-        buffer.push_str("#version 130\n");
-        buffer.push_str("#extension ARB_uniform_buffer_object : require\n");
+fn emit_version_header(buffer: &mut String, version: u32, mode: CompilerBufferMode) {
+    match mode {
+        CompilerBufferMode::UniformBlock { .. } => {
+            if version >= 140 {
+                buffer.push_str("#version 140\n");
+            } else {
+                buffer.push_str("#version 130\n");
+                buffer.push_str("#extension GL_ARB_uniform_buffer_object : require\n");
+            }
+        }
+        CompilerBufferMode::TextureBuffer => {
+            if version >= 330 {
+                buffer.push_str("#version 330\n");
+            } else if version >= 140 {
+                buffer.push_str("#version 140\n");
+                buffer.push_str("#extension GL_ARB_shader_bit_encoding : require\n");
+            } else {
+                buffer.push_str("#version 130\n");
+                buffer.push_str("#extension GL_ARB_shader_bit_encoding : require\n");
+                buffer.push_str("#extension GL_ARB_texture_buffer_object : enable\n");
+                buffer.push_str("#extension GL_EXT_texture_buffer : enable\n");
+            }
+        }
     }
 }
 

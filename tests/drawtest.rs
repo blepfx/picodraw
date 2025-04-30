@@ -655,7 +655,7 @@ pub mod texture {
             let shader = context.create_shader(Graph::collect(|| {
                 let texture = io::read::<Texture>();
                 let uv = io::position() / io::resolution();
-                texture.sample(uv * float2(texture.size()), TextureFilter::Linear)
+                texture.sample(uv * float2(texture.size()), TextureFilter::Nearest)
             }));
 
             let mut commands = CommandBuffer::new();
@@ -1196,7 +1196,7 @@ fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sy
                     ))
                 } else {
                     let (p50, p95, p99) = difference(&result, &expected);
-                    if p95 > 3.0 {
+                    if p99 > 3.0 {
                         Some(format!("diff: {} [p50], {} [p95], {} [p99]", p50, p95, p99))
                     } else {
                         None
@@ -1359,7 +1359,7 @@ mod opengl {
 
         {
             let mut queue = JOB_QUEUE.lock().unwrap();
-            if queue.len() < 4 {
+            if queue.len() < 2 {
                 std::thread::spawn(runner_thread);
             }
 

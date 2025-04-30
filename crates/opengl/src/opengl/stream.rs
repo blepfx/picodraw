@@ -1,23 +1,54 @@
-use glow::{DYNAMIC_DRAW, HasContext, UNIFORM_BUFFER};
+use glow::{DYNAMIC_DRAW, HasContext, RGBA32UI, TEXTURE_BUFFER, UNIFORM_BUFFER};
 use std::{cell::Cell, ops::Range};
 
 pub const BUFFER_ALIGNMENT: u32 = 16;
 
-pub struct GlStreamUBO<T: HasContext> {
-    pub(super) ubo_buffer: T::Buffer,
+pub enum GlStreamBufferResource<T: HasContext> {
+    Texture(T::Texture),
+    UniformBlock(T::Buffer),
+}
+
+pub struct GlStreamBuffer<T: HasContext> {
+    buffer: BufferImpl<T>,
     size: u32,
     ptr: Cell<u32>,
 }
 
-impl<T: HasContext> GlStreamUBO<T> {
-    pub fn new(gl: &T, size: u32) -> Self {
+enum BufferImpl<T: HasContext> {
+    Uniform { buffer: T::Buffer },
+    Texture { buffer: T::Buffer, texture: T::Texture },
+}
+
+impl<T: HasContext> GlStreamBuffer<T> {
+    pub fn new_ubo(gl: &T, size: u32) -> Self {
         unsafe {
             let ubo_buffer = gl.create_buffer().unwrap();
             gl.bind_buffer(UNIFORM_BUFFER, Some(ubo_buffer));
             gl.buffer_data_size(UNIFORM_BUFFER, size as i32, DYNAMIC_DRAW);
 
             Self {
-                ubo_buffer,
+                buffer: BufferImpl::Uniform { buffer: ubo_buffer },
+                size,
+                ptr: Cell::new(0),
+            }
+        }
+    }
+
+    pub fn new_tbo(gl: &T, size: u32) -> Self {
+        unsafe {
+            let tbo_buffer = gl.create_buffer().unwrap();
+            gl.bind_buffer(UNIFORM_BUFFER, Some(tbo_buffer));
+            gl.buffer_data_size(UNIFORM_BUFFER, size as i32, DYNAMIC_DRAW);
+
+            let tbo_texture = gl.create_texture().unwrap();
+            gl.bind_texture(TEXTURE_BUFFER, Some(tbo_texture));
+            gl.tex_buffer(TEXTURE_BUFFER, RGBA32UI, Some(tbo_buffer));
+
+            Self {
+                buffer: BufferImpl::Texture {
+                    buffer: tbo_buffer,
+                    texture: tbo_texture,
+                },
                 size,
                 ptr: Cell::new(0),
             }
@@ -46,8 +77,16 @@ impl<T: HasContext> GlStreamUBO<T> {
         let ptr = self.ptr.get();
 
         unsafe {
-            gl.bind_buffer(UNIFORM_BUFFER, Some(self.ubo_buffer));
-            gl.buffer_sub_data_u8_slice(UNIFORM_BUFFER, ptr as i32, data);
+            match &self.buffer {
+                BufferImpl::Uniform { buffer } => {
+                    gl.bind_buffer(UNIFORM_BUFFER, Some(*buffer));
+                    gl.buffer_sub_data_u8_slice(UNIFORM_BUFFER, ptr as i32, data);
+                }
+                BufferImpl::Texture { buffer, .. } => {
+                    gl.bind_buffer(TEXTURE_BUFFER, Some(*buffer));
+                    gl.buffer_sub_data_u8_slice(TEXTURE_BUFFER, ptr as i32, data);
+                }
+            };
         }
 
         self.ptr.set(ptr + data.len() as u32);
@@ -55,9 +94,22 @@ impl<T: HasContext> GlStreamUBO<T> {
         ptr..self.ptr.get()
     }
 
+    pub fn resource(&self) -> GlStreamBufferResource<T> {
+        match &self.buffer {
+            BufferImpl::Uniform { buffer } => GlStreamBufferResource::UniformBlock(*buffer),
+            BufferImpl::Texture { texture, .. } => GlStreamBufferResource::Texture(*texture),
+        }
+    }
+
     pub fn delete(self, gl: &T) {
         unsafe {
-            gl.delete_buffer(self.ubo_buffer);
+            match self.buffer {
+                BufferImpl::Uniform { buffer } => gl.delete_buffer(buffer),
+                BufferImpl::Texture { buffer, texture } => {
+                    gl.delete_buffer(buffer);
+                    gl.delete_texture(texture);
+                }
+            }
         }
     }
 }

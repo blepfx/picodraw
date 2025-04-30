@@ -6,9 +6,11 @@ use std::collections::HashMap;
 pub const UNIFORM_TEXTURE_SAMPLERS: &str = "uTextures";
 pub const UNIFORM_FRAME_RESOLUTION: &str = "uResolution";
 pub const UNIFORM_FRAME_SCREEN: &str = "uScreenTarget";
-pub const UNIFORM_BUFFER_LIST: &str = "uBufferList";
-pub const UNIFORM_BUFFER_DATA_F32: &str = "uBufferDataF32";
-pub const UNIFORM_BUFFER_DATA_U32: &str = "uBufferDataU32";
+
+pub const UNIFORM_BUFFER_UNIFORM_F32: &str = "uBufferF32";
+pub const UNIFORM_BUFFER_UNIFORM_U32: &str = "uBufferU32";
+pub const UNIFORM_BUFFER_TEXTURE: &str = "uBuffer";
+
 pub const UNIFORM_BUFFER_LIST_OFFSET: &str = "uBufferListOffset";
 pub const UNIFORM_BUFFER_DATA_OFFSET: &str = "uBufferDataOffset";
 
@@ -67,10 +69,17 @@ pub fn compile_glsl<'a>(
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum CompilerBufferMode {
+    UniformBlock { size_bytes: u32 },
+    TextureBuffer,
+}
+
+#[derive(Clone, Copy)]
 pub struct CompilerOptions {
     pub glsl_version: u32,
     pub texture_units: u32,
-    pub buffer_size_bytes: u32,
+    pub buffer_mode: CompilerBufferMode,
 }
 
 pub struct CompilerResult {

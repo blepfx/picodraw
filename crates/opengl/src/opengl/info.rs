@@ -1,5 +1,5 @@
 use super::BUFFER_ALIGNMENT;
-use glow::{HasContext, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_SIZE, MAX_UNIFORM_BLOCK_SIZE};
+use glow::{HasContext, MAX_TEXTURE_BUFFER_SIZE, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_SIZE, MAX_UNIFORM_BLOCK_SIZE};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -13,7 +13,8 @@ pub struct GlInfo {
 
     pub max_texture_size: u32,
     pub max_texture_units: u32,
-    pub max_uniform_block_size: u32,
+    pub max_uniform_block_size_bytes: u32,
+    pub max_texture_buffer_size_texels: u32,
 }
 
 impl GlInfo {
@@ -23,6 +24,7 @@ impl GlInfo {
             let max_texture_size = gl.get_parameter_i32(MAX_TEXTURE_SIZE as _) as u32;
             let max_texture_units = gl.get_parameter_i32(MAX_TEXTURE_IMAGE_UNITS as _) as u32;
             let max_uniform_block_size = gl.get_parameter_i32(MAX_UNIFORM_BLOCK_SIZE as _) as u32;
+            let max_texture_buffer_size = gl.get_parameter_i32(MAX_TEXTURE_BUFFER_SIZE as _) as u32;
 
             Self {
                 version: (version.major, version.minor),
@@ -33,7 +35,8 @@ impl GlInfo {
 
                 max_texture_size,
                 max_texture_units,
-                max_uniform_block_size,
+                max_uniform_block_size_bytes: max_uniform_block_size,
+                max_texture_buffer_size_texels: max_texture_buffer_size,
             }
         }
     }
@@ -62,16 +65,42 @@ impl GlInfo {
         }
     }
 
-    pub fn is_baseline_supported(&self) -> bool {
-        self.version >= (3, 1) || self.extensions.contains("GL_ARB_uniform_buffer_object")
+    // TODO: gles
+    pub(crate) fn is_baseline_supported(&self) -> bool {
+        self.version >= (3, 0) && (self.is_uniform_buffer_supported() || self.is_texture_buffer_supported())
     }
 
-    pub fn is_timer_query_supported(&self) -> bool {
+    pub(crate) fn is_uniform_buffer_supported(&self) -> bool {
+        self.extensions.contains("GL_ARB_uniform_buffer_object") || self.version >= (3, 1)
+    }
+
+    pub(crate) fn is_texture_buffer_supported(&self) -> bool {
+        let tbo = self.extensions.contains("GL_ARB_texture_buffer_object") || self.version >= (3, 1);
+        let bit = self.extensions.contains("GL_ARB_shader_bit_encoding") || self.version >= (3, 3);
+        tbo && bit
+    }
+
+    pub(crate) fn is_timer_query_supported(&self) -> bool {
         self.extensions.contains("GL_ARB_timer_query") || self.version >= (3, 3)
     }
 
-    pub fn target_ubo_size(&self) -> u32 {
-        let target = self.max_uniform_block_size.min(262144);
+    pub(crate) fn prefer_tbo_over_ubo(&self) -> bool {
+        if !self.is_uniform_buffer_supported() {
+            return true;
+        }
+
+        self.is_texture_buffer_supported()
+            && self.target_tbo_size() > self.target_ubo_size()
+            && self.max_texture_units > 8
+    }
+
+    pub(crate) fn target_ubo_size(&self) -> u32 {
+        let target = self.max_uniform_block_size_bytes.min(65536);
+        target - target % BUFFER_ALIGNMENT // align to 16 bytes
+    }
+
+    pub(crate) fn target_tbo_size(&self) -> u32 {
+        let target = (self.max_texture_buffer_size_texels * BUFFER_ALIGNMENT).min(2097152);
         target - target % BUFFER_ALIGNMENT // align to 16 bytes
     }
 }

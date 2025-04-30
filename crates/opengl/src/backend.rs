@@ -2,7 +2,7 @@ use crate::{
     compiler,
     dispatch::{Dispatcher, DispatcherScratch},
     opengl::{
-        GlFramebufferBinding, GlProfiler, GlProgram, GlStreamUBO, GlTextureRender, GlTextureStatic, GlVertexArray,
+        GlFramebufferBinding, GlProfiler, GlProgram, GlStreamBuffer, GlTextureRender, GlTextureStatic, GlVertexArray,
         enable_blend_normal, enable_debug,
     },
 };
@@ -42,8 +42,7 @@ pub struct OpenGlBackend<T: HasContext> {
     gl_info: OpenGlInfo,
     gl_profiler: GlProfiler<T>,
     gl_vertex: GlVertexArray<T>,
-    gl_buffer_quadlist: GlStreamUBO<T>,
-    gl_buffer_quaddata: GlStreamUBO<T>,
+    gl_buffer: GlStreamBuffer<T>,
 
     scratch: DispatcherScratch<T>,
     stats: OpenGlStats,
@@ -94,13 +93,17 @@ impl<T: HasContext> OpenGlBackend<T> {
         }
 
         let gl_vertex = GlVertexArray::new(&gl_context);
-        let gl_buffer_quadlist = GlStreamUBO::new(&gl_context, gl_info.target_ubo_size());
-        let gl_buffer_quaddata = GlStreamUBO::new(&gl_context, gl_info.target_ubo_size());
 
         let gl_profiler = if gl_info.is_timer_query_supported() {
             GlProfiler::new(&gl_context)
         } else {
             GlProfiler::dummy()
+        };
+
+        let gl_buffer = if gl_info.prefer_tbo_over_ubo() {
+            GlStreamBuffer::new_tbo(&gl_context, gl_info.target_tbo_size())
+        } else {
+            GlStreamBuffer::new_ubo(&gl_context, gl_info.target_ubo_size())
         };
 
         if cfg!(debug_assertions) {
@@ -120,8 +123,7 @@ impl<T: HasContext> OpenGlBackend<T> {
             gl_info,
             gl_profiler,
             gl_vertex,
-            gl_buffer_quadlist,
-            gl_buffer_quaddata,
+            gl_buffer,
         })
     }
 
@@ -138,8 +140,7 @@ impl<T: HasContext> OpenGlBackend<T> {
     /// #### Safety
     /// This function should be called only if the OpenGL context is currently active for the current thread.
     pub unsafe fn delete(self) {
-        self.gl_buffer_quaddata.delete(&self.gl_context);
-        self.gl_buffer_quadlist.delete(&self.gl_context);
+        self.gl_buffer.delete(&self.gl_context);
         self.gl_vertex.delete(&self.gl_context);
         self.gl_profiler.delete(&self.gl_context);
 
@@ -256,30 +257,60 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
 
         let gl = &self.0.gl_context;
         let program = self.0.program.get_or_insert_with(|| {
-            let result = compiler::compile_glsl(
+            let options = if self.0.gl_info.prefer_tbo_over_ubo() {
+                compiler::CompilerOptions {
+                    glsl_version: self.0.gl_info.glsl_version(),
+                    texture_units: self.0.gl_info.max_texture_units - 1,
+                    buffer_mode: compiler::CompilerBufferMode::TextureBuffer,
+                }
+            } else {
                 compiler::CompilerOptions {
                     glsl_version: self.0.gl_info.glsl_version(),
                     texture_units: self.0.gl_info.max_texture_units,
-                    buffer_size_bytes: self.0.gl_info.target_ubo_size(),
-                },
+                    buffer_mode: compiler::CompilerBufferMode::UniformBlock {
+                        size_bytes: self.0.gl_info.target_ubo_size(),
+                    },
+                }
+            };
+
+            let result = compiler::compile_glsl(
+                options,
                 self.0
                     .shaders
                     .iter()
                     .map(|(id, shader)| (Shader(id.data().as_ffi()), shader)),
             );
 
-            let mut program = GlProgram::compile(gl, &result.vertex, &result.fragment);
-            program.set_uniform_block_binding(gl, compiler::UNIFORM_BUFFER_DATA_F32, 0);
-            program.set_uniform_block_binding(gl, compiler::UNIFORM_BUFFER_DATA_U32, 0); //funny aliasing trick
-            program.set_uniform_block_binding(gl, compiler::UNIFORM_BUFFER_LIST, 1);
-            program.set_uniform_binding(gl, compiler::UNIFORM_FRAME_RESOLUTION, 0);
-            program.set_uniform_binding(gl, compiler::UNIFORM_FRAME_SCREEN, 1);
-            program.set_uniform_binding(gl, compiler::UNIFORM_BUFFER_DATA_OFFSET, 2);
-            program.set_uniform_binding(gl, compiler::UNIFORM_BUFFER_LIST_OFFSET, 3);
+            let program = GlProgram::compile(gl, &result.vertex, &result.fragment);
+            let bind_program = program.bind(gl);
 
-            for i in 0..self.0.gl_info.max_texture_units {
-                program.set_texture_sampler_binding(gl, &format!("{}[{}]", compiler::UNIFORM_TEXTURE_SAMPLERS, i), i);
+            if self.0.gl_info.prefer_tbo_over_ubo() {
+                bind_program.set_texture_sampler_binding(gl, compiler::UNIFORM_BUFFER_TEXTURE, 0);
+
+                for i in 0..options.texture_units {
+                    bind_program.set_texture_sampler_binding(
+                        gl,
+                        &format!("{}[{}]", compiler::UNIFORM_TEXTURE_SAMPLERS, i),
+                        i + 1,
+                    );
+                }
+            } else {
+                bind_program.set_uniform_block_binding(gl, compiler::UNIFORM_BUFFER_UNIFORM_F32, 0);
+                bind_program.set_uniform_block_binding(gl, compiler::UNIFORM_BUFFER_UNIFORM_U32, 0); //funny aliasing trick
+
+                for i in 0..options.texture_units {
+                    bind_program.set_texture_sampler_binding(
+                        gl,
+                        &format!("{}[{}]", compiler::UNIFORM_TEXTURE_SAMPLERS, i),
+                        i,
+                    );
+                }
             }
+
+            bind_program.set_uniform_binding(gl, compiler::UNIFORM_FRAME_RESOLUTION, 0);
+            bind_program.set_uniform_binding(gl, compiler::UNIFORM_FRAME_SCREEN, 1);
+            bind_program.set_uniform_binding(gl, compiler::UNIFORM_BUFFER_DATA_OFFSET, 2);
+            bind_program.set_uniform_binding(gl, compiler::UNIFORM_BUFFER_LIST_OFFSET, 3);
 
             CompiledProgram {
                 program,
@@ -334,8 +365,7 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
                     &self.0.gl_context,
                     &bind_program,
                     &bind_vertex_array,
-                    &self.0.gl_buffer_quadlist,
-                    &self.0.gl_buffer_quaddata,
+                    &self.0.gl_buffer,
                 );
 
                 match target_buffer.as_ref() {
