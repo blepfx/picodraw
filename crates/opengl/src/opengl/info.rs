@@ -65,23 +65,37 @@ impl GlInfo {
         }
     }
 
-    // TODO: gles
     pub(crate) fn is_baseline_supported(&self) -> bool {
-        self.version >= (3, 0) && (self.is_uniform_buffer_supported() || self.is_texture_buffer_supported())
+        if self.is_gles {
+            let baseline = self.version >= (2, 0);
+            let any_buffer = self.is_uniform_buffer_supported() || self.is_texture_buffer_supported();
+
+            baseline && any_buffer
+        } else {
+            let baseline = self.version >= (2, 0);
+            let framebuffer = self.extensions.contains("GL_ARB_framebuffer_object") || self.version >= (3, 0);
+            let any_buffer = self.is_uniform_buffer_supported() || self.is_texture_buffer_supported();
+
+            baseline && framebuffer && any_buffer
+        }
     }
 
     pub(crate) fn is_uniform_buffer_supported(&self) -> bool {
-        self.extensions.contains("GL_ARB_uniform_buffer_object") || self.version >= (3, 1)
+        if self.is_gles {
+            self.version >= (3, 0) || self.extensions.contains("GL_ARB_uniform_buffer_object")
+        } else {
+            self.version >= (3, 1) || self.extensions.contains("GL_ARB_uniform_buffer_object")
+        }
     }
 
     pub(crate) fn is_texture_buffer_supported(&self) -> bool {
-        let tbo = self.extensions.contains("GL_ARB_texture_buffer_object") || self.version >= (3, 1);
-        let bit = self.extensions.contains("GL_ARB_shader_bit_encoding") || self.version >= (3, 3);
+        let tbo = self.extensions.contains("GL_ARB_texture_buffer_object") || (self.version >= (3, 1) && !self.is_gles);
+        let bit = self.extensions.contains("GL_ARB_shader_bit_encoding") || (self.version >= (3, 3) && !self.is_gles);
         tbo && bit
     }
 
     pub(crate) fn is_timer_query_supported(&self) -> bool {
-        self.extensions.contains("GL_ARB_timer_query") || self.version >= (3, 3)
+        self.extensions.contains("GL_ARB_timer_query") || (self.version >= (3, 3) && !self.is_gles)
     }
 
     pub(crate) fn prefer_tbo_over_ubo(&self) -> bool {
