@@ -1,7 +1,6 @@
+use super::BUFFER_ALIGNMENT;
 use glow::{HasContext, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_SIZE, MAX_UNIFORM_BLOCK_SIZE};
 use std::collections::HashSet;
-
-use super::BUFFER_ALIGNMENT;
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -64,7 +63,7 @@ impl GlInfo {
     }
 
     pub fn is_baseline_supported(&self) -> bool {
-        true //TODO: kjsjdksjdasjd
+        self.version >= (3, 1) || self.extensions.contains("GL_ARB_uniform_buffer_object")
     }
 
     pub fn is_timer_query_supported(&self) -> bool {
@@ -72,7 +71,7 @@ impl GlInfo {
     }
 
     pub fn target_ubo_size(&self) -> u32 {
-        let target = self.max_uniform_block_size.min(65536);
+        let target = self.max_uniform_block_size.min(262144);
         target - target % BUFFER_ALIGNMENT // align to 16 bytes
     }
 }

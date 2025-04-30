@@ -3,7 +3,7 @@ use std::cell::Cell;
 
 pub struct GlProfiler<T: HasContext> {
     query: Option<T::Query>,
-    last: Cell<u32>,
+    last: Cell<Option<u32>>,
     check: Cell<bool>,
 }
 
@@ -12,7 +12,7 @@ impl<T: HasContext> GlProfiler<T> {
         unsafe {
             Self {
                 query: gl.create_query().ok(),
-                last: Cell::new(0),
+                last: Cell::new(None),
                 check: Cell::new(true),
             }
         }
@@ -21,12 +21,12 @@ impl<T: HasContext> GlProfiler<T> {
     pub fn dummy() -> Self {
         Self {
             query: None,
-            last: Cell::new(0),
+            last: Cell::new(None),
             check: Cell::new(true),
         }
     }
 
-    pub fn query(&self) -> u32 {
+    pub fn query(&self) -> Option<u32> {
         self.last.get()
     }
 
@@ -44,7 +44,7 @@ impl<T: HasContext> GlProfiler<T> {
                 let available = gl.get_query_parameter_u32(*query, QUERY_RESULT_AVAILABLE);
                 if available != 0 {
                     let result = gl.get_query_parameter_u32(*query, QUERY_RESULT);
-                    self.last.set(result);
+                    self.last.set(Some(result));
                     self.check.set(true);
                 }
             },

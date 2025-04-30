@@ -918,6 +918,38 @@ pub mod stress {
     use super::*;
 
     #[test]
+    fn stress_texture_count() {
+        run("stress_texture_count", 256, 8, move |context| {
+            let textures = (0..=255u8)
+                .map(|x| {
+                    context.create_texture_static(ImageData {
+                        width: 1,
+                        height: 1,
+                        format: ImageFormat::R8,
+                        data: &[x],
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let shader = context.create_shader(Graph::collect(|| {
+                let texture = io::read::<Texture>();
+                texture.sample(float2(0.0), TextureFilter::Linear)
+            }));
+
+            let mut commands = CommandBuffer::new();
+            let mut frame = commands.begin_screen([256, 8]);
+
+            for i in 0..=255 {
+                frame
+                    .begin_quad(shader, [i, 0, i + 1, 8])
+                    .write_data(textures[i as usize]);
+            }
+
+            context.draw(&commands);
+        });
+    }
+
+    #[test]
     fn stress_fill_rate() {
         run("stress_fill_rate", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
             let shader = context.create_shader(Graph::collect(|| {
@@ -974,7 +1006,7 @@ pub mod stress {
         });
     }
 
-    #[test]
+    #[test] //TODO: Fix
     fn stress_shader_complexity() {
         run("stress_shader_complexity", 4, 4, move |context| {
             let shader = context.create_shader(Graph::collect(|| {
@@ -1205,18 +1237,23 @@ mod opengl {
     use image::{DynamicImage, Rgba, RgbaImage};
     use picodraw::{CommandBuffer, Context, opengl::OpenGlBackend};
     use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
-    use std::sync::{
-        Arc, Condvar, Mutex,
-        atomic::{AtomicBool, Ordering},
-    };
+    use std::any::Any;
+    use std::panic::{AssertUnwindSafe, resume_unwind};
     use std::time::Duration;
+    use std::{
+        panic::catch_unwind,
+        sync::{
+            Arc, Condvar, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
 
     static JOB_QUEUE: Mutex<Vec<Arc<Job>>> = Mutex::new(Vec::new());
     struct Job {
         width: u32,
         height: u32,
         render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>,
-        result: Mutex<Option<DynamicImage>>,
+        result: Mutex<Option<Result<DynamicImage, Box<dyn Any + Send>>>>,
         condvar: Condvar,
     }
 
@@ -1245,43 +1282,47 @@ mod opengl {
                         }
                     };
 
-                    let mut gl_backend = unsafe {
-                        gl_backend
-                            .get_or_insert_with(|| {
-                                OpenGlBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap()
-                            })
-                            .open()
-                    };
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        let mut gl_backend = unsafe {
+                            gl_backend
+                                .get_or_insert_with(|| {
+                                    OpenGlBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap()
+                                })
+                                .open()
+                        };
 
-                    {
-                        let mut commands = CommandBuffer::new();
-                        commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]).clear([
-                            0,
-                            0,
-                            MAX_CANVAS_SIZE,
-                            MAX_CANVAS_SIZE,
-                        ]);
-                        gl_backend.draw(&commands);
-                    }
-
-                    (job.render)(&mut gl_backend);
-
-                    {
-                        let screenshot = gl_backend.screenshot(None, [0, 0, job.width, job.height]);
-                        let mut image = RgbaImage::new(job.width, job.height);
-                        for i in 0..job.width {
-                            for j in 0..job.height {
-                                let r = screenshot[0 + 4 * (i + j * job.width) as usize];
-                                let g = screenshot[1 + 4 * (i + j * job.width) as usize];
-                                let b = screenshot[2 + 4 * (i + j * job.width) as usize];
-                                let a = screenshot[3 + 4 * (i + j * job.width) as usize];
-                                image.put_pixel(i, job.height - 1 - j, Rgba([r, g, b, a]));
-                            }
+                        {
+                            let mut commands = CommandBuffer::new();
+                            commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]).clear([
+                                0,
+                                0,
+                                MAX_CANVAS_SIZE,
+                                MAX_CANVAS_SIZE,
+                            ]);
+                            gl_backend.draw(&commands);
                         }
 
-                        job.result.lock().unwrap().replace(image.into());
-                        job.condvar.notify_one();
-                    }
+                        (job.render)(&mut gl_backend);
+
+                        {
+                            let screenshot = gl_backend.screenshot(None, [0, 0, job.width, job.height]);
+                            let mut image = RgbaImage::new(job.width, job.height);
+                            for i in 0..job.width {
+                                for j in 0..job.height {
+                                    let r = screenshot[0 + 4 * (i + j * job.width) as usize];
+                                    let g = screenshot[1 + 4 * (i + j * job.width) as usize];
+                                    let b = screenshot[2 + 4 * (i + j * job.width) as usize];
+                                    let a = screenshot[3 + 4 * (i + j * job.width) as usize];
+                                    image.put_pixel(i, job.height - 1 - j, Rgba([r, g, b, a]));
+                                }
+                            }
+
+                            image.into()
+                        }
+                    }));
+
+                    job.result.lock().unwrap().replace(result);
+                    job.condvar.notify_one();
                 }
                 Event::Update => {
                     view.obscure_view();
@@ -1327,8 +1368,14 @@ mod opengl {
 
         let mut result = job.result.lock().unwrap();
         loop {
-            if result.is_some() {
-                break result.take().unwrap();
+            match result.take() {
+                Some(Ok(image)) => {
+                    return image;
+                }
+                Some(Err(err)) => {
+                    resume_unwind(err);
+                }
+                None => {}
             }
 
             result = job.condvar.wait(result).unwrap();

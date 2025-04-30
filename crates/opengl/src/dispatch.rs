@@ -1,8 +1,8 @@
 use crate::{
     compiler,
     opengl::{
-        BUFFER_ALIGNMENT, GlFramebufferBinding, GlProgramBinding, GlStreamBuffer, GlTextureRender,
-        GlVertexArrayBinding, viewport,
+        BUFFER_ALIGNMENT, GlFramebufferBinding, GlProgramBinding, GlStreamUBO, GlTextureRender, GlVertexArrayBinding,
+        viewport,
     },
 };
 use glow::HasContext;
@@ -32,8 +32,8 @@ pub struct Dispatcher<'a, T: HasContext> {
     pub global_context: &'a T,
     pub global_program: &'a GlProgramBinding<'a, T>,
     pub global_vertex_array: &'a GlVertexArrayBinding<'a, T>,
-    pub global_buffer_quadlist: &'a GlStreamBuffer<T>,
-    pub global_buffer_quaddata: &'a GlStreamBuffer<T>,
+    pub global_buffer_quadlist: &'a GlStreamUBO<T>,
+    pub global_buffer_quaddata: &'a GlStreamUBO<T>,
 
     pub target_framebuffer: GlFramebufferBinding<'a, T>,
     pub target_framebuffer_screen: bool,
@@ -47,6 +47,10 @@ pub struct Dispatcher<'a, T: HasContext> {
     pub quad_queue_textures: &'a mut Vec<(u32, T::Texture)>,
     pub quad_layout: Option<&'a compiler::serialize::ShaderDataLayout>,
     pub quad_bounds: Bounds,
+
+    pub total_bytes_written: u64,
+    pub total_quads_written: u32,
+    pub total_drawcalls_issued: u32,
 }
 
 impl<'a, T: HasContext> Dispatcher<'a, T> {
@@ -55,8 +59,8 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         global_context: &'a T,
         global_program: &'a GlProgramBinding<'a, T>,
         global_vertex_array: &'a GlVertexArrayBinding<'a, T>,
-        global_buffer_quadlist: &'a GlStreamBuffer<T>,
-        global_buffer_quaddata: &'a GlStreamBuffer<T>,
+        global_buffer_quadlist: &'a GlStreamUBO<T>,
+        global_buffer_quaddata: &'a GlStreamUBO<T>,
     ) -> Self {
         let target_framebuffer = GlFramebufferBinding::default(global_context);
         let target_framebuffer_screen = true;
@@ -93,6 +97,10 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
                 right: 0,
                 bottom: 0,
             },
+
+            total_bytes_written: 0,
+            total_quads_written: 0,
+            total_drawcalls_issued: 0,
         }
     }
 
@@ -154,7 +162,6 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
     pub fn quad_end(&mut self) {
         let layout = self.quad_layout.expect("quad_end called without quad_start");
         let bounds = self.quad_bounds;
-        let offset = self.drawcall_data.len();
 
         let buffer_quaddata_fits =
             self.drawcall_data.len() + layout.size as usize <= self.global_buffer_quaddata.bytes_left() as usize;
@@ -172,6 +179,8 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         if !buffer_quaddata_fits || !buffer_quadlist_fits || !can_bind_textures {
             self.flush();
         }
+
+        let offset = self.drawcall_data.len();
 
         self.drawcall_quads.push(compiler::serialize::QuadDescriptorStruct {
             left: bounds.left.try_into().unwrap_or(u16::MAX),
@@ -220,13 +229,10 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             return;
         }
 
-        let range_quaddata = self
-            .global_buffer_quaddata
-            .write(self.global_context, self.drawcall_data.as_slice());
-        let range_quadlist = self.global_buffer_quadlist.write(
-            self.global_context,
-            compiler::serialize::QuadDescriptorStruct::as_byte_slice(self.drawcall_quads.as_slice()),
-        );
+        let slice_quaddata = self.drawcall_data.as_slice();
+        let slice_quadlist = compiler::serialize::QuadDescriptorStruct::as_byte_slice(self.drawcall_quads.as_slice());
+        let range_quaddata = self.global_buffer_quaddata.write(self.global_context, slice_quaddata);
+        let range_quadlist = self.global_buffer_quadlist.write(self.global_context, slice_quadlist);
 
         self.global_program
             .set_uniform_block_range(0, self.global_buffer_quaddata);
@@ -252,5 +258,10 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         self.drawcall_data.clear();
         self.drawcall_quads.clear();
         self.drawcall_textures.clear();
+
+        self.total_bytes_written += range_quaddata.len() as u64;
+        self.total_bytes_written += range_quadlist.len() as u64;
+        self.total_quads_written += self.drawcall_quads.len() as u32;
+        self.total_drawcalls_issued += 1;
     }
 }

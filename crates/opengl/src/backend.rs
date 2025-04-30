@@ -2,7 +2,7 @@ use crate::{
     compiler,
     dispatch::{Dispatcher, DispatcherScratch},
     opengl::{
-        GlFramebufferBinding, GlProfiler, GlProgram, GlStreamBuffer, GlTextureRender, GlTextureStatic, GlVertexArray,
+        GlFramebufferBinding, GlProfiler, GlProgram, GlStreamUBO, GlTextureRender, GlTextureStatic, GlVertexArray,
         enable_blend_normal, enable_debug,
     },
 };
@@ -15,6 +15,22 @@ pub use crate::opengl::GlInfo as OpenGlInfo;
 pub struct OpenGlContext<'a, T: HasContext>(&'a mut OpenGlBackend<T>);
 pub type OpenGlNativeBackend = OpenGlBackend<glow::Context>;
 
+#[derive(Debug, Clone, Default)]
+pub struct OpenGlStats {
+    /// Total GPU render time of one of the previous draw calls.
+    /// Does not necessarily correspond to the time of the last draw call (there is a small delay due to the asynchronous nature of GPUs).
+    pub gpu_time: Option<Duration>,
+
+    /// Number of GPU draw calls/context switches
+    pub draw_calls: u32,
+
+    /// Total number of bytes sent to the GPU, including quad lists and quad data
+    pub bytes_sent: u64,
+
+    /// Number of quads sent to the GPU
+    pub total_quads: u32,
+}
+
 /// A `picodraw` backend that uses OpenGL.
 pub struct OpenGlBackend<T: HasContext> {
     shaders: SlotMap<DefaultKey, Graph>,
@@ -26,10 +42,11 @@ pub struct OpenGlBackend<T: HasContext> {
     gl_info: OpenGlInfo,
     gl_profiler: GlProfiler<T>,
     gl_vertex: GlVertexArray<T>,
-    gl_buffer_quadlist: GlStreamBuffer<T>,
-    gl_buffer_quaddata: GlStreamBuffer<T>,
+    gl_buffer_quadlist: GlStreamUBO<T>,
+    gl_buffer_quaddata: GlStreamUBO<T>,
 
     scratch: DispatcherScratch<T>,
+    stats: OpenGlStats,
 }
 
 #[derive(Debug, Clone)]
@@ -77,8 +94,8 @@ impl<T: HasContext> OpenGlBackend<T> {
         }
 
         let gl_vertex = GlVertexArray::new(&gl_context);
-        let gl_buffer_quadlist = GlStreamBuffer::new(&gl_context, gl_info.target_ubo_size());
-        let gl_buffer_quaddata = GlStreamBuffer::new(&gl_context, gl_info.target_ubo_size());
+        let gl_buffer_quadlist = GlStreamUBO::new(&gl_context, gl_info.target_ubo_size());
+        let gl_buffer_quaddata = GlStreamUBO::new(&gl_context, gl_info.target_ubo_size());
 
         let gl_profiler = if gl_info.is_timer_query_supported() {
             GlProfiler::new(&gl_context)
@@ -92,6 +109,7 @@ impl<T: HasContext> OpenGlBackend<T> {
 
         Ok(Self {
             scratch: DispatcherScratch::default(),
+            stats: OpenGlStats::default(),
 
             shaders: SlotMap::with_key(),
             textures: SlotMap::with_key(),
@@ -172,10 +190,9 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
         )
     }
 
-    /// Get the total render time of one of the previous draw calls.
-    /// Does not necessarily correspond to the time of the last draw call (there is a small delay due to the asynchronous nature of GPUs).
-    pub fn gpu_time(&self) -> Duration {
-        Duration::from_nanos(self.0.gl_profiler.query() as u64)
+    /// Returns the statistics information for the last frame
+    pub fn stats(&self) -> OpenGlStats {
+        self.0.stats.clone()
     }
 }
 
@@ -235,13 +252,15 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
     }
 
     fn draw(&mut self, buffer: &CommandBuffer) {
+        self.0.stats = OpenGlStats::default();
+
         let gl = &self.0.gl_context;
         let program = self.0.program.get_or_insert_with(|| {
             let result = compiler::compile_glsl(
                 compiler::CompilerOptions {
                     glsl_version: self.0.gl_info.glsl_version(),
                     texture_units: self.0.gl_info.max_texture_units,
-                    buffer_size_bytes: self.0.gl_info.target_ubo_size() / 4,
+                    buffer_size_bytes: self.0.gl_info.target_ubo_size(),
                 },
                 self.0
                     .shaders
@@ -391,6 +410,10 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
 
                 dispatcher.flush();
 
+                self.0.stats.draw_calls += dispatcher.total_drawcalls_issued;
+                self.0.stats.bytes_sent += dispatcher.total_bytes_written;
+                self.0.stats.total_quads += dispatcher.total_quads_written;
+
                 if let Some((texture, framebuffer)) = target_buffer {
                     self.0
                         .framebuffers
@@ -400,6 +423,8 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
                 }
             }
         });
+
+        self.0.stats.gpu_time = self.0.gl_profiler.query().map(|x| Duration::from_nanos(x as u64));
     }
 }
 

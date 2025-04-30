@@ -12,6 +12,7 @@ struct Data {
     width: u32,
     height: u32,
     scroll: f32,
+    avg_time_ms: f32,
 }
 
 #[derive(ShaderData)]
@@ -68,6 +69,7 @@ fn main() {
                         width: 512,
                         height: 512,
                         scroll: 0.0,
+                        avg_time_ms: 0.0,
                     }
                 });
 
@@ -75,7 +77,7 @@ fn main() {
                 let mut frame = commands.begin_screen([data.width, data.height]);
                 frame.clear([0, 0, data.width, data.height]);
 
-                let n = (data.scroll * 0.2).sin() * 14.0 + 20.0;
+                let n = 100.0;
                 let alpha = 1.0 / n as f32;
 
                 for i in 0..n as i32 {
@@ -98,7 +100,15 @@ fn main() {
                 unsafe {
                     let mut gl = data.gl.open();
                     gl.draw(&commands);
-                    println!("frame: {:?}", gl.gpu_time());
+
+                    let stats = gl.stats();
+                    let gpu_time_ms = stats.gpu_time.unwrap_or_default().as_secs_f32() * 1000.0;
+                    data.avg_time_ms = data.avg_time_ms * 0.99 + gpu_time_ms * 0.01;
+
+                    println!(
+                        "avg time: {:.2}ms, time: {:.2}ms, bytes sent: {}, drawcalls: {}",
+                        data.avg_time_ms, gpu_time_ms, stats.bytes_sent, stats.draw_calls,
+                    );
                 }
 
                 data.scroll += 1.0 / 60.0;

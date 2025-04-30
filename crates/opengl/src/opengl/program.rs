@@ -1,4 +1,4 @@
-use super::{GlFramebufferBinding, GlStreamBuffer};
+use super::{GlFramebufferBinding, GlStreamUBO};
 use glow::{HasContext, TEXTURE_2D, TEXTURE0, TRIANGLES, UNIFORM_BUFFER};
 use std::array::from_fn;
 
@@ -145,7 +145,7 @@ impl<'a, T: HasContext> GlProgramBinding<'a, T> {
         }
     }
 
-    pub fn set_uniform_block_range(&self, binding_index: u32, buffer: &'a GlStreamBuffer<T>) {
+    pub fn set_uniform_block_range(&self, binding_index: u32, buffer: &'a GlStreamUBO<T>) {
         unsafe {
             self.gl
                 .bind_buffer_base(UNIFORM_BUFFER, binding_index, Some(buffer.ubo_buffer));
