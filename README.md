@@ -1,5 +1,5 @@
 # picodraw
-a smol gpu graphics library
+a smol 2d graphics abstraction library
 
 ## Features
 - High level abstraction of different graphics APIs
