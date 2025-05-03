@@ -40,7 +40,7 @@ fn main() {
     let mut world = World::new_program().unwrap();
     let view = world
         .new_view(OpenGl {
-            version: OpenGlVersion::Core(3, 3),
+            version: OpenGlVersion::Core(3, 0),
             bits_alpha: 0,
             bits_depth: 0,
             bits_stencil: 0,
@@ -77,7 +77,7 @@ fn main() {
                 let mut frame = commands.begin_screen([data.width, data.height]);
                 frame.clear([0, 0, data.width, data.height]);
 
-                let n = 100.0;
+                let n = (data.scroll * 0.2).sin() * 14.0 + 20.0;
                 let alpha = 1.0 / n as f32;
 
                 for i in 0..n as i32 {

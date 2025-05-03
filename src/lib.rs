@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 pub use picodraw_core::*;
 #[cfg(feature = "derive")]
 pub use picodraw_derive::ShaderData;

@@ -55,8 +55,12 @@ opengl = ["dep:picodraw-opengl"]
 software = ["dep:picodraw-software"]
 
 [[example]]
-name = "opengl"
+name = "opengl_circles"
 required-features = ["opengl", "derive"]
+
+[[example]]
+name = "opengl_stress"
+required-features = ["opengl"]
 
 [[bench]]
 name = "software"

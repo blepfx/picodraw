@@ -1359,7 +1359,7 @@ mod opengl {
 
         {
             let mut queue = JOB_QUEUE.lock().unwrap();
-            if queue.len() < 2 {
+            if queue.len() < 3 {
                 std::thread::spawn(runner_thread);
             }
 
