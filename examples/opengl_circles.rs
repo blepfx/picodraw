@@ -1,13 +1,13 @@
 use picodraw::{
     CommandBuffer, Context, Graph, Shader, ShaderData,
-    opengl::OpenGlNativeBackend,
+    opengl::{Native, OpenGlBackend},
     shader::{float1, float2, float4, io},
 };
 use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
 use std::time::Duration;
 
 struct Data {
-    gl: OpenGlNativeBackend,
+    gl: OpenGlBackend<Native>,
     shader: Shader,
     width: u32,
     height: u32,
@@ -60,7 +60,7 @@ fn main() {
             Event::Expose { backend, .. } => {
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 let data = data.get_or_insert_with(|| unsafe {
-                    let mut gl = OpenGlNativeBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap();
+                    let mut gl = OpenGlBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap();
                     let shader = gl.open().create_shader(Graph::collect(shader_circle));
 
                     Data {

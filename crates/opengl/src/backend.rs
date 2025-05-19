@@ -13,7 +13,9 @@ use std::{ffi::CStr, time::Duration};
 
 pub use crate::opengl::GlInfo as OpenGlInfo;
 pub struct OpenGlContext<'a, T: HasContext>(&'a mut OpenGlBackend<T>);
-pub type OpenGlNativeBackend = OpenGlBackend<glow::Context>;
+
+#[cfg(any(not(target_arch = "wasm32"), target_os = "emscripten"))]
+pub type Native = glow::Context;
 
 #[derive(Debug, Clone, Default)]
 pub struct OpenGlStats {
