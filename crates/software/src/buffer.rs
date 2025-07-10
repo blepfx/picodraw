@@ -50,11 +50,11 @@ impl Buffer {
         self.height
     }
 
-    pub fn as_ref(&self) -> BufferRef {
+    pub fn as_ref(&self) -> BufferRef<'_> {
         BufferRef::from_slice(&self.data, self.width, self.height)
     }
 
-    pub fn as_mut(&mut self) -> BufferMut {
+    pub fn as_mut(&mut self) -> BufferMut<'_> {
         BufferMut::from_slice(&mut self.data, self.width, self.height)
     }
 }

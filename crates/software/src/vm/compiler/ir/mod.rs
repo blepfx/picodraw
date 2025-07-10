@@ -1,4 +1,4 @@
-use crate::{VMOp, VMOpcode};
+use crate::vm::{VMOp, VMOpcode};
 use bumpalo::{Bump, collections::Vec};
 use std::{fmt::Debug, hash::Hash};
 

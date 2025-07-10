@@ -1,46 +1,54 @@
+macro_rules! impl_dispatcher {
+    ($macro:ident; $($name:ident, $($feature:tt),*;)*) => {
+        #[derive(Clone, Copy, Debug)]
+        pub enum SimdDispatcher {
+            Baseline,
+            $($name),*
+        }
+
+        impl SimdDispatcher {
+            pub fn new() -> Self {
+                $(
+                    if true $(&& $macro!($feature))* {
+                        return Self::$name;
+                    }
+                )*
+
+                Self::Baseline
+            }
+
+            #[inline(always)]
+            pub fn dispatch(&self, f: impl FnOnce()) {
+                match *self {
+                    $(Self::$name => {
+                        $(#[target_feature(enable = $feature)])*
+                        unsafe fn __dispatch(f: impl FnOnce()) { f() }
+                        unsafe { __dispatch(f) }
+                    }),*
+
+                    Self::Baseline => f()
+                }
+            }
+        }
+    };
+}
+
 #[cfg(target_arch = "x86_64")]
-pub fn dispatch_simd<F: FnOnce()>(f: F) {
-    if is_x86_feature_detected!("avx2") {
-        unsafe { dispatch_avx2(f) }
-    } else if is_x86_feature_detected!("avx") {
-        unsafe { dispatch_avx(f) }
-    } else if is_x86_feature_detected!("sse4.2") {
-        unsafe { dispatch_sse42(f) }
-    } else {
-        f()
-    }
-
-    #[target_feature(enable = "avx2")]
-    unsafe fn dispatch_avx2<F: FnOnce()>(f: F) {
-        f()
-    }
-
-    #[target_feature(enable = "avx")]
-    unsafe fn dispatch_avx<F: FnOnce()>(f: F) {
-        f()
-    }
-
-    #[target_feature(enable = "sse4.2")]
-    unsafe fn dispatch_sse42<F: FnOnce()>(f: F) {
-        f()
-    }
+impl_dispatcher! {
+    is_x86_feature_detected;
+    Avx512, "avx512f", "avx512bw", "avx512cd", "avx512dq", "avx512vl";
+    Avx2, "avx2", "fma";
+    Avx, "avx";
+    Sse42, "sse4.1", "sse4.2";
 }
 
 #[cfg(target_arch = "aarch64")]
-pub fn dispatch_simd<F: FnOnce()>(f: F) {
-    if is_aarch64_feature_detected!("neon") {
-        unsafe { dispatch_neon(f) }
-    } else {
-        f()
-    }
-
-    #[target_feature(enable = "neon")]
-    unsafe fn dispatch_neon<F: FnOnce()>(f: F) {
-        f()
-    }
+impl_dispatcher! {
+    is_aarch64_feature_detected;
+    Neon, "neon";
 }
 
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-pub fn dispatch_simd<F: FnOnce()>(f: F) {
-    f()
+impl_dispatcher! {
+    __;
 }

@@ -1,8 +1,8 @@
 use crate::{
-    Dispatcher, VMSlot,
     buffer::{Buffer, BufferMut},
-    util::ThreadPool,
-    vm::CompiledShader,
+    dispatch::Dispatcher,
+    util::{SimdDispatcher, ThreadPool},
+    vm::{CompiledShader, VMSlot},
 };
 use bumpalo::Bump;
 use picodraw_core::{Command, CommandBuffer, Context, Graph, ImageData, RenderTexture, Shader, Size, Texture};
@@ -15,6 +15,7 @@ pub struct SoftwareBackend {
 
     arena: Bump,
     thread_pool: ThreadPool,
+    simd_dispatch: SimdDispatcher,
 }
 
 pub struct SoftwareContext<'a> {
@@ -26,7 +27,8 @@ impl SoftwareBackend {
     pub fn new() -> Self {
         Self {
             arena: Bump::new(),
-            thread_pool: ThreadPool::with_threads(1),
+            thread_pool: ThreadPool::new(),
+            simd_dispatch: SimdDispatcher::new(),
 
             shaders: SlotMap::new(),
             textures: SlotMap::new(),
@@ -166,12 +168,16 @@ impl<'a> Context for SoftwareContext<'a> {
 
             match target_buffer {
                 Some((mut buffer, id)) => {
-                    dispatcher.dispatch(&mut self.owner.thread_pool, buffer.as_mut());
+                    dispatcher.dispatch(&mut self.owner.thread_pool, self.owner.simd_dispatch, buffer.as_mut());
                     *self.owner.buffers.get_mut(KeyData::from_ffi(id.0).into()).unwrap() = Some(buffer);
                     self.owner.arena.reset();
                 }
                 None => {
-                    dispatcher.dispatch(&mut self.owner.thread_pool, self.screen.reborrow());
+                    dispatcher.dispatch(
+                        &mut self.owner.thread_pool,
+                        self.owner.simd_dispatch,
+                        self.screen.reborrow(),
+                    );
                     self.owner.arena.reset();
                 }
             };

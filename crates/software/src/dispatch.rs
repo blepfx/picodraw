@@ -1,13 +1,12 @@
 use crate::{
-    VMTile,
     buffer::{BufferMut, BufferRef},
     pack_rgba,
-    util::{ThreadPool, dispatch_simd},
-    vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMContext, VMInterpreter, VMSlot},
+    util::{SimdDispatcher, ThreadPool},
+    vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMContext, VMInterpreter, VMSlot, VMTile},
 };
 use bumpalo::{Bump, collections::Vec};
 use picodraw_core::Bounds;
-use std::{iter::from_fn, ops::Range, sync::Mutex};
+use std::{iter::from_fn, ops::Range};
 
 enum DispatchObject<'a> {
     Draw {
@@ -80,7 +79,7 @@ impl<'a> Dispatcher<'a> {
         }
     }
 
-    pub fn dispatch(self, pool: &mut ThreadPool, buffer: BufferMut<'a>) {
+    pub fn dispatch(self, pool: &mut ThreadPool, simd: SimdDispatcher, buffer: BufferMut<'a>) {
         // prepare data
         let data_buffer = self.data.into_bump_slice();
         let texture_buffer = self.textures.into_bump_slice();
@@ -163,37 +162,40 @@ impl<'a> Dispatcher<'a> {
         };
 
         // filter empty tiles out and make a list of groups
-        let groups = tiles
-            .into_iter()
-            .enumerate()
-            .filter(|(_, objects)| objects.len() > 0)
-            .map(|(i, objects)| {
-                let x = ((i % tiles_width) * TILE_SIZE) as u32;
-                let y = ((i / tiles_width) * TILE_SIZE) as u32;
+        let groups = Vec::from_iter_in(
+            tiles
+                .into_iter()
+                .enumerate()
+                .filter(|(_, objects)| objects.len() > 0)
+                .map(|(i, objects)| {
+                    let x = ((i % tiles_width) * TILE_SIZE) as u32;
+                    let y = ((i / tiles_width) * TILE_SIZE) as u32;
 
-                &*self.arena.alloc(DispatchGroup {
-                    x,
-                    y,
-                    objects: objects.into_bump_slice(),
-                })
-            });
+                    &*self.arena.alloc(DispatchGroup {
+                        x,
+                        y,
+                        objects: objects.into_bump_slice(),
+                    })
+                }),
+            self.arena,
+        )
+        .into_bump_slice();
 
         // allocate memory for workers
-        let workers = &*self.arena.alloc_slice_fill_iter((0..pool.num_threads()).map(|_| {
-            Mutex::new(DispatchWorker {
+        let workers = self
+            .arena
+            .alloc_slice_fill_iter((0..pool.num_workers()).map(|_| DispatchWorker {
                 r: self.arena.alloc([0.0; PIXEL_COUNT]),
                 g: self.arena.alloc([0.0; PIXEL_COUNT]),
                 b: self.arena.alloc([0.0; PIXEL_COUNT]),
                 a: self.arena.alloc([0.0; PIXEL_COUNT]),
                 interpreter: VMInterpreter::new(self.arena),
-            })
-        }));
+            }));
 
         // dispatch groups
 
-        pool.execute(groups, |group, index| {
-            let worker = &mut *workers[index].lock().unwrap();
-            dispatch_simd(
+        pool.run_arrays(workers, groups, |worker, group| {
+            simd.dispatch(
                 #[inline(always)]
                 || {
                     // SAFETY: the buffer is guaranteed to be valid because

@@ -1,5 +1,5 @@
 mod simd;
-mod threadpool;
+mod thread;
 
 pub use simd::*;
-pub use threadpool::*;
+pub use thread::*;

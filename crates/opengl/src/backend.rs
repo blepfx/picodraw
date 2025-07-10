@@ -133,7 +133,7 @@ impl<T: HasContext> OpenGlBackend<T> {
     ///
     /// #### Safety
     /// This function should be called only if the OpenGL context is currently active for the current thread.
-    pub unsafe fn open(&mut self) -> OpenGlContext<T> {
+    pub unsafe fn open(&mut self) -> OpenGlContext<'_, T> {
         OpenGlContext(self)
     }
 

@@ -40,7 +40,7 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
     /// - the `inputs` array have at least the amount of elements that the `Read` opcode references
     /// - the `textures` array have at least the amount of elements that `Tex*` opcodes reference
     /// - every operation references a register that is less than `REGISTER_COUNT`
-    /// - every operation writes to a register it doesn't read from (`AddF(0, 1, 1)` is NOT invalid)
+    /// - every operation writes to a register it doesn't read from (`AddF(0, 1, 1)` is NOT valid)
     #[allow(unused_unsafe)]
     #[inline(always)]
     pub unsafe fn execute(&mut self, program: VMContext) {
