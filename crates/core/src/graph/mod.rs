@@ -11,26 +11,19 @@ pub use op::*;
 /// Defines a computation graph for pixel color computation based on pixel position, arbitrary dynamic data and other information.
 /// The graph is represented by a list of operations ([`OpValue`]) that each define a value computed based on other operations ([`OpAddr`]).
 pub struct Graph {
-    ops: Vec<GraphOp>,
+    ops: Vec<GraphOpData>,
     output: OpAddr,
     hash: u64,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct GraphBuilder {
     ops: Vec<OpValue>,
-    hash: DefaultHasher,
 }
 
 #[derive(Debug)]
 pub enum GraphError {
     TypeCheck { op: OpAddr, value: OpValue },
-}
-
-struct GraphOp {
-    value: OpValue,
-    type_: OpType,
-    dependants: Vec<OpAddr>,
 }
 
 impl Graph {
@@ -69,17 +62,18 @@ impl Graph {
 
 impl GraphBuilder {
     pub fn new() -> Self {
-        Self::default()
+        Self { ops: vec![] }
     }
 
     pub fn push(&mut self, op: OpValue) -> OpAddr {
         self.ops.push(op);
-        op.hash(&mut self.hash);
         OpAddr::from_raw(self.ops.len() - 1)
     }
 
     pub fn finish(self, output: OpAddr) -> Result<Graph, GraphError> {
-        let mut ops: Vec<GraphOp> = Vec::new();
+        let mut ops: Vec<GraphOpData> = Vec::new();
+        let mut hasher = DefaultHasher::new();
+
         for (op, value) in self.ops.iter().enumerate() {
             let op = OpAddr::from_raw(op);
 
@@ -97,16 +91,18 @@ impl GraphBuilder {
                 ops[dep.into_raw()].dependants.push(op);
             }
 
-            ops.push(GraphOp {
+            ops.push(GraphOpData {
                 value: value.clone(),
                 type_,
                 dependants: Vec::new(),
             });
+
+            value.hash(&mut hasher);
         }
 
         Ok(Graph {
             ops,
-            hash: self.hash.finish(),
+            hash: hasher.finish(),
             output,
         })
     }
@@ -124,4 +120,10 @@ impl Debug for Graph {
 
         Ok(())
     }
+}
+
+struct GraphOpData {
+    value: OpValue,
+    type_: OpType,
+    dependants: Vec<OpAddr>,
 }

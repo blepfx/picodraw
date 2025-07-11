@@ -1,13 +1,10 @@
-#[path = "./render.rs"]
-mod render;
+#[path = "./drawtest/runner.rs"]
+mod runner;
 
-use image::{DynamicImage, GenericImageView, Rgba, open};
-use picodraw::{
-    CommandBuffer, Context, Graph, ImageData, ImageFormat, RenderTexture, ShaderData, ShaderDataWriter, Texture,
-    TextureFilter, shader::*,
-};
-use render::MAX_CANVAS_SIZE;
-use std::{f32::consts::PI, sync::Arc};
+use image::{GenericImageView, Rgba, open};
+use picodraw::{shader::*, *};
+use runner::{MAX_CANVAS_SIZE, run};
+use std::f32::consts::PI;
 
 macro_rules! gen_simple {
     ($id:ident, $width:expr, $height:expr, $render:block) => {
@@ -1144,91 +1141,5 @@ pub mod complex {
 
             context.draw(&commands);
         });
-    }
-}
-
-#[allow(unused_variables, dead_code)]
-fn run(id: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
-    // 50th 95th 99th percentile
-    fn difference(a: &DynamicImage, b: &DynamicImage) -> (f64, f64, f64) {
-        let mut samples = vec![0u64; (a.width() * a.height()) as usize];
-
-        for i in 0..a.width() {
-            for j in 0..a.height() {
-                let Rgba([r0, g0, b0, a0]) = a.get_pixel(i, j);
-                let Rgba([r1, g1, b1, a1]) = b.get_pixel(i, j);
-
-                let mut sum = 0;
-                sum += (r0 as u64 * a0 as u64).abs_diff(r1 as u64 * a1 as u64) / (255 * 255);
-                sum += (g0 as u64 * a0 as u64).abs_diff(g1 as u64 * a1 as u64) / (255 * 255);
-                sum += (b0 as u64 * a0 as u64).abs_diff(b1 as u64 * a1 as u64) / (255 * 255);
-                sum += (a0 as u64).abs_diff(a1 as u64);
-                samples[(i + j * a.width()) as usize] = sum;
-            }
-        }
-
-        samples.sort();
-        let p50 = samples[(samples.len() as f64 * 0.50).floor() as usize];
-        let p95 = samples[(samples.len() as f64 * 0.95).floor() as usize];
-        let p99 = samples[(samples.len() as f64 * 0.99).floor() as usize];
-
-        (p50 as f64, p95 as f64, p99 as f64)
-    }
-
-    let renderer = Arc::new(render);
-    let expected = open(format!("./tests/drawtest/expected/{}.webp", id)).ok();
-    let results: Vec<(&'static str, DynamicImage)> = vec![
-        #[cfg(feature = "software")]
-        ("software", render::software::render(width, height, renderer.clone())),
-        #[cfg(feature = "opengl")]
-        ("opengl", render::opengl::render(width, height, renderer.clone())),
-    ];
-
-    let mut failures = vec![];
-    for (backend, result) in results {
-        let failure = match &expected {
-            Some(expected) => {
-                if expected.width() != result.width() || expected.height() != result.height() {
-                    Some(format!(
-                        "expected image size {}x{} but got {}x{}",
-                        expected.width(),
-                        expected.height(),
-                        result.width(),
-                        result.height()
-                    ))
-                } else {
-                    let (p50, p95, p99) = difference(&result, &expected);
-                    if p99 > 3.0 {
-                        Some(format!("diff: {} [p50], {} [p95], {} [p99]", p50, p95, p99))
-                    } else {
-                        None
-                    }
-                }
-            }
-            None => Some("no expected image".to_string()),
-        };
-
-        std::fs::create_dir_all(format!("./tests/drawtest/failures/{}/", backend)).ok();
-        std::fs::create_dir_all(format!("./tests/drawtest/successes/{}/", backend)).ok();
-
-        if let Some(failure) = failure {
-            failures.push((backend, failure));
-            result
-                .save(format!("./tests/drawtest/failures/{}/{}.webp", backend, id))
-                .unwrap();
-            std::fs::remove_file(format!("./tests/drawtest/successes/{}/{}.webp", backend, id)).ok();
-        } else {
-            result
-                .save(format!("./tests/drawtest/successes/{}/{}.webp", backend, id))
-                .unwrap();
-            std::fs::remove_file(format!("./tests/drawtest/failures/{}/{}.webp", backend, id)).ok();
-        }
-    }
-
-    if let Some((backend, message)) = failures.first() {
-        panic!(
-            "Test {} failed on {} ({}). See ./tests/drawtest/failures/{}/{}.webp for the result.",
-            id, backend, message, backend, id
-        )
     }
 }

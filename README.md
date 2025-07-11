@@ -10,8 +10,8 @@ a smol 2d graphics abstraction library
 
 ## Backends
 Currently `picodraw` supports the following backends:
-- `opengl` - OpenGL 3.1+ GPU backend, suitable for rerendering every frame
-- `software` - Multithreaded software rasterizer backend, slower than `opengl` but more portable 
+- `opengl` - OpenGL 3.1+ GPU backend, suitable for rerendering every frame. Can draw most scenes in 1 drawcall
+- `software` - Multithreaded software rasterizer backend, slower than `opengl` but more portable
 
 ## Example
 ```rust,no_run

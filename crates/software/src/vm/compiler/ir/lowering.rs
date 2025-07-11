@@ -1,4 +1,4 @@
-use super::{IRProgram, VMProgram};
+use super::{IRProgram, IRVisit, VMProgram};
 use bumpalo::{Bump, collections::Vec};
 use std::collections::HashMap;
 
@@ -8,18 +8,17 @@ pub fn lower_to_opcodes<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> VMProgr
     let mut ops = Vec::new_in(arena);
     let mut edges = HashMap::new();
 
-    program.visit_ops(
-        arena,
-        (),
-        |_, ir, _| {
+    program.visit_dfs(arena, |visit| match visit {
+        IRVisit::Enter(ir, _) => {
             let edges = edges.entry(ir).or_insert(0);
             *edges += 1;
             *edges == 1
-        },
-        |_, ir, _| {
+        }
+        IRVisit::Exit(ir, _) => {
             ops.push(ir);
-        },
-    );
+            true
+        }
+    });
 
     // allocate registers for each op
     let mut registers = HashMap::new();

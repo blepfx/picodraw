@@ -37,8 +37,8 @@ macro_rules! impl_dispatcher {
 impl_dispatcher! {
     is_x86_feature_detected;
     Avx512, "avx512f", "avx512bw", "avx512cd", "avx512dq", "avx512vl";
-    Avx2, "avx2", "fma";
-    Avx, "avx";
+    Avx2, "sse4.1", "sse4.2", "avx2", "fma";
+    Avx, "sse4.1", "sse4.2", "avx";
     Sse42, "sse4.1", "sse4.2";
 }
 

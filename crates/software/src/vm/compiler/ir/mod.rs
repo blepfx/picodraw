@@ -21,41 +21,35 @@ pub struct VMProgram<'a> {
     pub registers: u8,
 }
 
+pub enum IRVisit<'a> {
+    Enter(IR<'a>, Option<IR<'a>>),
+    Exit(IR<'a>, Option<IR<'a>>),
+}
+
 #[derive(Debug)]
 pub struct IRProgram<'a> {
     pub outputs: &'a [IR<'a>],
 }
 
 impl<'a> IRProgram<'a> {
-    pub fn visit_ops<T>(
-        &self,
-        arena: &'a Bump,
-        mut state: T,
-        mut enter: impl FnMut(&mut T, IR<'a>, Option<IR<'a>>) -> bool,
-        mut exit: impl FnMut(&mut T, IR<'a>, Option<IR<'a>>),
-    ) {
-        enum Visit<'a> {
-            Enter(IR<'a>, Option<IR<'a>>),
-            Exit(IR<'a>, Option<IR<'a>>),
-        }
-
+    pub fn visit_dfs(&self, arena: &'a Bump, mut visit: impl FnMut(IRVisit<'a>) -> bool) {
         let mut stack = Vec::new_in(arena);
 
         for ir in self.outputs {
-            stack.push(Visit::Enter(*ir, None));
+            stack.push(IRVisit::Enter(*ir, None));
         }
 
         loop {
             match stack.pop() {
-                Some(Visit::Enter(ir, from)) => {
-                    if enter(&mut state, ir, from) {
-                        stack.push(Visit::Exit(ir, from));
-                        ir.visit_children(|x| stack.push(Visit::Enter(x, Some(ir))));
+                Some(IRVisit::Enter(ir, from)) => {
+                    if visit(IRVisit::Enter(ir, from)) {
+                        stack.push(IRVisit::Exit(ir, from));
+                        ir.visit_children(|x| stack.push(IRVisit::Enter(x, Some(ir))));
                     }
                 }
 
-                Some(Visit::Exit(ir, from)) => {
-                    exit(&mut state, ir, from);
+                Some(IRVisit::Exit(ir, from)) => {
+                    visit(IRVisit::Exit(ir, from));
                 }
 
                 None => break,

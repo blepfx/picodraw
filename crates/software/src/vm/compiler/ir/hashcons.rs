@@ -1,4 +1,4 @@
-use super::{IR, IRProgram, VMOp};
+use super::{IR, IRProgram, IRVisit, VMOp};
 use bumpalo::Bump;
 use std::{collections::HashMap, hash::Hash, mem::discriminant};
 
@@ -8,16 +8,15 @@ pub fn optimize_hashcons<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> IRProg
     let mut forward = HashMap::new();
     let mut reverse = HashMap::new();
 
-    program.visit_ops(
-        arena,
-        (&mut forward, &mut reverse),
-        |(_, reverse), ir, _| !reverse.contains_key(&ir),
-        |(forward, reverse), ir, _| {
+    program.visit_dfs(arena, |visit| match visit {
+        IRVisit::Enter(ir, _) => !reverse.contains_key(&ir),
+        IRVisit::Exit(ir, _) => {
             let key = IRKey(ir.0.map_inputs(|input| reverse[&input]));
             let normalized = *forward.entry(key).or_insert(ir.map_children(arena, |ir| reverse[&ir]));
             reverse.insert(ir, normalized);
-        },
-    );
+            true
+        }
+    });
 
     IRProgram {
         outputs: arena.alloc_slice_fill_iter(program.outputs.iter().map(|ir| reverse[ir])),

@@ -9,9 +9,10 @@ members = [
 
 [workspace.dependencies]
 # tests & benchmarks
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.6", features = ["html_reports"] }
 pugl-rs = { git = "https://github.com/blepfx/pugl-rs", features = ["opengl"] }
 image = { version = "0.25.5", default-features = false, features = ["webp"] }
+yansi = "1.0"
 
 # feature(software)
 bumpalo = { version = "3.17", features = ["boxed", "collections"] }
@@ -36,6 +37,10 @@ version = "1.0.0"
 edition = "2024"
 description = "A smol gpu graphics library"
 license = "MIT OR Apache-2.0"
+exclude = [
+    "tests/drawtest", 
+    "tests/drawtest.rs"
+]
 
 [dependencies]
 picodraw-core = { path = "crates/core", default-features = false }
@@ -47,6 +52,7 @@ picodraw-software = { path = "crates/software", optional = true }
 criterion = { workspace = true }
 pugl-rs = { workspace = true }
 image = { workspace = true }
+yansi = { workspace = true }
 
 [features]
 default = ["derive"]

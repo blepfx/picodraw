@@ -1,18 +1,17 @@
-use super::{IR, IRProgram, VMOp};
+use super::{IR, IRProgram, IRVisit, VMOp};
 use bumpalo::Bump;
 use std::collections::HashMap;
 
 /// do peephole optimizations and constant folding on the IR graph
 pub fn optimize_peephole<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> IRProgram<'a> {
     let mut mapping = HashMap::new();
-    program.visit_ops(
-        arena,
-        &mut mapping,
-        |mapping, ir, _| !mapping.contains_key(&ir),
-        |mapping, ir, _| {
+    program.visit_dfs(arena, |visit| match visit {
+        IRVisit::Enter(ir, _) => !mapping.contains_key(&ir),
+        IRVisit::Exit(ir, _) => {
             mapping.insert(ir, single_peephole(arena, ir.map_children(arena, |ir| mapping[&ir])));
-        },
-    );
+            true
+        }
+    });
 
     IRProgram {
         outputs: arena.alloc_slice_fill_iter(program.outputs.iter().map(|ir| mapping[ir])),
@@ -55,7 +54,7 @@ fn single_peephole<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
         },
 
         SubI(a, b, _) => match (a.0, b.0) {
-            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_sub(-y), ())),
+            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_sub(*y), ())),
             (LitI(0, _), _) => IR::new(arena, NegI(b, ())),
             (_, LitI(0, _)) => a,
             (LitI(x, _), b) => IR::new(arena, SubCI(*x, IR(b), ())),
