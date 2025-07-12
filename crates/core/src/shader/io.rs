@@ -13,14 +13,14 @@ pub fn read<T: ShaderData>() -> T::Data {
 ///
 /// Should be called inside of [`Graph::collect`]
 pub fn position() -> float2 {
-    types::float2(Graph::push_collect(OpValue::Position))
+    types::float2(Graph::push_scope(OpValue::Position).unwrap())
 }
 
 /// Get the current frame resolution in physical pixels.
 ///
 /// Should be called inside of [`Graph::collect`]
 pub fn resolution() -> float2 {
-    types::float2(Graph::push_collect(OpValue::Resolution))
+    types::float2(Graph::push_scope(OpValue::Resolution).unwrap())
 }
 
 /// Get the current quad bounds in physical pixels.
@@ -28,8 +28,8 @@ pub fn resolution() -> float2 {
 ///
 /// Should be called inside of [`Graph::collect`]
 pub fn bounds() -> (float2, float2) {
-    let start = types::float2(Graph::push_collect(OpValue::QuadStart));
-    let end = types::float2(Graph::push_collect(OpValue::QuadEnd));
+    let start = types::float2(Graph::push_scope(OpValue::QuadStart).unwrap());
+    let end = types::float2(Graph::push_scope(OpValue::QuadEnd).unwrap());
 
     (start, end)
 }
@@ -78,7 +78,7 @@ impl ShaderData for i8 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_collect(OpValue::Input(OpInput::I8)))
+        types::int1(Graph::push_scope(OpValue::Input(OpInput::I8)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -90,7 +90,7 @@ impl ShaderData for i16 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_collect(OpValue::Input(OpInput::I16)))
+        types::int1(Graph::push_scope(OpValue::Input(OpInput::I16)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -102,7 +102,7 @@ impl ShaderData for i32 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_collect(OpValue::Input(OpInput::I32)))
+        types::int1(Graph::push_scope(OpValue::Input(OpInput::I32)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -114,7 +114,7 @@ impl ShaderData for u8 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_collect(OpValue::Input(OpInput::U8)))
+        types::int1(Graph::push_scope(OpValue::Input(OpInput::U8)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -126,7 +126,7 @@ impl ShaderData for u16 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_collect(OpValue::Input(OpInput::U16)))
+        types::int1(Graph::push_scope(OpValue::Input(OpInput::U16)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -138,7 +138,7 @@ impl ShaderData for u32 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_collect(OpValue::Input(OpInput::I32)))
+        types::int1(Graph::push_scope(OpValue::Input(OpInput::I32)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -150,7 +150,7 @@ impl ShaderData for f32 {
     type Data = float1;
 
     fn read() -> Self::Data {
-        types::float1(Graph::push_collect(OpValue::Input(OpInput::F32)))
+        types::float1(Graph::push_scope(OpValue::Input(OpInput::F32)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -162,7 +162,7 @@ impl ShaderData for f64 {
     type Data = float1;
 
     fn read() -> Self::Data {
-        types::float1(Graph::push_collect(OpValue::Input(OpInput::F32)))
+        types::float1(Graph::push_scope(OpValue::Input(OpInput::F32)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -174,7 +174,7 @@ impl ShaderData for RenderTexture {
     type Data = texture;
 
     fn read() -> Self::Data {
-        types::texture(Graph::push_collect(OpValue::Input(OpInput::TextureRender)))
+        types::texture(Graph::push_scope(OpValue::Input(OpInput::TextureRender)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {
@@ -186,7 +186,7 @@ impl ShaderData for Texture {
     type Data = texture;
 
     fn read() -> Self::Data {
-        types::texture(Graph::push_collect(OpValue::Input(OpInput::TextureStatic)))
+        types::texture(Graph::push_scope(OpValue::Input(OpInput::TextureStatic)).unwrap())
     }
 
     fn write(&self, writer: &mut dyn ShaderDataWriter) {

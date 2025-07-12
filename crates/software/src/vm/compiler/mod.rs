@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let graph = Graph::collect(|| {
+        let graph = Graph::scope(|| {
             let z = io::read::<f32>();
 
             let y = io::resolution().x() * z;

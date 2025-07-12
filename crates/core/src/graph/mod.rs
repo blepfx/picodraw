@@ -1,7 +1,7 @@
-mod collect;
 mod op;
+mod scope;
 
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 pub use op::*;
@@ -18,12 +18,13 @@ pub struct Graph {
 
 #[derive(Clone)]
 pub struct GraphBuilder {
-    ops: Vec<OpValue>,
+    ops: Vec<GraphOpData>,
 }
 
 #[derive(Debug)]
 pub enum GraphError {
-    TypeCheck { op: OpAddr, value: OpValue },
+    InvalidReference { index: usize },
+    InvalidType,
 }
 
 impl Graph {
@@ -65,44 +66,54 @@ impl GraphBuilder {
         Self { ops: vec![] }
     }
 
-    pub fn push(&mut self, op: OpValue) -> OpAddr {
-        self.ops.push(op);
-        OpAddr::from_raw(self.ops.len() - 1)
+    pub fn push(&mut self, op: OpValue) -> Result<OpAddr, GraphError> {
+        let output_addr = OpAddr::from_raw(self.ops.len());
+        let output_type = op.infer_type(|input_addr| self.ops.get(input_addr.into_raw()).map(|op| op.type_));
+        let output_type = match output_type {
+            Some(ty) => ty,
+            None => {
+                for (index, dep) in op.iter_dependencies().enumerate() {
+                    if self.ops.get(dep.into_raw()).is_none() {
+                        return Err(GraphError::InvalidReference { index });
+                    }
+                }
+
+                return Err(GraphError::InvalidType);
+            }
+        };
+
+        for dep in op.iter_dependencies() {
+            self.ops[dep.into_raw()].dependants.push(output_addr);
+        }
+
+        self.ops.push(GraphOpData {
+            value: op,
+            type_: output_type,
+            dependants: Vec::new(),
+        });
+
+        Ok(output_addr)
     }
 
     pub fn finish(self, output: OpAddr) -> Result<Graph, GraphError> {
-        let mut ops: Vec<GraphOpData> = Vec::new();
-        let mut hasher = DefaultHasher::new();
-
-        for (op, value) in self.ops.iter().enumerate() {
-            let op = OpAddr::from_raw(op);
-
-            let type_ = match value.type_check(|addr| Some(ops[addr.into_raw()].type_)) {
-                Some(type_) => type_,
-                None => {
-                    return Err(GraphError::TypeCheck {
-                        op,
-                        value: value.clone(),
-                    });
-                }
-            };
-
-            for dep in value.iter_dependencies() {
-                ops[dep.into_raw()].dependants.push(op);
-            }
-
-            ops.push(GraphOpData {
-                value: value.clone(),
-                type_,
-                dependants: Vec::new(),
-            });
-
-            value.hash(&mut hasher);
+        match self.ops.get(output.into_raw()) {
+            Some(op) if op.type_ != OpType::F4 => return Err(GraphError::InvalidType),
+            None => return Err(GraphError::InvalidReference { index: 0 }),
+            _ => {}
         }
 
+        let hash = self
+            .ops
+            .iter()
+            .fold(DefaultHasher::new(), |mut hasher, op| {
+                op.value.hash(&mut hasher);
+                hasher
+            })
+            .finish();
+
         Ok(Graph {
-            ops,
-            hash: hasher.finish(),
+            ops: self.ops,
+            hash,
             output,
         })
     }
@@ -122,6 +133,20 @@ impl Debug for Graph {
     }
 }
 
+impl Display for GraphError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GraphError::InvalidReference { index } => {
+                write!(f, "argument #{index} refers to an invalid operation")
+            }
+            GraphError::InvalidType => {
+                write!(f, "failed to infer the type of the operation")
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 struct GraphOpData {
     value: OpValue,
     type_: OpType,

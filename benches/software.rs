@@ -21,7 +21,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         b.iter(|| {
             let mut cx = backend.open(BufferMut::default());
-            let shader = cx.create_shader(Graph::collect(shader_circles));
+            let shader = cx.create_shader(Graph::scope(shader_circles));
             black_box(shader);
             cx.delete_shader(shader);
         });
@@ -32,7 +32,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut backend = SoftwareBackend::new();
         let shader = backend
             .open(BufferMut::default())
-            .create_shader(Graph::collect(shader_circles));
+            .create_shader(Graph::scope(shader_circles));
 
         b.iter(|| {
             let mut cx = backend.open(BufferMut::from_slice(&mut buffer, 512, 512));

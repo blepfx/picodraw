@@ -189,7 +189,7 @@ impl OpInput {
 }
 
 impl OpValue {
-    pub fn type_check(&self, arg: impl Fn(OpAddr) -> Option<OpType>) -> Option<OpType> {
+    pub fn infer_type(&self, arg: impl Fn(OpAddr) -> Option<OpType>) -> Option<OpType> {
         use OpType::*;
         use OpValue::*;
 

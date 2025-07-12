@@ -24,7 +24,7 @@ fn shader_red_circle(pos: float2, x: float1, y: float1, radius: float1) -> float
 }
 
 let context: &dyn Context = todo!() /* create context */;
-let shader = context.create_shader(Graph::collect(|| 
+let shader = context.create_shader(Graph::scope(|| 
     shader_red_circle(
         io::position(), 
         io::read::<f32>(),
