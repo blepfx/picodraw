@@ -10,6 +10,7 @@ pub use op::*;
 ///
 /// Defines a computation graph for pixel color computation based on pixel position, arbitrary dynamic data and other information.
 /// The graph is represented by a list of operations ([`OpValue`]) that each define a value computed based on other operations ([`OpAddr`]).
+
 pub struct Graph {
     ops: Vec<GraphOpData>,
     output: OpAddr,
@@ -130,6 +131,28 @@ impl Debug for Graph {
         writeln!(f, "}}")?;
 
         Ok(())
+    }
+}
+
+impl Hash for Graph {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+impl PartialEq for Graph {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() || self.output() != other.output() {
+            return false;
+        }
+
+        for (l, r) in self.ops.iter().zip(other.ops.iter()) {
+            if l.value != r.value {
+                return false;
+            }
+        }
+
+        true
     }
 }
 

@@ -8,11 +8,11 @@ mod hashcons;
 mod lowering;
 mod peephole;
 
-pub use dynasplit::split_static_dynamic;
+pub use dynasplit::*;
 pub use graph2ir::IRBuilder;
-pub use hashcons::optimize_hashcons;
-pub use lowering::lower_to_opcodes;
-pub use peephole::optimize_peephole;
+pub use hashcons::*;
+pub use lowering::*;
+pub use peephole::*;
 
 #[derive(Debug)]
 pub struct VMProgram<'a> {

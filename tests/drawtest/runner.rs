@@ -3,6 +3,7 @@ use picodraw::Context;
 use std::{
     fs::{create_dir_all, remove_file},
     sync::Arc,
+    time::{Duration, Instant},
 };
 use yansi::Paint;
 
@@ -16,16 +17,20 @@ const MAX_P99_ERROR: u64 = 20;
 pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
     let renderer = Arc::new(render);
     let expected = open(format!("./tests/drawtest/expected/{}.webp", test)).ok();
-    let results: Vec<(&'static str, DynamicImage)> = vec![
+    let results: Vec<(&'static str, fn(u32, u32, RenderJob) -> DynamicImage)> = vec![
         #[cfg(feature = "software")]
-        ("software", software::render(width, height, renderer.clone())),
+        ("software", software::render),
         #[cfg(feature = "opengl")]
-        ("opengl", opengl::render(width, height, renderer.clone())),
+        ("opengl", opengl::render),
     ];
 
     let outcomes = results
         .into_iter()
-        .map(|(backend, rendered)| {
+        .map(|(backend, render)| {
+            let start = Instant::now();
+            let rendered = render(width, height, renderer.clone());
+            let time = start.elapsed();
+
             let expected = match expected.as_ref() {
                 Some(x) => x,
                 None => {
@@ -65,6 +70,7 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
             Outcome::Passed {
                 test,
                 backend,
+                time,
                 image: rendered,
             }
         })
@@ -75,8 +81,23 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
 
     for outcome in outcomes {
         match outcome {
-            Outcome::Passed { test, backend, image } => {
+            Outcome::Passed {
+                test,
+                time,
+                backend,
+                image,
+            } => {
                 write_image(test, backend, SaveImage::Success(&image));
+
+                messages.push(format!(
+                    "{}{} {} {} - {} {}",
+                    "✅ ".mask(),
+                    "[PASSED]".green().bold(),
+                    backend.cyan(),
+                    test,
+                    "finished in".dim(),
+                    format!("{:?}", time).cyan().bold()
+                ));
             }
             Outcome::NotFound { test, backend, image } => {
                 write_image(test, backend, SaveImage::Failure(&image));
@@ -193,15 +214,20 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
     }
 
     if failure {
-        panic!("{}\n", messages.join("\n"))
+        panic!("\n{}", messages.join("\n"))
+    } else {
+        println!("\n{}", messages.join("\n"));
     }
 }
+
+type RenderJob = Arc<dyn Fn(&mut dyn Context) + Send + Sync>;
 
 enum Outcome<'a> {
     Passed {
         test: &'a str,
         backend: &'a str,
 
+        time: Duration,
         image: DynamicImage,
     },
 
@@ -311,7 +337,7 @@ fn blend_difference(a: &DynamicImage, b: &DynamicImage) -> DynamicImage {
 
 #[cfg(feature = "opengl")]
 pub mod opengl {
-    use super::MAX_CANVAS_SIZE;
+    use super::{MAX_CANVAS_SIZE, RenderJob};
     use image::{DynamicImage, Rgba, RgbaImage};
     use picodraw::{CommandBuffer, Context, opengl::OpenGlBackend};
     use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
@@ -426,7 +452,7 @@ pub mod opengl {
         }
     }
 
-    pub fn render(width: u32, height: u32, render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>) -> DynamicImage {
+    pub fn render(width: u32, height: u32, render: RenderJob) -> DynamicImage {
         let job = Arc::new(Job {
             width,
             height,
@@ -463,14 +489,11 @@ pub mod opengl {
 
 #[cfg(feature = "software")]
 pub mod software {
+    use super::RenderJob;
     use image::{DynamicImage, Rgba, RgbaImage};
-    use picodraw::{
-        Context,
-        software::{BufferMut, SoftwareBackend},
-    };
-    use std::sync::Arc;
+    use picodraw::software::{BufferMut, SoftwareBackend};
 
-    pub fn render(width: u32, height: u32, render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>) -> DynamicImage {
+    pub fn render(width: u32, height: u32, render: RenderJob) -> DynamicImage {
         let mut backend = SoftwareBackend::new();
         let mut buffer = vec![0u32; (width * height) as usize];
         let mut context = backend.open(BufferMut::from_slice(&mut buffer, width as usize, height as usize));

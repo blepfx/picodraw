@@ -3,12 +3,16 @@ use bumpalo::Bump;
 use std::collections::HashMap;
 
 /// do peephole optimizations and constant folding on the IR graph
-pub fn optimize_peephole<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> IRProgram<'a> {
+pub fn optimize_peephole<'a>(
+    program: &IRProgram<'a>,
+    arena: &'a Bump,
+    peeper: impl Fn(&'a Bump, IR<'a>) -> IR<'a>,
+) -> IRProgram<'a> {
     let mut mapping = HashMap::new();
     program.visit_dfs(arena, |visit| match visit {
         IRVisit::Enter(ir, _) => !mapping.contains_key(&ir),
         IRVisit::Exit(ir, _) => {
-            mapping.insert(ir, single_peephole(arena, ir.map_children(arena, |ir| mapping[&ir])));
+            mapping.insert(ir, peeper(arena, ir.map_children(arena, |ir| mapping[&ir])));
             true
         }
     });
@@ -19,7 +23,7 @@ pub fn optimize_peephole<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> IRProg
 }
 
 // whos peeping they hole rn
-fn single_peephole<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
+pub fn peeper_generic<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
     use VMOp::*;
     match *ir.0 {
         AddF(a, b, _) => match (a.0, b.0) {

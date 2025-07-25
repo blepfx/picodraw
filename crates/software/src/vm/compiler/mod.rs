@@ -36,7 +36,7 @@ impl CompiledShader {
         });
 
         let program = builder.extract_program(graph.output(), 4);
-        let program = ir::optimize_peephole(&program, arena);
+        let program = ir::optimize_peephole(&program, arena, ir::peeper_generic);
         let program = ir::optimize_hashcons(&program, arena);
 
         let (program_static, program_dynamic) = ir::split_static_dynamic(&program, arena);

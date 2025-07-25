@@ -198,12 +198,6 @@ impl<I, O> VMOp<I, O> {
     pub fn map_outputs<O0>(self, out: impl FnOnce(O) -> O0) -> VMOp<I, O0> {
         self.map_inner(|i| i, out)
     }
-
-    pub fn output(self) -> O {
-        let mut output = None;
-        self.map_inner(|_| (), |o| output = Some(o));
-        output.unwrap()
-    }
 }
 
 pub type VMReg = u8;
