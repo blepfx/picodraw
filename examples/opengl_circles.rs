@@ -1,5 +1,5 @@
 use picodraw::{
-    CommandBuffer, Context, Graph, Shader, ShaderData,
+    Command, Context, Graph, Shader,
     opengl::{Native, OpenGlBackend},
     shader::{float1, float2, float4, io},
 };
@@ -15,24 +15,19 @@ struct Data {
     avg_time_ms: f32,
 }
 
-#[derive(ShaderData)]
-struct ShaderDataCircle {
-    x: f32,
-    y: f32,
-    radius: f32,
-    alpha: f32,
-    test: f32,
-}
-
 fn shader_circle() -> float4 {
     fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
         ((center - pos).len() - radius).smoothstep(0.707, -0.707)
     }
 
-    let circle = ShaderDataCircle::read();
-    let mask = sdf_circle(io::position(), float2((circle.x, circle.y)), circle.radius);
+    let x = io::read::<f32>();
+    let y = io::read::<f32>();
+    let radius = io::read::<f32>();
+    let alpha = io::read::<f32>();
 
-    float4((1.0, 0.5, 1.0, mask * circle.alpha))
+    let mask = sdf_circle(io::position(), float2((x, y)), radius);
+
+    float4((1.0, 0.5, 1.0, mask * alpha))
 }
 
 fn main() {
@@ -73,9 +68,9 @@ fn main() {
                     }
                 });
 
-                let mut commands = CommandBuffer::default();
-                let mut frame = commands.begin_screen([data.width, data.height]);
-                frame.clear([0, 0, data.width, data.height]);
+                let mut commands = vec![Command::ClearQuad {
+                    bounds: [0, 0, data.width, data.height].into(),
+                }];
 
                 let n = (data.scroll * 0.2).sin() * 14.0 + 20.0;
                 let alpha = 1.0 / n as f32;
@@ -84,22 +79,26 @@ fn main() {
                     let angle = (i as f32 / (n - 1.0) + data.scroll * 0.05) * std::f32::consts::PI * 2.0;
                     let x = data.width as f32 * 0.5 + angle.cos() * 200.0;
                     let y = data.height as f32 * 0.5 + angle.sin() * 200.0;
+                    let alpha = if i + 1 == (n as i32) { alpha * n.fract() } else { alpha };
 
-                    frame
-                        .begin_quad(data.shader, [0, 0, data.width, data.height])
-                        .write_data(ShaderDataCircle {
-                            x,
-                            y,
-                            radius: 200.0,
-                            alpha: if i + 1 == (n as i32) { alpha * n.fract() } else { alpha },
-                            test: 0.0,
-                        });
+                    commands.extend([
+                        Command::BeginQuad {
+                            shader: data.shader,
+                            bounds: [0, 0, data.width, data.height].into(),
+                        },
+                        Command::WriteFloat(x),
+                        Command::WriteFloat(y),
+                        Command::WriteFloat(200.0),
+                        Command::WriteFloat(alpha),
+                        Command::EndQuad,
+                    ]);
                 }
 
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 unsafe {
                     let mut gl = data.gl.open();
-                    gl.draw(&commands);
+                    gl.set_viewport([data.width, data.height]);
+                    gl.draw_screen(&commands);
 
                     let stats = gl.stats();
                     let gpu_time_ms = stats.gpu_time.unwrap_or_default().as_secs_f32() * 1000.0;

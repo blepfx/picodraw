@@ -1,4 +1,4 @@
-use crate::{Bounds, Graph, ImageData, ShaderData, Size};
+use crate::{Bounds, Graph, ImageData, Size};
 
 /// The heart of `picodraw`.
 ///
@@ -7,7 +7,7 @@ pub trait Context {
     /// Create a dynamic render texture and returns its ID. See [`RenderTexture`] for more info.
     ///
     /// If you want to delete the render texture, you should call [`Context::delete_texture_render`] with the returned ID.
-    fn create_texture_render(&mut self) -> RenderTexture;
+    fn create_texture_render(&mut self, size: Size) -> RenderTexture;
 
     /// Delete a dynamic render texture by its ID.
     fn delete_texture_render(&mut self, id: RenderTexture) -> bool;
@@ -29,39 +29,17 @@ pub trait Context {
     fn delete_shader(&mut self, id: Shader) -> bool;
 
     /// Execute a list of draw commands on the backend
-    fn draw(&mut self, buffer: &CommandBuffer);
-}
+    fn draw_screen(&mut self, commands: &[Command]);
 
-pub trait ShaderDataWriter {
-    fn write_i32(&mut self, x: i32);
-    fn write_f32(&mut self, x: f32);
-    fn write_texture_static(&mut self, texture: Texture);
-    fn write_texture_render(&mut self, texture: RenderTexture);
-
-    fn resolution(&self) -> Size;
-    fn quad_bounds(&self) -> Bounds;
-}
-
-impl dyn ShaderDataWriter + '_ {
-    pub fn write<T: ShaderData>(&mut self, data: &T) {
-        T::write(data, self);
-    }
+    /// Execute a list of draw commands on the backend
+    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]);
 }
 
 /// A single draw command.
 #[derive(Clone, Copy, Debug)]
 pub enum Command {
-    SetRenderTarget {
-        texture: Option<RenderTexture>,
-        size: Size,
-    },
-    ClearBuffer {
-        bounds: Bounds,
-    },
-    BeginQuad {
-        shader: Shader,
-        bounds: Bounds,
-    },
+    ClearQuad { bounds: Bounds },
+    BeginQuad { shader: Shader, bounds: Bounds },
     EndQuad,
 
     WriteFloat(f32),
@@ -89,160 +67,3 @@ pub struct Texture(pub u64);
 /// A render texture is an off-screen buffer you can render to and use it as a texture later.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct RenderTexture(pub u64);
-
-/// Draw command buffer.
-///
-/// Used to store a list of draw commands to be executed on the backend.
-/// The commands are executed in order they are added to the buffer.
-#[derive(Clone, Debug, Default)]
-pub struct CommandBuffer {
-    commands: Vec<Command>,
-}
-
-/// A frame writer for draw command buffer.
-///
-/// Used to write frame information, like a list of quads to draw or when to clear the frame.
-pub struct CommandBufferFrame<'a> {
-    owner: &'a mut CommandBuffer,
-    frame: Size,
-}
-
-/// A quad writer for draw command buffer.
-///
-/// Used to write quad information, like what data to pass to the shader.
-/// Implements [`ShaderDataWriter`]
-pub struct CommandBufferQuad<'a> {
-    owner: &'a mut CommandBuffer,
-    frame: Size,
-    quad: Bounds,
-}
-
-impl CommandBuffer {
-    /// Create a new empty command buffer
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Clear the command buffer and reset it to it's initial state
-    pub fn reset_commands(&mut self) {
-        self.commands.clear();
-    }
-
-    /// List the commands currently stored in the buffer
-    pub fn list_commands(&self) -> &[Command] {
-        &self.commands
-    }
-
-    /// Append a command buffer to the current buffer
-    ///
-    /// Clears the other buffer
-    pub fn extend_commands(&mut self, other: &mut Self) {
-        self.commands.extend(other.commands.drain(..));
-    }
-
-    /// Record a command to begin rendering to a [`RenderTexture`]
-    ///
-    /// The buffer contents are preserved unless you call [`CommandBufferFrame::clear`] manually.
-    pub fn begin_buffer(
-        &mut self,
-        buffer: RenderTexture,
-        size: impl Into<Size>,
-    ) -> CommandBufferFrame<'_> {
-        let size = size.into();
-        self.commands.push(Command::SetRenderTarget {
-            texture: Some(buffer),
-            size,
-        });
-        CommandBufferFrame {
-            owner: self,
-            frame: size,
-        }
-    }
-
-    /// Record a command to begin rendering to the screen
-    pub fn begin_screen(&mut self, size: impl Into<Size>) -> CommandBufferFrame<'_> {
-        let size = size.into();
-        self.commands.push(Command::SetRenderTarget {
-            texture: None,
-            size,
-        });
-        CommandBufferFrame {
-            owner: self,
-            frame: size,
-        }
-    }
-}
-
-impl<'a> CommandBufferFrame<'a> {
-    /// Record a command to clear (reset every pixel of the region to `#00000000`) a region of the current draw target (screen OR render texture)
-    pub fn clear(&mut self, bounds: impl Into<Bounds>) -> &mut Self {
-        let bounds = bounds.into();
-        self.owner.commands.push(Command::ClearBuffer { bounds });
-        self
-    }
-
-    /// Record a command to begin rendering a quad
-    pub fn begin_quad(
-        &mut self,
-        shader: Shader,
-        bounds: impl Into<Bounds>,
-    ) -> CommandBufferQuad<'_> {
-        let bounds = bounds.into();
-        self.owner
-            .commands
-            .push(Command::BeginQuad { shader, bounds });
-        CommandBufferQuad {
-            owner: &mut self.owner,
-            frame: self.frame,
-            quad: bounds,
-        }
-    }
-}
-
-impl<'a> CommandBufferQuad<'a> {
-    /// Record the writes of the [`ShaderData`] to be associated to the current quad.
-    ///
-    /// The data can be retrieved in the shader graph context using [`shader::io::read`](crate::shader::io::read) or [`ShaderData::read`]
-    ///
-    /// The data should be read in the same order as it was written, failure to do so may result in backend implementation defined behavior (reading garbage data or panics, it shoult NOT cause _undefined behavior_)
-    pub fn write_data<T: ShaderData>(&mut self, data: T) -> &mut Self {
-        T::write(&data, self);
-        self
-    }
-}
-
-impl<'a> Drop for CommandBufferQuad<'a> {
-    fn drop(&mut self) {
-        self.owner.commands.push(Command::EndQuad);
-    }
-}
-
-impl<'a> ShaderDataWriter for CommandBufferQuad<'a> {
-    fn write_i32(&mut self, x: i32) {
-        self.owner.commands.push(Command::WriteInt(x));
-    }
-
-    fn write_f32(&mut self, x: f32) {
-        self.owner.commands.push(Command::WriteFloat(x));
-    }
-
-    fn write_texture_static(&mut self, texture: Texture) {
-        self.owner
-            .commands
-            .push(Command::WriteStaticTexture(texture));
-    }
-
-    fn write_texture_render(&mut self, texture: RenderTexture) {
-        self.owner
-            .commands
-            .push(Command::WriteRenderTexture(texture));
-    }
-
-    fn resolution(&self) -> Size {
-        self.frame
-    }
-
-    fn quad_bounds(&self) -> Bounds {
-        self.quad
-    }
-}

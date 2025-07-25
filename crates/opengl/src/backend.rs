@@ -48,6 +48,8 @@ pub struct OpenGlBackend<T: HasContext> {
 
     scratch: DispatcherScratch<T>,
     stats: OpenGlStats,
+
+    viewport_size: Size,
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +59,7 @@ pub enum OpenGlError {
 
 unsafe impl<T: HasContext> Send for OpenGlBackend<T> {}
 
-impl OpenGlBackend<glow::Context> {
+impl OpenGlBackend<Native> {
     /// Creates a new OpenGL backend from a given loader function
     /// (a function that takes a GL function name and returns a pointer to that function).
     ///
@@ -126,6 +128,8 @@ impl<T: HasContext> OpenGlBackend<T> {
             gl_profiler,
             gl_vertex,
             gl_buffer,
+
+            viewport_size: Size { width: 1, height: 1 },
         })
     }
 
@@ -197,68 +201,18 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
     pub fn stats(&self) -> OpenGlStats {
         self.0.stats.clone()
     }
-}
 
-impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
-    fn create_texture_render(&mut self) -> RenderTexture {
-        let id = self
-            .0
-            .framebuffers
-            .insert(Some(GlTextureRender::new(&self.0.gl_context, 1, 1)));
-
-        RenderTexture(id.data().as_ffi())
+    /// Set the target screen size in physical pixel.
+    pub fn set_viewport(&mut self, size: impl Into<Size>) {
+        self.0.viewport_size = size.into();
     }
 
-    fn create_texture_static(&mut self, data: ImageData) -> Texture {
-        let id = self.0.textures.insert(GlTextureStatic::new(&self.0.gl_context, data));
-
-        Texture(id.data().as_ffi())
-    }
-
-    fn create_shader(&mut self, graph: Graph) -> Shader {
-        if let Some(program) = self.0.program.take() {
-            program.program.delete(&self.0.gl_context);
-        }
-
-        let id = self.0.shaders.insert(graph);
-        Shader(id.data().as_ffi())
-    }
-
-    fn delete_texture_render(&mut self, id: RenderTexture) -> bool {
-        match self.0.framebuffers.remove(KeyData::from_ffi(id.0).into()) {
-            Some(fb) => {
-                if let Some(framebuffer) = fb {
-                    framebuffer.delete(&self.0.gl_context);
-                }
-
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn delete_texture_static(&mut self, id: Texture) -> bool {
-        match self.0.textures.remove(KeyData::from_ffi(id.0).into()) {
-            Some(texture) => {
-                texture.delete(&self.0.gl_context);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn delete_shader(&mut self, id: Shader) -> bool {
-        match self.0.shaders.remove(KeyData::from_ffi(id.0).into()) {
-            Some(_) => true,
-            _ => false,
-        }
-    }
-
-    fn draw(&mut self, buffer: &CommandBuffer) {
-        self.0.stats = OpenGlStats::default();
-
+    fn draw_to_target(&mut self, commands: &[Command], target: Option<&GlTextureRender<T>>) {
         let gl = &self.0.gl_context;
+
         let program = self.0.program.get_or_insert_with(|| {
+            let gl = &self.0.gl_context;
+
             let options = if self.0.gl_info.prefer_tbo_over_ubo() {
                 compiler::CompilerOptions {
                     glsl_version: self.0.gl_info.glsl_version(),
@@ -327,136 +281,155 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         self.0.gl_profiler.wrap(gl, || {
             enable_blend_normal(gl);
 
-            let mut commands = buffer.list_commands().iter().copied();
             let bind_program = program.program.bind(gl);
             let bind_vertex_array = self.0.gl_vertex.bind(gl);
 
-            let mut target = match commands.next() {
-                Some(Command::SetRenderTarget { texture, size }) => Some((texture, size)),
-                None => None,
-                _ => panic!("render target is not set"),
-            };
+            let mut dispatcher = Dispatcher::new(
+                &mut self.0.scratch,
+                &self.0.gl_context,
+                &bind_program,
+                &bind_vertex_array,
+                &self.0.gl_buffer,
+            );
 
-            loop {
-                let (target_buffer, target_size) = match target {
-                    Some((Some(texture), size)) => {
+            match target {
+                Some(texture) => dispatcher.set_target_texture(texture),
+                None => dispatcher.set_target_backbuffer(self.0.viewport_size),
+            }
+
+            for command in commands {
+                match *command {
+                    Command::ClearQuad { bounds } => {
+                        dispatcher.clear_rect(bounds);
+                    }
+
+                    Command::BeginQuad { shader, bounds } => {
+                        let layout = program
+                            .layouts
+                            .get(KeyData::from_ffi(shader.0).into())
+                            .expect("invalid shader id");
+
+                        dispatcher.quad_start(layout, bounds);
+                    }
+
+                    Command::EndQuad => {
+                        dispatcher.quad_end();
+                    }
+
+                    Command::WriteFloat(x) => {
+                        dispatcher.quad_data(x.to_bits());
+                    }
+
+                    Command::WriteInt(x) => {
+                        dispatcher.quad_data(x as u32);
+                    }
+
+                    Command::WriteStaticTexture(x) => {
+                        let texture = self
+                            .0
+                            .textures
+                            .get(KeyData::from_ffi(x.0).into())
+                            .expect("invalid static texture id");
+
+                        dispatcher.quad_texture(texture.texture());
+                    }
+
+                    Command::WriteRenderTexture(x) => {
                         let framebuffer = self
                             .0
                             .framebuffers
-                            .get_mut(KeyData::from_ffi(texture.0).into())
+                            .get(KeyData::from_ffi(x.0).into())
                             .expect("invalid render texture id")
-                            .take()
-                            .expect("render texture is in use");
+                            .as_ref()
+                            .expect("render texture is currently in use");
 
-                        let framebuffer = if framebuffer.size() != (size.width, size.height) {
-                            framebuffer.delete(gl);
-                            GlTextureRender::new(&self.0.gl_context, size.width as _, size.height as _)
-                        } else {
-                            framebuffer
-                        };
-
-                        (Some((texture, framebuffer)), size)
+                        dispatcher.quad_texture(framebuffer.texture());
                     }
-
-                    Some((None, size)) => (None, size),
-                    None => return,
-                };
-
-                let mut dispatcher = Dispatcher::new(
-                    &mut self.0.scratch,
-                    &self.0.gl_context,
-                    &bind_program,
-                    &bind_vertex_array,
-                    &self.0.gl_buffer,
-                );
-
-                match target_buffer.as_ref() {
-                    Some((_, framebuffer)) => {
-                        dispatcher.set_target_texture(framebuffer, target_size);
-                    }
-                    None => {
-                        dispatcher.set_target_backbuffer(target_size);
-                    }
-                }
-
-                loop {
-                    match commands.next() {
-                        Some(Command::SetRenderTarget { texture, size }) => {
-                            target = Some((texture, size));
-                            break;
-                        }
-
-                        Some(Command::ClearBuffer { bounds }) => {
-                            dispatcher.clear_rect(bounds);
-                        }
-
-                        Some(Command::BeginQuad { shader, bounds }) => {
-                            let layout = program
-                                .layouts
-                                .get(KeyData::from_ffi(shader.0).into())
-                                .expect("invalid shader id");
-
-                            dispatcher.quad_start(layout, bounds);
-                        }
-
-                        Some(Command::EndQuad) => {
-                            dispatcher.quad_end();
-                        }
-
-                        Some(Command::WriteFloat(x)) => {
-                            dispatcher.quad_data(x.to_bits());
-                        }
-
-                        Some(Command::WriteInt(x)) => {
-                            dispatcher.quad_data(x as u32);
-                        }
-
-                        Some(Command::WriteStaticTexture(x)) => {
-                            let texture = self
-                                .0
-                                .textures
-                                .get(KeyData::from_ffi(x.0).into())
-                                .expect("invalid static texture id");
-
-                            dispatcher.quad_texture(texture.texture());
-                        }
-
-                        Some(Command::WriteRenderTexture(x)) => {
-                            let framebuffer = self
-                                .0
-                                .framebuffers
-                                .get(KeyData::from_ffi(x.0).into())
-                                .expect("invalid render texture id")
-                                .as_ref()
-                                .expect("render texture is currently in use");
-
-                            dispatcher.quad_texture(framebuffer.texture());
-                        }
-
-                        None => {
-                            target = None;
-                            break;
-                        }
-                    }
-                }
-
-                dispatcher.flush();
-
-                self.0.stats.draw_calls += dispatcher.total_drawcalls_issued;
-                self.0.stats.bytes_sent += dispatcher.total_bytes_written;
-                self.0.stats.total_quads += dispatcher.total_quads_written;
-
-                if let Some((texture, framebuffer)) = target_buffer {
-                    self.0
-                        .framebuffers
-                        .get_mut(KeyData::from_ffi(texture.0).into())
-                        .expect("invalid render texture id")
-                        .replace(framebuffer);
                 }
             }
+
+            dispatcher.flush();
+
+            self.0.stats.draw_calls = dispatcher.total_drawcalls_issued;
+            self.0.stats.bytes_sent = dispatcher.total_bytes_written;
+            self.0.stats.total_quads = dispatcher.total_quads_written;
         });
 
         self.0.stats.gpu_time = self.0.gl_profiler.query().map(|x| Duration::from_nanos(x as u64));
+    }
+}
+
+impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
+    fn create_texture_render(&mut self, size: Size) -> RenderTexture {
+        let id = self
+            .0
+            .framebuffers
+            .insert(Some(GlTextureRender::new(&self.0.gl_context, size.width, size.height)));
+
+        RenderTexture(id.data().as_ffi())
+    }
+
+    fn create_texture_static(&mut self, data: ImageData) -> Texture {
+        let id = self.0.textures.insert(GlTextureStatic::new(&self.0.gl_context, data));
+
+        Texture(id.data().as_ffi())
+    }
+
+    fn create_shader(&mut self, graph: Graph) -> Shader {
+        if let Some(program) = self.0.program.take() {
+            program.program.delete(&self.0.gl_context);
+        }
+
+        let id = self.0.shaders.insert(graph);
+        Shader(id.data().as_ffi())
+    }
+
+    fn delete_texture_render(&mut self, id: RenderTexture) -> bool {
+        match self.0.framebuffers.remove(KeyData::from_ffi(id.0).into()) {
+            Some(fb) => {
+                if let Some(framebuffer) = fb {
+                    framebuffer.delete(&self.0.gl_context);
+                }
+
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn delete_texture_static(&mut self, id: Texture) -> bool {
+        match self.0.textures.remove(KeyData::from_ffi(id.0).into()) {
+            Some(texture) => {
+                texture.delete(&self.0.gl_context);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn delete_shader(&mut self, id: Shader) -> bool {
+        match self.0.shaders.remove(KeyData::from_ffi(id.0).into()) {
+            Some(_) => true,
+            _ => false,
+        }
+    }
+
+    fn draw_screen(&mut self, commands: &[Command]) {
+        self.draw_to_target(commands, None);
+    }
+
+    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) {
+        let mut buffer = self
+            .0
+            .framebuffers
+            .get_mut(KeyData::from_ffi(target.0).into())
+            .expect("unknown texture id")
+            .take()
+            .expect("render texture is currently in use");
+
+        self.draw_to_target(commands, Some(&mut buffer));
+
+        *self.0.framebuffers.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
     }
 }
 

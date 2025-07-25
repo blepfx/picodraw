@@ -50,7 +50,54 @@ pub trait ShaderData {
     /// Serialize the object to a given [`ShaderDataWriter`].
     ///
     /// The data should be read in the same order as it was written, failure to do so may result in backend implementation defined behavior (reading garbage data or panics, it shoult NOT cause _undefined behavior_)
-    fn write(&self, writer: &mut dyn ShaderDataWriter);
+    fn write(&self, writer: impl ShaderDataWriter);
+}
+
+pub trait ShaderDataWriter {
+    fn write_i32(&mut self, value: i32);
+    fn write_f32(&mut self, value: f32);
+    fn write_texture_static(&mut self, value: Texture);
+    fn write_texture_render(&mut self, value: RenderTexture);
+}
+
+impl<'a, T: ShaderDataWriter> ShaderDataWriter for &'a mut T {
+    #[inline]
+    fn write_i32(&mut self, value: i32) {
+        (*self).write_i32(value);
+    }
+
+    #[inline]
+    fn write_f32(&mut self, value: f32) {
+        (*self).write_f32(value);
+    }
+
+    #[inline]
+    fn write_texture_static(&mut self, value: Texture) {
+        (*self).write_texture_static(value);
+    }
+
+    #[inline]
+    fn write_texture_render(&mut self, value: RenderTexture) {
+        (*self).write_texture_render(value);
+    }
+}
+
+impl ShaderDataWriter for Vec<Command> {
+    fn write_i32(&mut self, value: i32) {
+        self.push(Command::WriteInt(value));
+    }
+
+    fn write_f32(&mut self, value: f32) {
+        self.push(Command::WriteFloat(value));
+    }
+
+    fn write_texture_static(&mut self, value: Texture) {
+        self.push(Command::WriteStaticTexture(value));
+    }
+
+    fn write_texture_render(&mut self, value: RenderTexture) {
+        self.push(Command::WriteRenderTexture(value));
+    }
 }
 
 impl ShaderData for () {
@@ -60,16 +107,18 @@ impl ShaderData for () {
         ()
     }
 
-    fn write(&self, _: &mut dyn ShaderDataWriter) {}
+    fn write(&self, _: impl ShaderDataWriter) {}
 }
 
 impl ShaderData for bool {
     type Data = boolean;
+
     fn read() -> Self::Data {
         u8::read().ne(0)
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_i32(*self as i32);
     }
 }
@@ -81,7 +130,8 @@ impl ShaderData for i8 {
         types::int1(Graph::push_scope(OpValue::Input(OpInput::I8)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_i32(*self as i32);
     }
 }
@@ -93,7 +143,8 @@ impl ShaderData for i16 {
         types::int1(Graph::push_scope(OpValue::Input(OpInput::I16)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_i32(*self as i32);
     }
 }
@@ -105,7 +156,8 @@ impl ShaderData for i32 {
         types::int1(Graph::push_scope(OpValue::Input(OpInput::I32)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_i32(*self as i32);
     }
 }
@@ -117,7 +169,8 @@ impl ShaderData for u8 {
         types::int1(Graph::push_scope(OpValue::Input(OpInput::U8)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_i32(*self as i32);
     }
 }
@@ -129,7 +182,8 @@ impl ShaderData for u16 {
         types::int1(Graph::push_scope(OpValue::Input(OpInput::U16)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_i32(*self as i32);
     }
 }
@@ -141,7 +195,8 @@ impl ShaderData for u32 {
         types::int1(Graph::push_scope(OpValue::Input(OpInput::I32)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_i32(*self as i32);
     }
 }
@@ -153,7 +208,8 @@ impl ShaderData for f32 {
         types::float1(Graph::push_scope(OpValue::Input(OpInput::F32)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_f32(*self);
     }
 }
@@ -165,7 +221,8 @@ impl ShaderData for f64 {
         types::float1(Graph::push_scope(OpValue::Input(OpInput::F32)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_f32(*self as f32);
     }
 }
@@ -177,7 +234,8 @@ impl ShaderData for RenderTexture {
         types::texture(Graph::push_scope(OpValue::Input(OpInput::TextureRender)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_texture_render(*self);
     }
 }
@@ -189,7 +247,8 @@ impl ShaderData for Texture {
         types::texture(Graph::push_scope(OpValue::Input(OpInput::TextureStatic)).unwrap())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         writer.write_texture_static(*self);
     }
 }
@@ -201,7 +260,8 @@ impl<'a, T: ShaderData> ShaderData for &'a T {
         T::read()
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, writer: impl ShaderDataWriter) {
         T::write(&self, writer);
     }
 }
@@ -213,9 +273,10 @@ impl<const N: usize, T: ShaderData> ShaderData for [T; N] {
         std::array::from_fn(|_| T::read())
     }
 
-    fn write(&self, writer: &mut dyn ShaderDataWriter) {
+    #[inline]
+    fn write(&self, mut writer: impl ShaderDataWriter) {
         for i in 0..N {
-            self[i].write(writer);
+            self[i].write(&mut writer);
         }
     }
 }
@@ -229,10 +290,11 @@ macro_rules! impl_tuple {
                 ($($id::read(),)*)
             }
 
-            fn write(&self, writer: &mut dyn ShaderDataWriter) {
+            #[inline]
+            fn write(&self, mut writer: impl ShaderDataWriter) {
                 #[allow(non_snake_case)]
                 let ($($id,)*) = self;
-                $($id.write(writer);)*
+                $($id.write(&mut writer);)*
             }
         }
     };

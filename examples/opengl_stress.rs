@@ -1,5 +1,5 @@
 use picodraw::{
-    CommandBuffer, Context, Graph, Shader,
+    Command, Context, Graph, Shader,
     opengl::{Native, OpenGlBackend},
     shader::{float1, float4, io},
 };
@@ -61,27 +61,40 @@ fn main() {
                     }
                 });
 
-                let mut commands = CommandBuffer::default();
-                let mut frame = commands.begin_screen([data.width, data.height]);
-                frame.clear([0, 0, data.width, data.height]);
+                let mut commands = vec![Command::ClearQuad {
+                    bounds: [0, 0, data.width, data.height].into(),
+                }];
 
                 for i in 0..data.width {
                     for j in 0..data.height {
-                        frame
-                            .begin_quad(data.shader, [i, j, i + 1, j + 1])
-                            .write_data(if (i + j) % 2 == 0 {
-                                [255, 0, 0, 255u8]
-                            } else {
-                                [0, 0, 255, 255u8]
-                            })
-                            .write_data([0u32; 7]);
+                        let p = (i + j) % 2 == 0;
+
+                        commands.extend([
+                            Command::BeginQuad {
+                                shader: data.shader,
+                                bounds: [i, j, i + 1, j + 1].into(),
+                            },
+                            Command::WriteInt(255 * p as i32),
+                            Command::WriteInt(255 * !p as i32),
+                            Command::WriteInt(255 * p as i32),
+                            Command::WriteInt(255),
+                            Command::WriteInt(0),
+                            Command::WriteInt(0),
+                            Command::WriteInt(0),
+                            Command::WriteInt(0),
+                            Command::WriteInt(0),
+                            Command::WriteInt(0),
+                            Command::WriteInt(0),
+                            Command::EndQuad,
+                        ]);
                     }
                 }
 
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 unsafe {
                     let mut gl = data.gl.open();
-                    gl.draw(&commands);
+                    gl.set_viewport([data.width, data.height]);
+                    gl.draw_screen(&commands);
 
                     let stats = gl.stats();
                     let gpu_time_ms = stats.gpu_time.unwrap_or_default().as_secs_f32() * 1000.0;

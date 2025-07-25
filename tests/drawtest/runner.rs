@@ -339,7 +339,8 @@ fn blend_difference(a: &DynamicImage, b: &DynamicImage) -> DynamicImage {
 pub mod opengl {
     use super::{MAX_CANVAS_SIZE, RenderJob};
     use image::{DynamicImage, Rgba, RgbaImage};
-    use picodraw::{CommandBuffer, Context, opengl::OpenGlBackend};
+    use picodraw::Command;
+    use picodraw::{Context, opengl::OpenGlBackend};
     use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
     use std::any::Any;
     use std::panic::{AssertUnwindSafe, resume_unwind};
@@ -396,16 +397,13 @@ pub mod opengl {
                         };
 
                         {
-                            let mut commands = CommandBuffer::new();
-                            commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]).clear([
-                                0,
-                                0,
-                                MAX_CANVAS_SIZE,
-                                MAX_CANVAS_SIZE,
-                            ]);
-                            gl_backend.draw(&commands);
+                            gl_backend.set_viewport([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+                            gl_backend.draw_screen(&[Command::ClearQuad {
+                                bounds: [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(),
+                            }]);
                         }
 
+                        gl_backend.set_viewport([job.width, job.height]);
                         (job.render)(&mut gl_backend);
 
                         {

@@ -313,7 +313,6 @@ dependencies = [
  "criterion",
  "image",
  "picodraw-core",
- "picodraw-derive",
  "picodraw-opengl",
  "picodraw-software",
  "pugl-rs",
@@ -323,15 +322,6 @@ dependencies = [
 [[package]]
 name = "picodraw-core"
 version = "1.0.0"
-
-[[package]]
-name = "picodraw-derive"
-version = "1.0.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "picodraw-opengl"

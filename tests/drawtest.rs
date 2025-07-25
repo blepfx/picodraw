@@ -16,11 +16,9 @@ macro_rules! gen_simple {
                     float4((z.x(), z.y(), z.z(), 1.0))
                 }));
 
-                let mut commands = CommandBuffer::new();
-                commands
-                    .begin_screen([$width, $height])
-                    .begin_quad(shader, [0, 0, $width, $height]);
-                context.draw(&commands);
+                let mut commands = vec![];
+                add_quad(&mut commands, shader, [0, 0, $width, $height], ());
+                context.draw_screen(&commands);
             });
         }
     };
@@ -42,12 +40,9 @@ macro_rules! gen_serialize {
                     float4((z.x(), z.y(), z.z(), 1.0))
                 }));
 
-                let mut commands = CommandBuffer::new();
-                commands
-                    .begin_screen([width, height])
-                    .begin_quad(shader, [0, 0, width, height])
-                    .write_data(&value);
-                context.draw(&commands);
+                let mut commands = vec![];
+                add_quad(&mut commands, shader, [0, 0, width, height], value);
+                context.draw_screen(&commands);
             }
 
             run(stringify!($id), $width, $height, |context| {
@@ -82,10 +77,10 @@ pub mod ser {
             TestStructShader { x, y, z }
         }
 
-        fn write(&self, writer: &mut dyn ShaderDataWriter) {
-            self.x.write(writer);
-            self.y.write(writer);
-            self.z.write(writer);
+        fn write(&self, mut writer: impl ShaderDataWriter) {
+            self.x.write(&mut writer);
+            self.y.write(&mut writer);
+            self.z.write(&mut writer);
         }
     }
 
@@ -158,125 +153,6 @@ pub mod ser {
             z: (0.25, 0.5)
         },
         |x| { float3((x.x, x.y, x.z.0 * 0.5 + x.z.1 * 0.5,)) }
-    );
-}
-
-#[cfg(feature = "derive")]
-pub mod ser_derive {
-    use super::*;
-
-    #[derive(ShaderData)]
-    struct UnitStruct;
-
-    #[derive(ShaderData)]
-    struct TupleStruct(f32, f32);
-
-    #[derive(ShaderData)]
-    struct TestStruct {
-        a: f32,
-        b: f32,
-        c: u8,
-    }
-
-    #[derive(ShaderData)]
-    struct PassthroughEncoder<T>(T);
-    struct FracResolutionEncoder(f32, f32);
-    struct FracQuadBoundsEncoder(f32, f32);
-
-    impl ShaderData for FracResolutionEncoder {
-        type Data = float2;
-        fn read() -> Self::Data {
-            let resolution = io::resolution();
-            float2((io::read::<f32>() * resolution.x(), io::read::<f32>() * resolution.y()))
-        }
-        fn write(&self, writer: &mut dyn ShaderDataWriter) {
-            writer.write_f32(self.0 / writer.resolution().width as f32);
-            writer.write_f32(self.1 / writer.resolution().height as f32);
-        }
-    }
-
-    impl ShaderData for FracQuadBoundsEncoder {
-        type Data = float2;
-        fn read() -> Self::Data {
-            let (start, end) = io::bounds();
-            float2((io::read::<f32>(), io::read::<f32>())).lerp(start, end)
-        }
-        fn write(&self, writer: &mut dyn ShaderDataWriter) {
-            let bounds = writer.quad_bounds();
-            let x0 = (self.0 - bounds.left as f32) / bounds.width() as f32;
-            let y0 = (self.1 - bounds.top as f32) / bounds.height() as f32;
-            x0.write(writer);
-            y0.write(writer);
-        }
-    }
-
-    impl From<f32> for PassthroughEncoder<f32> {
-        fn from(value: f32) -> Self {
-            PassthroughEncoder(value)
-        }
-    }
-
-    impl From<(f32, f32)> for FracResolutionEncoder {
-        fn from(value: (f32, f32)) -> Self {
-            FracResolutionEncoder(value.0, value.1)
-        }
-    }
-
-    impl From<(f32, f32)> for FracQuadBoundsEncoder {
-        fn from(value: (f32, f32)) -> Self {
-            FracQuadBoundsEncoder(value.0, value.1)
-        }
-    }
-
-    #[derive(ShaderData)]
-    struct TestStructWithEncoders {
-        normal: f32,
-
-        #[shader(PassthroughEncoder::<f32>)]
-        passthrough: f32,
-
-        #[shader(FracResolutionEncoder)]
-        resolution: (f32, f32),
-
-        #[shader(FracQuadBoundsEncoder)]
-        quad_bounds: (f32, f32),
-    }
-
-    gen_serialize!(ser_derive_unit_struct, 4, 4, UnitStruct, |_| { float3(1.0) });
-
-    gen_serialize!(ser_derive_tuple_struct, 4, 4, TupleStruct(0.5, 0.2), |x| {
-        float3((x.0, x.1, 1.0))
-    });
-
-    gen_serialize!(
-        ser_derive_struct,
-        4,
-        4,
-        TestStruct {
-            a: 0.5,
-            b: 0.2,
-            c: 0xCA
-        },
-        |x| { float3((x.a, x.b, float1(x.c) / 255.0)) }
-    );
-
-    gen_serialize!(
-        ser_derive_struct_with_encoders,
-        4,
-        4,
-        TestStructWithEncoders {
-            normal: 0.5,
-            passthrough: 0.7,
-            resolution: (2.0, 2.6),
-            quad_bounds: (1.0, 3.0),
-        },
-        |x| {
-            float3((
-                x.normal * x.passthrough.0,
-                x.resolution.x() * x.quad_bounds.x(),
-                x.resolution.y() * x.quad_bounds.y(),
-            ))
-        }
     );
 }
 
@@ -657,12 +533,9 @@ pub mod texture {
                 texture.sample(uv * float2(texture.size()), TextureFilter::Nearest)
             }));
 
-            let mut commands = CommandBuffer::new();
-            commands
-                .begin_screen([32, 32])
-                .begin_quad(shader, [0, 0, 32, 32])
-                .write_data(texture);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 0, 32, 32], texture);
+            context.draw_screen(&commands);
         });
     }
 
@@ -682,19 +555,16 @@ pub mod texture {
                 texture.sample(uv * float2(texture.size()), TextureFilter::Linear)
             }));
 
-            let mut commands = CommandBuffer::new();
-            commands
-                .begin_screen([32, 32])
-                .begin_quad(shader, [0, 0, 32, 32])
-                .write_data(texture);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 0, 32, 32], texture);
+            context.draw_screen(&commands);
         });
     }
 
     #[test]
     fn texture_render_nearest() {
         run("texture_render_nearest", 32, 32, |context| {
-            let texture = context.create_texture_render();
+            let texture = context.create_texture_render([4, 4].into());
 
             let shader_fill = context.create_shader(Graph::scope(|| {
                 let a = float4((1.0, 0.5, 0.25, 1.0));
@@ -715,25 +585,20 @@ pub mod texture {
                 float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
             }));
 
-            let mut commands = CommandBuffer::new();
+            let mut commands = vec![];
+            add_quad(&mut commands, shader_fill, [0, 0, 4, 4], ());
+            context.draw_texture(texture, &commands);
 
-            commands
-                .begin_buffer(texture, [4, 4])
-                .begin_quad(shader_fill, [0, 0, 4, 4]);
-
-            commands
-                .begin_screen([32, 32])
-                .begin_quad(shader_negative, [0, 0, 20, 32])
-                .write_data(texture);
-
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader_negative, [0, 0, 20, 32], texture);
+            context.draw_screen(&commands);
         });
     }
 
     #[test]
     fn texture_render_linear() {
         run("texture_render_linear", 32, 32, |context| {
-            let texture = context.create_texture_render();
+            let texture = context.create_texture_render([4, 4].into());
 
             let shader_fill = context.create_shader(Graph::scope(|| {
                 let a = float4((1.0, 0.5, 0.25, 1.0));
@@ -754,18 +619,13 @@ pub mod texture {
                 float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
             }));
 
-            let mut commands = CommandBuffer::new();
+            let mut commands = vec![];
+            add_quad(&mut commands, shader_fill, [0, 0, 4, 4], ());
+            context.draw_texture(texture, &commands);
 
-            commands
-                .begin_buffer(texture, [4, 4])
-                .begin_quad(shader_fill, [0, 0, 4, 4]);
-
-            commands
-                .begin_screen([32, 32])
-                .begin_quad(shader_negative, [0, 0, 20, 32])
-                .write_data(texture);
-
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader_negative, [0, 0, 20, 32], texture);
+            context.draw_screen(&commands);
         });
     }
 
@@ -784,12 +644,9 @@ pub mod texture {
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
 
-            let mut commands = CommandBuffer::new();
-            commands
-                .begin_screen([4, 4])
-                .begin_quad(shader, [0, 0, 4, 4])
-                .write_data(texture);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
+            context.draw_screen(&commands);
         });
     }
 
@@ -808,12 +665,9 @@ pub mod texture {
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
 
-            let mut commands = CommandBuffer::new();
-            commands
-                .begin_screen([4, 4])
-                .begin_quad(shader, [0, 0, 4, 4])
-                .write_data(texture);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
+            context.draw_screen(&commands);
         });
     }
 
@@ -832,12 +686,9 @@ pub mod texture {
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
 
-            let mut commands = CommandBuffer::new();
-            commands
-                .begin_screen([4, 4])
-                .begin_quad(shader, [0, 0, 4, 4])
-                .write_data(texture);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
+            context.draw_screen(&commands);
         });
     }
 }
@@ -853,18 +704,11 @@ pub mod semantics {
                 float4((data[0], data[1], data[2], data[3]))
             }));
 
-            let mut commands = CommandBuffer::new();
-            let mut screen = commands.begin_screen([8, 8]);
-
-            screen
-                .begin_quad(shader, [1, 1, 5, 5])
-                .write_data([1.0, 0.0, 0.0, 0.50]);
-            screen
-                .begin_quad(shader, [3, 3, 7, 7])
-                .write_data([0.0, 1.0, 1.0, 0.25]);
-            screen.begin_quad(shader, [0, 0, 8, 8]).write_data([1.0, 1.0, 1.0, 0.1]);
-
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [1, 1, 5, 5], [1.0, 0.0, 0.0, 0.50]);
+            add_quad(&mut commands, shader, [3, 3, 7, 7], [0.0, 1.0, 1.0, 0.25]);
+            add_quad(&mut commands, shader, [0, 0, 8, 8], [1.0, 1.0, 1.0, 0.1]);
+            context.draw_screen(&commands);
         });
     }
 
@@ -876,15 +720,10 @@ pub mod semantics {
                 float4((data[0], data[1], data[2], data[3]))
             }));
 
-            let mut commands = CommandBuffer::new();
-            let mut screen = commands.begin_screen([8, 8]);
-
-            screen
-                .begin_quad(shader, [1, 1, 7, 7])
-                .write_data([1.0, 0.0, 0.0, 0.50]);
-            screen.clear([4, 4, 8, 8]);
-
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [1, 1, 7, 7], [1.0, 0.0, 0.0, 0.50]);
+            add_clear(&mut commands, [4, 4, 8, 8]);
+            context.draw_screen(&commands);
         });
     }
 
@@ -896,19 +735,14 @@ pub mod semantics {
                 float4((data[0], data[1], data[2], data[3]))
             }));
 
-            let mut commands = CommandBuffer::new();
-            let mut screen = commands.begin_screen([8, 8]);
-            screen
-                .begin_quad(shader, [1, 1, 7, 7])
-                .write_data([1.0, 0.0, 0.0, 0.50]);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [1, 1, 7, 7], [1.0, 0.0, 0.0, 0.50]);
+            context.draw_screen(&commands);
 
-            let mut screen = commands.begin_screen([8, 8]);
-            screen.clear([4, 4, 8, 8]);
-            screen
-                .begin_quad(shader, [1, 1, 7, 7])
-                .write_data([0.0, 1.0, 1.0, 0.25]);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_clear(&mut commands, [4, 4, 8, 8]);
+            add_quad(&mut commands, shader, [1, 1, 7, 7], [0.0, 1.0, 1.0, 0.25]);
+            context.draw_screen(&commands);
         });
     }
 }
@@ -935,16 +769,11 @@ pub mod stress {
                 texture.sample(float2(0.0), TextureFilter::Linear)
             }));
 
-            let mut commands = CommandBuffer::new();
-            let mut frame = commands.begin_screen([256, 8]);
-
+            let mut commands = vec![];
             for i in 0..=255 {
-                frame
-                    .begin_quad(shader, [i, 0, i + 1, 8])
-                    .write_data(textures[i as usize]);
+                add_quad(&mut commands, shader, [i, 0, i + 1, 8], textures[i as usize]);
             }
-
-            context.draw(&commands);
+            context.draw_screen(&commands);
         });
     }
 
@@ -958,17 +787,14 @@ pub mod stress {
             }));
 
             for _ in 0..2 {
-                let mut commands = CommandBuffer::new();
-                let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
-                frame.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+                let mut commands = vec![];
+                add_clear(&mut commands, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
 
                 for i in 2..500 {
-                    frame
-                        .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-                        .write_data(i);
+                    add_quad(&mut commands, shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE], i);
                 }
 
-                context.draw(&commands);
+                context.draw_screen(&commands);
             }
         });
     }
@@ -983,24 +809,25 @@ pub mod stress {
             }));
 
             for _ in 0..2 {
-                let mut commands = CommandBuffer::new();
-                let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
-                frame.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+                let mut commands = vec![];
+                add_clear(&mut commands, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
 
                 for i in 0..MAX_CANVAS_SIZE {
                     for j in 0..MAX_CANVAS_SIZE {
-                        frame
-                            .begin_quad(shader, [i, j, i + 1, j + 1])
-                            .write_data(if (i + j) % 2 == 0 {
-                                [1.0, 1.0, 0.0]
+                        add_quad(
+                            &mut commands,
+                            shader,
+                            [i, j, i + 1, j + 1],
+                            if (i + j) % 2 == 0 {
+                                ([1.0, 1.0, 0.0], [0u32; 8])
                             } else {
-                                [0.0, 0.0, 1.0]
-                            })
-                            .write_data([0u32; 8]);
+                                ([0.0, 0.0, 1.0], [0u32; 8])
+                            },
+                        );
                     }
                 }
 
-                context.draw(&commands);
+                context.draw_screen(&commands);
             }
         });
     }
@@ -1016,9 +843,9 @@ pub mod stress {
                 a
             }));
 
-            let mut commands = CommandBuffer::new();
-            commands.begin_screen([4, 4]).begin_quad(shader, [0, 0, 4, 4]);
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 0, 4, 4], ());
+            context.draw_screen(&commands);
         });
     }
 }
@@ -1068,29 +895,30 @@ pub mod complex {
                 float4(mask)
             }));
 
-            let mut commands = CommandBuffer::new();
-            let mut frame = commands.begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+            let mut commands = vec![];
 
             let mut x = 10.0;
             let mut scale = 0.5;
             for _ in 0..=10 {
-                frame
-                    .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-                    .write_data(texture)
-                    .write_data((x, 12.0 + scale * 10.0))
-                    .write_data(scale);
+                add_quad(
+                    &mut commands,
+                    shader,
+                    [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
+                    (texture, x, 12.0 + scale * 10.0, scale),
+                );
 
                 x += 18.0 * scale;
                 scale *= 1.325;
             }
 
-            frame
-                .begin_quad(shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-                .write_data(texture)
-                .write_data((256.0, 320.0))
-                .write_data(20.0);
+            add_quad(
+                &mut commands,
+                shader,
+                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
+                (texture, 256.0, 320.0, 20.0),
+            );
 
-            context.draw(&commands);
+            context.draw_screen(&commands);
         });
     }
 
@@ -1126,20 +954,38 @@ pub mod complex {
                 result / (11 * 11) as f32
             }));
 
-            let buffer = context.create_texture_render();
-            let mut commands = CommandBuffer::new();
+            let buffer = context.create_texture_render([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
 
-            commands
-                .begin_buffer(buffer, [MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-                .begin_quad(shader_circle, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-                .write_data([256.0, 256.0]);
+            let mut commands = vec![];
+            add_quad(
+                &mut commands,
+                shader_circle,
+                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
+                [256.0, 256.0],
+            );
+            context.draw_texture(buffer, &commands);
 
-            commands
-                .begin_screen([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-                .begin_quad(shader_boxblur, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE])
-                .write_data(buffer);
-
-            context.draw(&commands);
+            let mut commands = vec![];
+            add_quad(
+                &mut commands,
+                shader_boxblur,
+                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
+                buffer,
+            );
+            context.draw_screen(&commands);
         });
     }
+}
+
+fn add_quad<T: ShaderData>(mut cmds: &mut Vec<Command>, shader: Shader, bounds: impl Into<Bounds>, data: T) {
+    cmds.push(Command::BeginQuad {
+        shader,
+        bounds: bounds.into(),
+    });
+    data.write(&mut cmds);
+    cmds.push(Command::EndQuad);
+}
+
+fn add_clear(cmds: &mut Vec<Command>, bounds: impl Into<Bounds>) {
+    cmds.push(Command::ClearQuad { bounds: bounds.into() });
 }

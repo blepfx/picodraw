@@ -115,18 +115,19 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         viewport(self.global_context, 0, 0, size.width, size.height);
     }
 
-    pub fn set_target_texture(&mut self, texture: &'a GlTextureRender<T>, size: Size) {
+    pub fn set_target_texture(&mut self, texture: &'a GlTextureRender<T>) {
         self.flush();
+
+        let (width, height) = texture.size();
 
         self.target_framebuffer = texture.bind(self.global_context);
         self.target_framebuffer_screen = false;
-        self.target_framebuffer_size = size;
+        self.target_framebuffer_size = Size { width, height };
 
-        self.global_program
-            .set_uniform_f32x2(0, size.width as f32, size.height as f32);
+        self.global_program.set_uniform_f32x2(0, width as f32, height as f32);
         self.global_program.set_uniform_i32(1, 0);
 
-        viewport(self.global_context, 0, 0, size.width, size.height);
+        viewport(self.global_context, 0, 0, width, height);
     }
 
     pub fn clear_rect(&mut self, bounds: Bounds) {

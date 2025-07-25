@@ -2,7 +2,6 @@
 members = [
     ".",
     "crates/core",
-    "crates/derive",
     "crates/opengl", 
     "crates/software"
 ]
@@ -44,7 +43,6 @@ exclude = [
 
 [dependencies]
 picodraw-core = { path = "crates/core", default-features = false }
-picodraw-derive = { path = "crates/derive", optional = true }
 picodraw-opengl = { path = "crates/opengl", optional = true }
 picodraw-software = { path = "crates/software", optional = true }
 
@@ -55,14 +53,13 @@ image = { workspace = true }
 yansi = { workspace = true }
 
 [features]
-default = ["derive"]
-derive = ["dep:picodraw-derive"]
+default = []
 opengl = ["dep:picodraw-opengl"]
 software = ["dep:picodraw-software"]
 
 [[example]]
 name = "opengl_circles"
-required-features = ["opengl", "derive"]
+required-features = ["opengl"]
 
 [[example]]
 name = "opengl_stress"
@@ -71,4 +68,4 @@ required-features = ["opengl"]
 [[bench]]
 name = "software"
 harness = false
-required-features = ["software", "derive"]
+required-features = ["software"]
