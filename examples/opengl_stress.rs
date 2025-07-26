@@ -1,5 +1,5 @@
 use picodraw::{
-    Command, Context, Graph, Shader,
+    Command, Context, Graph, QuadData, Shader,
     opengl::{Native, OpenGlBackend},
     shader::{float1, float4, io},
 };
@@ -61,31 +61,26 @@ fn main() {
                     }
                 });
 
-                let mut commands = vec![Command::ClearQuad {
-                    bounds: [0, 0, data.width, data.height].into(),
-                }];
+                let mut commands = vec![Command::Clear([0, 0, data.width, data.height].into())];
 
                 for i in 0..data.width {
                     for j in 0..data.height {
                         let p = (i + j) % 2 == 0;
 
                         commands.extend([
-                            Command::BeginQuad {
-                                shader: data.shader,
-                                bounds: [i, j, i + 1, j + 1].into(),
-                            },
-                            Command::WriteInt(255 * p as i32),
-                            Command::WriteInt(255 * !p as i32),
-                            Command::WriteInt(255 * p as i32),
-                            Command::WriteInt(255),
-                            Command::WriteInt(0),
-                            Command::WriteInt(0),
-                            Command::WriteInt(0),
-                            Command::WriteInt(0),
-                            Command::WriteInt(0),
-                            Command::WriteInt(0),
-                            Command::WriteInt(0),
-                            Command::EndQuad,
+                            Command::Begin([i, j, i + 1, j + 1].into(), data.shader),
+                            Command::Data(QuadData::Int(255 * p as i32)),
+                            Command::Data(QuadData::Int(255 * !p as i32)),
+                            Command::Data(QuadData::Int(255 * p as i32)),
+                            Command::Data(QuadData::Int(255)),
+                            Command::Data(QuadData::Int(0)),
+                            Command::Data(QuadData::Int(0)),
+                            Command::Data(QuadData::Int(0)),
+                            Command::Data(QuadData::Int(0)),
+                            Command::Data(QuadData::Int(0)),
+                            Command::Data(QuadData::Int(0)),
+                            Command::Data(QuadData::Int(0)),
+                            Command::End,
                         ]);
                     }
                 }

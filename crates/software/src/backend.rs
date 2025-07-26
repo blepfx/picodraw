@@ -5,7 +5,7 @@ use crate::{
     vm::{CompiledShader, VMSlot},
 };
 use bumpalo::Bump;
-use picodraw_core::{Command, Context, DrawError, Graph, ImageData, RenderTexture, Shader, Size, Texture};
+use picodraw_core::{Command, Context, DrawError, Graph, ImageData, QuadData, RenderTexture, Shader, Size, Texture};
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 
 pub struct SoftwareBackend {
@@ -47,10 +47,10 @@ impl<'a> SoftwareContext<'a> {
 
         for command in commands {
             match *command {
-                Command::ClearQuad { bounds } => {
+                Command::Clear(bounds) => {
                     dispatch.write_clear(bounds);
                 }
-                Command::BeginQuad { shader, bounds } => {
+                Command::Begin(bounds, shader) => {
                     let shader = self
                         .owner
                         .shaders
@@ -59,16 +59,16 @@ impl<'a> SoftwareContext<'a> {
 
                     dispatch.write_start(bounds, &shader);
                 }
-                Command::EndQuad => {
+                Command::End => {
                     dispatch.write_end()?;
                 }
-                Command::WriteFloat(float) => {
+                Command::Data(QuadData::Float(float)) => {
                     dispatch.write_data(&[VMSlot { float }]);
                 }
-                Command::WriteInt(int) => {
+                Command::Data(QuadData::Int(int)) => {
                     dispatch.write_data(&[VMSlot { int }]);
                 }
-                Command::WriteStaticTexture(tex) => {
+                Command::Data(QuadData::Texture(tex)) => {
                     let tex = self
                         .owner
                         .textures
@@ -77,7 +77,7 @@ impl<'a> SoftwareContext<'a> {
 
                     dispatch.write_texture(tex.as_ref());
                 }
-                Command::WriteRenderTexture(tex) => {
+                Command::Data(QuadData::RenderTexture(tex)) => {
                     let tex = self
                         .owner
                         .buffers

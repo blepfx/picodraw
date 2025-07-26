@@ -45,14 +45,26 @@ pub enum DrawError {
 /// A single draw command.
 #[derive(Clone, Copy, Debug)]
 pub enum Command {
-    ClearQuad { bounds: Bounds },
-    BeginQuad { shader: Shader, bounds: Bounds },
-    EndQuad,
+    /// Reset a region of the target to the initial color (#0000)
+    Clear(Bounds),
 
-    WriteFloat(f32),
-    WriteInt(i32),
-    WriteStaticTexture(Texture),
-    WriteRenderTexture(RenderTexture),
+    /// Begin rendering a single quad.
+    Begin(Bounds, Shader),
+
+    /// Add data to the current quad. Should be sandwiched between [`Begin`] and [`End`] commands.
+    Data(QuadData),
+
+    /// Close the scope of a single quad.
+    /// Must be preceded by a [`Begin`] command.
+    End,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum QuadData {
+    Float(f32),
+    Int(i32),
+    Texture(Texture),
+    RenderTexture(RenderTexture),
 }
 
 /// Shader.

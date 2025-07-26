@@ -398,9 +398,9 @@ pub mod opengl {
 
                         {
                             gl_backend.set_viewport([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
-                            gl_backend.draw_screen(&[Command::ClearQuad {
-                                bounds: [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(),
-                            }]).unwrap();
+                            gl_backend
+                                .draw_screen(&[Command::Clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into())])
+                                .unwrap();
                         }
 
                         gl_backend.set_viewport([job.width, job.height]);

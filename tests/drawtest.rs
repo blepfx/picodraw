@@ -978,14 +978,11 @@ pub mod complex {
 }
 
 fn add_quad<T: ShaderData>(mut cmds: &mut Vec<Command>, shader: Shader, bounds: impl Into<Bounds>, data: T) {
-    cmds.push(Command::BeginQuad {
-        shader,
-        bounds: bounds.into(),
-    });
+    cmds.push(Command::Begin(bounds.into(), shader));
     data.write(&mut cmds);
-    cmds.push(Command::EndQuad);
+    cmds.push(Command::End);
 }
 
 fn add_clear(cmds: &mut Vec<Command>, bounds: impl Into<Bounds>) {
-    cmds.push(Command::ClearQuad { bounds: bounds.into() });
+    cmds.push(Command::Clear(bounds.into()));
 }

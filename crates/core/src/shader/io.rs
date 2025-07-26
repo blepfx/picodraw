@@ -54,49 +54,27 @@ pub trait ShaderData {
 }
 
 pub trait ShaderDataWriter {
-    fn write_i32(&mut self, value: i32);
-    fn write_f32(&mut self, value: f32);
-    fn write_texture_static(&mut self, value: Texture);
-    fn write_texture_render(&mut self, value: RenderTexture);
+    fn write_data(&mut self, data: QuadData);
 }
 
 impl<'a, T: ShaderDataWriter + ?Sized> ShaderDataWriter for &'a mut T {
     #[inline]
-    fn write_i32(&mut self, value: i32) {
-        (*self).write_i32(value);
-    }
-
-    #[inline]
-    fn write_f32(&mut self, value: f32) {
-        (*self).write_f32(value);
-    }
-
-    #[inline]
-    fn write_texture_static(&mut self, value: Texture) {
-        (*self).write_texture_static(value);
-    }
-
-    #[inline]
-    fn write_texture_render(&mut self, value: RenderTexture) {
-        (*self).write_texture_render(value);
+    fn write_data(&mut self, value: QuadData) {
+        (*self).write_data(value);
     }
 }
 
 impl ShaderDataWriter for Vec<Command> {
-    fn write_i32(&mut self, value: i32) {
-        self.push(Command::WriteInt(value));
+    #[inline]
+    fn write_data(&mut self, data: QuadData) {
+        self.push(Command::Data(data))
     }
+}
 
-    fn write_f32(&mut self, value: f32) {
-        self.push(Command::WriteFloat(value));
-    }
-
-    fn write_texture_static(&mut self, value: Texture) {
-        self.push(Command::WriteStaticTexture(value));
-    }
-
-    fn write_texture_render(&mut self, value: RenderTexture) {
-        self.push(Command::WriteRenderTexture(value));
+impl ShaderDataWriter for Vec<QuadData> {
+    #[inline]
+    fn write_data(&mut self, data: QuadData) {
+        self.push(data)
     }
 }
 
@@ -119,7 +97,7 @@ impl ShaderData for bool {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_i32(*self as i32);
+        writer.write_data(QuadData::Int(*self as i32));
     }
 }
 
@@ -132,7 +110,7 @@ impl ShaderData for i8 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_i32(*self as i32);
+        writer.write_data(QuadData::Int(*self as i32));
     }
 }
 
@@ -145,7 +123,7 @@ impl ShaderData for i16 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_i32(*self as i32);
+        writer.write_data(QuadData::Int(*self as i32));
     }
 }
 
@@ -158,7 +136,7 @@ impl ShaderData for i32 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_i32(*self as i32);
+        writer.write_data(QuadData::Int(*self as i32));
     }
 }
 
@@ -171,7 +149,7 @@ impl ShaderData for u8 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_i32(*self as i32);
+        writer.write_data(QuadData::Int(*self as i32));
     }
 }
 
@@ -184,7 +162,7 @@ impl ShaderData for u16 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_i32(*self as i32);
+        writer.write_data(QuadData::Int(*self as i32));
     }
 }
 
@@ -197,7 +175,7 @@ impl ShaderData for u32 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_i32(*self as i32);
+        writer.write_data(QuadData::Int(*self as i32));
     }
 }
 
@@ -210,7 +188,7 @@ impl ShaderData for f32 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_f32(*self);
+        writer.write_data(QuadData::Float(*self as f32));
     }
 }
 
@@ -223,7 +201,7 @@ impl ShaderData for f64 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_f32(*self as f32);
+        writer.write_data(QuadData::Float(*self as f32));
     }
 }
 
@@ -236,7 +214,7 @@ impl ShaderData for RenderTexture {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_texture_render(*self);
+        writer.write_data(QuadData::RenderTexture(*self));
     }
 }
 
@@ -249,7 +227,7 @@ impl ShaderData for Texture {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_texture_static(*self);
+        writer.write_data(QuadData::Texture(*self));
     }
 }
 

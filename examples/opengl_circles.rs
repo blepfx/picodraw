@@ -1,5 +1,5 @@
 use picodraw::{
-    Command, Context, Graph, Shader,
+    Command, Context, Graph, QuadData, Shader,
     opengl::{Native, OpenGlBackend},
     shader::{float1, float2, float4, io},
 };
@@ -68,9 +68,7 @@ fn main() {
                     }
                 });
 
-                let mut commands = vec![Command::ClearQuad {
-                    bounds: [0, 0, data.width, data.height].into(),
-                }];
+                let mut commands = vec![Command::Clear([0, 0, data.width, data.height].into())];
 
                 let n = (data.scroll * 0.2).sin() * 14.0 + 20.0;
                 let alpha = 1.0 / n as f32;
@@ -82,15 +80,12 @@ fn main() {
                     let alpha = if i + 1 == (n as i32) { alpha * n.fract() } else { alpha };
 
                     commands.extend([
-                        Command::BeginQuad {
-                            shader: data.shader,
-                            bounds: [0, 0, data.width, data.height].into(),
-                        },
-                        Command::WriteFloat(x),
-                        Command::WriteFloat(y),
-                        Command::WriteFloat(200.0),
-                        Command::WriteFloat(alpha),
-                        Command::EndQuad,
+                        Command::Begin([0, 0, data.width, data.height].into(), data.shader),
+                        Command::Data(QuadData::Float(x)),
+                        Command::Data(QuadData::Float(y)),
+                        Command::Data(QuadData::Float(200.0)),
+                        Command::Data(QuadData::Float(alpha)),
+                        Command::End,
                     ]);
                 }
 

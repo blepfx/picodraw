@@ -299,11 +299,11 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
 
             for command in commands {
                 match *command {
-                    Command::ClearQuad { bounds } => {
+                    Command::Clear(bounds) => {
                         dispatcher.clear_rect(bounds);
                     }
 
-                    Command::BeginQuad { shader, bounds } => {
+                    Command::Begin(bounds, shader) => {
                         let layout = program
                             .layouts
                             .get(KeyData::from_ffi(shader.0).into())
@@ -312,19 +312,19 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                         dispatcher.quad_start(layout, bounds);
                     }
 
-                    Command::EndQuad => {
+                    Command::End => {
                         dispatcher.quad_end()?;
                     }
 
-                    Command::WriteFloat(x) => {
+                    Command::Data(QuadData::Float(x)) => {
                         dispatcher.quad_data(x.to_bits());
                     }
 
-                    Command::WriteInt(x) => {
+                    Command::Data(QuadData::Int(x)) => {
                         dispatcher.quad_data(x as u32);
                     }
 
-                    Command::WriteStaticTexture(x) => {
+                    Command::Data(QuadData::Texture(x)) => {
                         let texture = self
                             .0
                             .textures
@@ -334,7 +334,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                         dispatcher.quad_texture(texture.texture())?;
                     }
 
-                    Command::WriteRenderTexture(x) => {
+                    Command::Data(QuadData::RenderTexture(x)) => {
                         let framebuffer = self
                             .0
                             .framebuffers
