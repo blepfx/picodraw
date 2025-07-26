@@ -1,3 +1,5 @@
+use std::fmt::{self, Display};
+
 use crate::{Bounds, Graph, ImageData, Size};
 
 /// The heart of `picodraw`.
@@ -33,13 +35,6 @@ pub trait Context {
 
     /// Execute a list of draw commands on the backend
     fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) -> Result<(), DrawError>;
-}
-
-#[derive(Debug)]
-pub enum DrawError {
-    InvalidResource,
-    TargetInUse,
-    MalformedStream,
 }
 
 /// A single draw command.
@@ -86,3 +81,25 @@ pub struct Texture(pub u64);
 /// A render texture is an off-screen buffer you can render to and use it as a texture later.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct RenderTexture(pub u64);
+
+/// An error that is occured while drawing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawError {
+    InvalidShader,
+    InvalidTexture,
+    InvalidTarget,
+    TargetInUse,
+    MalformedStream,
+}
+
+impl Display for DrawError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DrawError::InvalidShader => write!(f, "command stream contains an invalid shader reference"),
+            DrawError::InvalidTexture => write!(f, "command stream contains an invalid source texture"),
+            DrawError::InvalidTarget => write!(f, "passed render target is not valid"),
+            DrawError::TargetInUse => write!(f, "attempt to use the destination render target as a texture"),
+            DrawError::MalformedStream => write!(f, "command stream is malformed"),
+        }
+    }
+}

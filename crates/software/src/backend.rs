@@ -55,7 +55,7 @@ impl<'a> SoftwareContext<'a> {
                         .owner
                         .shaders
                         .get(KeyData::from_ffi(shader.0).into())
-                        .ok_or_else(|| DrawError::InvalidResource)?;
+                        .ok_or_else(|| DrawError::InvalidShader)?;
 
                     dispatch.write_start(bounds, &shader);
                 }
@@ -73,7 +73,7 @@ impl<'a> SoftwareContext<'a> {
                         .owner
                         .textures
                         .get(KeyData::from_ffi(tex.0).into())
-                        .ok_or_else(|| DrawError::InvalidResource)?;
+                        .ok_or_else(|| DrawError::InvalidTexture)?;
 
                     dispatch.write_texture(tex.as_ref());
                 }
@@ -82,7 +82,7 @@ impl<'a> SoftwareContext<'a> {
                         .owner
                         .buffers
                         .get(KeyData::from_ffi(tex.0).into())
-                        .ok_or_else(|| DrawError::InvalidResource)?
+                        .ok_or_else(|| DrawError::InvalidTexture)?
                         .as_ref()
                         .ok_or_else(|| DrawError::TargetInUse)?;
 
@@ -145,7 +145,7 @@ impl<'a> Context for SoftwareContext<'a> {
             .owner
             .buffers
             .get_mut(KeyData::from_ffi(target.0).into())
-            .ok_or_else(|| DrawError::InvalidResource)?
+            .ok_or_else(|| DrawError::InvalidTarget)?
             .take()
             .ok_or_else(|| DrawError::TargetInUse)?;
 

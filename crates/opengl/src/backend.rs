@@ -307,7 +307,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                         let layout = program
                             .layouts
                             .get(KeyData::from_ffi(shader.0).into())
-                            .ok_or_else(|| DrawError::InvalidResource)?;
+                            .ok_or_else(|| DrawError::InvalidShader)?;
 
                         dispatcher.quad_start(layout, bounds);
                     }
@@ -329,7 +329,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                             .0
                             .textures
                             .get(KeyData::from_ffi(x.0).into())
-                            .ok_or_else(|| DrawError::InvalidResource)?;
+                            .ok_or_else(|| DrawError::InvalidTexture)?;
 
                         dispatcher.quad_texture(texture.texture())?;
                     }
@@ -339,7 +339,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                             .0
                             .framebuffers
                             .get(KeyData::from_ffi(x.0).into())
-                            .ok_or_else(|| DrawError::InvalidResource)?
+                            .ok_or_else(|| DrawError::InvalidTexture)?
                             .as_ref()
                             .ok_or_else(|| DrawError::TargetInUse)?;
 
@@ -427,7 +427,7 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
             .0
             .framebuffers
             .get_mut(KeyData::from_ffi(target.0).into())
-            .ok_or_else(|| DrawError::InvalidResource)?
+            .ok_or_else(|| DrawError::InvalidTarget)?
             .take()
             .ok_or_else(|| DrawError::TargetInUse)?;
 

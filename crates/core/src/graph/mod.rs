@@ -22,7 +22,7 @@ pub struct GraphBuilder {
     ops: Vec<GraphOpData>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GraphError {
     InvalidReference { index: usize },
     InvalidType,
@@ -140,9 +140,10 @@ impl Hash for Graph {
     }
 }
 
+impl Eq for Graph {}
 impl PartialEq for Graph {
     fn eq(&self, other: &Self) -> bool {
-        if self.len() != other.len() || self.output() != other.output() {
+        if self.len() != other.len() || self.output() != other.output() || self.hash() != other.hash() {
             return false;
         }
 
