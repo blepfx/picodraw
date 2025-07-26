@@ -18,7 +18,7 @@ macro_rules! gen_simple {
 
                 let mut commands = vec![];
                 add_quad(&mut commands, shader, [0, 0, $width, $height], ());
-                context.draw_screen(&commands);
+                context.draw_screen(&commands).unwrap();
             });
         }
     };
@@ -42,7 +42,7 @@ macro_rules! gen_serialize {
 
                 let mut commands = vec![];
                 add_quad(&mut commands, shader, [0, 0, width, height], value);
-                context.draw_screen(&commands);
+                context.draw_screen(&commands).unwrap();
             }
 
             run(stringify!($id), $width, $height, |context| {
@@ -535,7 +535,7 @@ pub mod texture {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader, [0, 0, 32, 32], texture);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -557,7 +557,7 @@ pub mod texture {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader, [0, 0, 32, 32], texture);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -587,11 +587,11 @@ pub mod texture {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader_fill, [0, 0, 4, 4], ());
-            context.draw_texture(texture, &commands);
+            context.draw_texture(texture, &commands).unwrap();
 
             let mut commands = vec![];
             add_quad(&mut commands, shader_negative, [0, 0, 20, 32], texture);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -621,11 +621,11 @@ pub mod texture {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader_fill, [0, 0, 4, 4], ());
-            context.draw_texture(texture, &commands);
+            context.draw_texture(texture, &commands).unwrap();
 
             let mut commands = vec![];
             add_quad(&mut commands, shader_negative, [0, 0, 20, 32], texture);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -646,7 +646,7 @@ pub mod texture {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -667,7 +667,7 @@ pub mod texture {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -688,7 +688,7 @@ pub mod texture {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 }
@@ -708,7 +708,7 @@ pub mod semantics {
             add_quad(&mut commands, shader, [1, 1, 5, 5], [1.0, 0.0, 0.0, 0.50]);
             add_quad(&mut commands, shader, [3, 3, 7, 7], [0.0, 1.0, 1.0, 0.25]);
             add_quad(&mut commands, shader, [0, 0, 8, 8], [1.0, 1.0, 1.0, 0.1]);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -723,7 +723,7 @@ pub mod semantics {
             let mut commands = vec![];
             add_quad(&mut commands, shader, [1, 1, 7, 7], [1.0, 0.0, 0.0, 0.50]);
             add_clear(&mut commands, [4, 4, 8, 8]);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -737,12 +737,12 @@ pub mod semantics {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader, [1, 1, 7, 7], [1.0, 0.0, 0.0, 0.50]);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
 
             let mut commands = vec![];
             add_clear(&mut commands, [4, 4, 8, 8]);
             add_quad(&mut commands, shader, [1, 1, 7, 7], [0.0, 1.0, 1.0, 0.25]);
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 }
@@ -773,7 +773,7 @@ pub mod stress {
             for i in 0..=255 {
                 add_quad(&mut commands, shader, [i, 0, i + 1, 8], textures[i as usize]);
             }
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -794,7 +794,7 @@ pub mod stress {
                     add_quad(&mut commands, shader, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE], i);
                 }
 
-                context.draw_screen(&commands);
+                context.draw_screen(&commands).unwrap();
             }
         });
     }
@@ -827,7 +827,7 @@ pub mod stress {
                     }
                 }
 
-                context.draw_screen(&commands);
+                context.draw_screen(&commands).unwrap();
             }
         });
     }
@@ -845,7 +845,7 @@ pub mod stress {
 
             let mut commands = vec![];
             add_quad(&mut commands, shader, [0, 0, 4, 4], ());
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 }
@@ -918,7 +918,7 @@ pub mod complex {
                 (texture, 256.0, 320.0, 20.0),
             );
 
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 
@@ -963,7 +963,7 @@ pub mod complex {
                 [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
                 [256.0, 256.0],
             );
-            context.draw_texture(buffer, &commands);
+            context.draw_texture(buffer, &commands).unwrap();
 
             let mut commands = vec![];
             add_quad(
@@ -972,7 +972,7 @@ pub mod complex {
                 [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
                 buffer,
             );
-            context.draw_screen(&commands);
+            context.draw_screen(&commands).unwrap();
         });
     }
 }

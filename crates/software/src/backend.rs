@@ -5,7 +5,7 @@ use crate::{
     vm::{CompiledShader, VMSlot},
 };
 use bumpalo::Bump;
-use picodraw_core::{Command, Context, Graph, ImageData, RenderTexture, Shader, Size, Texture};
+use picodraw_core::{Command, Context, DrawError, Graph, ImageData, RenderTexture, Shader, Size, Texture};
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 
 pub struct SoftwareBackend {
@@ -42,7 +42,7 @@ impl SoftwareBackend {
 }
 
 impl<'a> SoftwareContext<'a> {
-    fn draw_to_buffer(&mut self, commands: &[Command], buffer: Option<BufferMut>) {
+    fn draw_to_buffer(&mut self, commands: &[Command], buffer: Option<BufferMut>) -> Result<(), DrawError> {
         let mut dispatch = Dispatcher::new(&self.owner.arena);
 
         for command in commands {
@@ -55,12 +55,12 @@ impl<'a> SoftwareContext<'a> {
                         .owner
                         .shaders
                         .get(KeyData::from_ffi(shader.0).into())
-                        .expect("unknown shader id");
+                        .ok_or_else(|| DrawError::InvalidResource)?;
 
                     dispatch.write_start(bounds, &shader);
                 }
                 Command::EndQuad => {
-                    dispatch.write_end();
+                    dispatch.write_end()?;
                 }
                 Command::WriteFloat(float) => {
                     dispatch.write_data(&[VMSlot { float }]);
@@ -73,7 +73,7 @@ impl<'a> SoftwareContext<'a> {
                         .owner
                         .textures
                         .get(KeyData::from_ffi(tex.0).into())
-                        .expect("unknown texture id");
+                        .ok_or_else(|| DrawError::InvalidResource)?;
 
                     dispatch.write_texture(tex.as_ref());
                 }
@@ -82,9 +82,9 @@ impl<'a> SoftwareContext<'a> {
                         .owner
                         .buffers
                         .get(KeyData::from_ffi(tex.0).into())
-                        .expect("unknown render texture id")
+                        .ok_or_else(|| DrawError::InvalidResource)?
                         .as_ref()
-                        .expect("render texture is currently in use");
+                        .ok_or_else(|| DrawError::TargetInUse)?;
 
                     dispatch.write_texture(tex.as_ref());
                 }
@@ -97,6 +97,8 @@ impl<'a> SoftwareContext<'a> {
             buffer.unwrap_or(self.screen.reborrow()),
         );
         self.owner.arena.reset();
+
+        Ok(())
     }
 }
 
@@ -134,21 +136,23 @@ impl<'a> Context for SoftwareContext<'a> {
         self.owner.shaders.remove(KeyData::from_ffi(id.0).into()).is_some()
     }
 
-    fn draw_screen(&mut self, commands: &[Command]) {
-        self.draw_to_buffer(commands, None);
+    fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError> {
+        self.draw_to_buffer(commands, None)
     }
 
-    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) {
+    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) -> Result<(), DrawError> {
         let mut buffer = self
             .owner
             .buffers
             .get_mut(KeyData::from_ffi(target.0).into())
-            .expect("unknown texture id")
+            .ok_or_else(|| DrawError::InvalidResource)?
             .take()
-            .expect("render texture is currently in use");
+            .ok_or_else(|| DrawError::TargetInUse)?;
 
-        self.draw_to_buffer(commands, Some(buffer.as_mut()));
+        self.draw_to_buffer(commands, Some(buffer.as_mut()))?;
 
         *self.owner.buffers.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
+
+        Ok(())
     }
 }

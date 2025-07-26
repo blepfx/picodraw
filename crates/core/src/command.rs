@@ -29,10 +29,17 @@ pub trait Context {
     fn delete_shader(&mut self, id: Shader) -> bool;
 
     /// Execute a list of draw commands on the backend
-    fn draw_screen(&mut self, commands: &[Command]);
+    fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError>;
 
     /// Execute a list of draw commands on the backend
-    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]);
+    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) -> Result<(), DrawError>;
+}
+
+#[derive(Debug)]
+pub enum DrawError {
+    InvalidResource,
+    TargetInUse,
+    MalformedStream,
 }
 
 /// A single draw command.

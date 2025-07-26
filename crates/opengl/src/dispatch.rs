@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use glow::HasContext;
-use picodraw_core::{Bounds, Size};
+use picodraw_core::{Bounds, DrawError, Size};
 
 pub struct DispatcherScratch<T: HasContext> {
     drawcall_data: Vec<u8>,
@@ -157,8 +157,8 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         self.quad_queue_textures.clear();
     }
 
-    pub fn quad_end(&mut self) {
-        let layout = self.quad_layout.expect("quad_end called without quad_start");
+    pub fn quad_end(&mut self) -> Result<(), DrawError> {
+        let layout = self.quad_layout.take().ok_or_else(|| DrawError::MalformedStream)?;
         let bounds = self.quad_bounds;
 
         let buffer_fits = self.drawcall_data.len()
@@ -197,7 +197,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             layout,
             self.quad_queue_data.drain(..),
         )
-        .expect("malformed command stream");
+        .map_err(|_| DrawError::MalformedStream)?;
 
         for (slot, texture) in self.quad_queue_textures.drain(..) {
             if self.drawcall_textures.len() <= slot as usize {
@@ -206,21 +206,25 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
 
             self.drawcall_textures[slot as usize] = Some(texture);
         }
+
+        Ok(())
     }
 
     pub fn quad_data(&mut self, data: u32) {
         self.quad_queue_data.push(data);
     }
 
-    pub fn quad_texture(&mut self, texture: T::Texture) {
-        let layout = self.quad_layout.expect("quad_texture called without quad_start");
+    pub fn quad_texture(&mut self, texture: T::Texture) -> Result<(), DrawError> {
+        let layout = self.quad_layout.ok_or_else(|| DrawError::MalformedStream)?;
         let slot = layout
             .textures
             .get(self.quad_queue_textures.len())
             .copied()
-            .expect("malformed command stream");
+            .ok_or_else(|| DrawError::MalformedStream)?;
 
         self.quad_queue_textures.push((slot, texture));
+
+        Ok(())
     }
 
     pub fn flush(&mut self) {

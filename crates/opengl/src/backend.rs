@@ -207,7 +207,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
         self.0.viewport_size = size.into();
     }
 
-    fn draw_to_target(&mut self, commands: &[Command], target: Option<&GlTextureRender<T>>) {
+    fn draw_to_target(&mut self, commands: &[Command], target: Option<&GlTextureRender<T>>) -> Result<(), DrawError> {
         let gl = &self.0.gl_context;
 
         let program = self.0.program.get_or_insert_with(|| {
@@ -307,13 +307,13 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                         let layout = program
                             .layouts
                             .get(KeyData::from_ffi(shader.0).into())
-                            .expect("invalid shader id");
+                            .ok_or_else(|| DrawError::InvalidResource)?;
 
                         dispatcher.quad_start(layout, bounds);
                     }
 
                     Command::EndQuad => {
-                        dispatcher.quad_end();
+                        dispatcher.quad_end()?;
                     }
 
                     Command::WriteFloat(x) => {
@@ -329,9 +329,9 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                             .0
                             .textures
                             .get(KeyData::from_ffi(x.0).into())
-                            .expect("invalid static texture id");
+                            .ok_or_else(|| DrawError::InvalidResource)?;
 
-                        dispatcher.quad_texture(texture.texture());
+                        dispatcher.quad_texture(texture.texture())?;
                     }
 
                     Command::WriteRenderTexture(x) => {
@@ -339,11 +339,11 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                             .0
                             .framebuffers
                             .get(KeyData::from_ffi(x.0).into())
-                            .expect("invalid render texture id")
+                            .ok_or_else(|| DrawError::InvalidResource)?
                             .as_ref()
-                            .expect("render texture is currently in use");
+                            .ok_or_else(|| DrawError::TargetInUse)?;
 
-                        dispatcher.quad_texture(framebuffer.texture());
+                        dispatcher.quad_texture(framebuffer.texture())?;
                     }
                 }
             }
@@ -353,9 +353,13 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
             self.0.stats.draw_calls = dispatcher.total_drawcalls_issued;
             self.0.stats.bytes_sent = dispatcher.total_bytes_written;
             self.0.stats.total_quads = dispatcher.total_quads_written;
-        });
+
+            Ok(())
+        })?;
 
         self.0.stats.gpu_time = self.0.gl_profiler.query().map(|x| Duration::from_nanos(x as u64));
+
+        Ok(())
     }
 }
 
@@ -414,22 +418,24 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         }
     }
 
-    fn draw_screen(&mut self, commands: &[Command]) {
-        self.draw_to_target(commands, None);
+    fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError> {
+        self.draw_to_target(commands, None)
     }
 
-    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) {
+    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) -> Result<(), DrawError> {
         let mut buffer = self
             .0
             .framebuffers
             .get_mut(KeyData::from_ffi(target.0).into())
-            .expect("unknown texture id")
+            .ok_or_else(|| DrawError::InvalidResource)?
             .take()
-            .expect("render texture is currently in use");
+            .ok_or_else(|| DrawError::TargetInUse)?;
 
-        self.draw_to_target(commands, Some(&mut buffer));
+        self.draw_to_target(commands, Some(&mut buffer))?;
 
         *self.0.framebuffers.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
+
+        Ok(())
     }
 }
 

@@ -5,7 +5,7 @@ use crate::{
     vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMContext, VMInterpreter, VMSlot, VMTile},
 };
 use bumpalo::{Bump, collections::Vec};
-use picodraw_core::Bounds;
+use picodraw_core::{Bounds, DrawError};
 use std::{iter::from_fn, ops::Range};
 
 enum DispatchObject<'a> {
@@ -59,7 +59,7 @@ impl<'a> Dispatcher<'a> {
         self.textures.push(texture);
     }
 
-    pub fn write_end(&mut self) {
+    pub fn write_end(&mut self) -> Result<(), DrawError> {
         if let Some(DispatchObject::Draw {
             data, textures, shader, ..
         }) = self.objects.last_mut()
@@ -68,15 +68,17 @@ impl<'a> Dispatcher<'a> {
             textures.end = self.textures.len();
 
             if shader.input_slots() as usize != data.len() {
-                panic!("write_data wrote wrong amount of data for the given shader");
+                return Err(DrawError::MalformedStream);
             }
 
             if shader.texture_slots() as usize != textures.len() {
-                panic!("write_texture added wrong amount of textures for the given shader");
+                return Err(DrawError::MalformedStream);
             }
         } else {
-            panic!("write_end without corresponding write_start");
+            return Err(DrawError::MalformedStream);
         }
+
+        Ok(())
     }
 
     pub fn dispatch(self, pool: &mut ThreadPool, simd: SimdDispatcher, buffer: BufferMut<'a>) {

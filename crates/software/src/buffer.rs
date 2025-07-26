@@ -263,6 +263,7 @@ impl<'a> BufferMut<'a> {
 impl<'a> Index<(usize, usize)> for BufferRef<'a> {
     type Output = u32;
 
+    #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
         assert!(x < self.width);
         assert!(y < self.height);
@@ -274,12 +275,14 @@ impl<'a> Index<(usize, usize)> for BufferRef<'a> {
 impl<'a> Index<(usize, usize)> for BufferMut<'a> {
     type Output = u32;
 
+    #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
         &self.0[(x, y)]
     }
 }
 
 impl<'a> IndexMut<(usize, usize)> for BufferMut<'a> {
+    #[inline(always)]
     fn index_mut(&mut self, (x, y): (usize, usize)) -> &mut Self::Output {
         assert!(x < self.0.width);
         assert!(y < self.0.height);

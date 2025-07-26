@@ -94,7 +94,7 @@ fn main() {
                 unsafe {
                     let mut gl = data.gl.open();
                     gl.set_viewport([data.width, data.height]);
-                    gl.draw_screen(&commands);
+                    gl.draw_screen(&commands).unwrap();
 
                     let stats = gl.stats();
                     let gpu_time_ms = stats.gpu_time.unwrap_or_default().as_secs_f32() * 1000.0;
