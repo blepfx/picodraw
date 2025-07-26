@@ -55,6 +55,13 @@ pub trait ShaderData {
 
 pub trait ShaderDataWriter {
     fn write_data(&mut self, data: QuadData);
+
+    fn write(&mut self, data: impl ShaderData)
+    where
+        Self: Sized,
+    {
+        data.write(self);
+    }
 }
 
 impl<'a, T: ShaderDataWriter + ?Sized> ShaderDataWriter for &'a mut T {
