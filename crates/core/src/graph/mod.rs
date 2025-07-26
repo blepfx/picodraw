@@ -3,6 +3,7 @@ mod scope;
 
 use std::fmt::{Debug, Display};
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
 
 pub use op::*;
 
@@ -11,8 +12,9 @@ pub use op::*;
 /// Defines a computation graph for pixel color computation based on pixel position, arbitrary dynamic data and other information.
 /// The graph is represented by a list of operations ([`OpValue`]) that each define a value computed based on other operations ([`OpAddr`]).
 
+#[derive(Clone)]
 pub struct Graph {
-    ops: Vec<GraphOpData>,
+    ops: Arc<[GraphOpData]>,
     output: OpAddr,
     hash: u64,
 }
@@ -113,7 +115,7 @@ impl GraphBuilder {
             .finish();
 
         Ok(Graph {
-            ops: self.ops,
+            ops: self.ops.into(),
             hash,
             output,
         })
