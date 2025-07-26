@@ -105,14 +105,14 @@ impl GraphBuilder {
             _ => {}
         }
 
-        let hash = self
-            .ops
-            .iter()
-            .fold(DefaultHasher::new(), |mut hasher, op| {
+        let hash = {
+            let mut hasher = self.ops.iter().fold(DefaultHasher::new(), |mut hasher, op| {
                 op.value.hash(&mut hasher);
                 hasher
-            })
-            .finish();
+            });
+            output.hash(&mut hasher);
+            hasher.finish()
+        };
 
         Ok(Graph {
             ops: self.ops.into(),
