@@ -128,3 +128,14 @@ impl From<[u32; 4]> for Bounds {
         }
     }
 }
+
+impl From<[i32; 4]> for Bounds {
+    fn from(value: [i32; 4]) -> Self {
+        Self {
+            left: value[0].try_into().unwrap_or_default(),
+            right: value[2].try_into().unwrap_or_default(),
+            top: value[1].try_into().unwrap_or_default(),
+            bottom: value[3].try_into().unwrap_or_default(),
+        }
+    }
+}
