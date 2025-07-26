@@ -60,7 +60,7 @@ pub trait ShaderDataWriter {
     fn write_texture_render(&mut self, value: RenderTexture);
 }
 
-impl<'a, T: ShaderDataWriter> ShaderDataWriter for &'a mut T {
+impl<'a, T: ShaderDataWriter + ?Sized> ShaderDataWriter for &'a mut T {
     #[inline]
     fn write_i32(&mut self, value: i32) {
         (*self).write_i32(value);
