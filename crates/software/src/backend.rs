@@ -42,6 +42,13 @@ impl SoftwareBackend {
 }
 
 impl<'a> SoftwareContext<'a> {
+    pub fn reborrow(&mut self) -> SoftwareContext<'_> {
+        SoftwareContext {
+            owner: self.owner,
+            screen: self.screen.reborrow(),
+        }
+    }
+
     fn draw_to_buffer(&mut self, commands: &[Command], buffer: Option<BufferMut>) -> Result<(), DrawError> {
         let mut dispatch = Dispatcher::new(&self.owner.arena);
 

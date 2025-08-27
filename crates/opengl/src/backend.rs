@@ -167,6 +167,10 @@ impl<T: HasContext> OpenGlBackend<T> {
 }
 
 impl<'a, T: HasContext> OpenGlContext<'a, T> {
+    pub fn reborrow(&'_ mut self) -> OpenGlContext<'_, T> {
+        OpenGlContext(self.0)
+    }
+
     /// Take a screenshot of a region of a buffer.
     /// Useful for debugging and testing.
     pub fn screenshot(&self, buffer: Option<RenderTexture>, bounds: impl Into<Bounds>) -> Vec<u8> {
