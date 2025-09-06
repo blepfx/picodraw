@@ -1,9 +1,9 @@
 use super::{Graph, GraphBuilder, OpAddr, OpValue};
 use crate::{graph::GraphError, shader::float4};
-use std::{cell::RefCell, mem::replace};
+use std::cell::RefCell;
 
 thread_local! {
-    static SCOPE_GRAPH: RefCell<Option<GraphBuilder>> = RefCell::new(None);
+    static SCOPE_GRAPH: RefCell<Option<GraphBuilder>> = const { RefCell::new(None) };
 }
 
 impl Graph {
@@ -19,7 +19,7 @@ impl Graph {
     }
 
     pub fn scope(f: impl FnOnce() -> float4) -> Self {
-        let prev = SCOPE_GRAPH.with(|engine| replace(&mut *engine.borrow_mut(), Some(GraphBuilder::new())));
+        let prev = SCOPE_GRAPH.with(|engine| engine.borrow_mut().replace(GraphBuilder::new()));
         let output = f();
         SCOPE_GRAPH
             .with(|engine| std::mem::replace(&mut *engine.borrow_mut(), prev))

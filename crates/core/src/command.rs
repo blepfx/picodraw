@@ -1,6 +1,5 @@
-use std::fmt::{self, Display};
-
 use crate::{Bounds, Graph, ImageData, Size};
+use std::fmt::{self, Display};
 
 /// The heart of `picodraw`.
 ///
@@ -46,11 +45,11 @@ pub enum Command {
     /// Begin rendering a single quad.
     Begin(Bounds, Shader),
 
-    /// Add data to the current quad. Should be sandwiched between [`Begin`] and [`End`] commands.
+    /// Add data to the current quad. Should be sandwiched between [`Command::Begin`] and [`Command::End`] commands.
     Data(QuadData),
 
     /// Close the scope of a single quad.
-    /// Must be preceded by a [`Begin`] command.
+    /// Must be preceded by a [`Command::Begin`] command.
     End,
 }
 
@@ -66,7 +65,7 @@ pub enum QuadData {
 ///
 /// A shader is a program that is executed on the backend.
 /// It is represented by a computation graph ([`Graph`]) that computes a pixel color based on it's position, frame resolution and other data.
-/// It's possible to send arbitrary data to a shader using the [`ShaderData`] mechanism.
+/// It's possible to send arbitrary data to a shader using the [`ShaderData`](crate::ShaderData) mechanism.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Shader(pub u64);
 

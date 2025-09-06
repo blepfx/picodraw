@@ -19,7 +19,7 @@ pub struct Graph {
     hash: u64,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct GraphBuilder {
     ops: Vec<GraphOpData>,
 }
@@ -31,7 +31,7 @@ pub enum GraphError {
 }
 
 impl Graph {
-    pub fn iter(&self) -> impl Iterator<Item = OpAddr> + DoubleEndedIterator + '_ {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = OpAddr> + ExactSizeIterator + '_ {
         (0..self.ops.len()).map(OpAddr::from_raw)
     }
 
@@ -62,11 +62,15 @@ impl Graph {
     pub fn len(&self) -> u32 {
         self.ops.len() as u32
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl GraphBuilder {
     pub fn new() -> Self {
-        Self { ops: vec![] }
+        Self::default()
     }
 
     pub fn push(&mut self, op: OpValue) -> Result<OpAddr, GraphError> {
@@ -128,7 +132,7 @@ impl Debug for Graph {
         for addr in self.iter() {
             let op = self.value_of(addr);
             let ty = self.type_of(addr);
-            writeln!(f, "\t{:?} {:?} = {:?}", addr, ty, op)?;
+            writeln!(f, "\t{addr:?} {ty:?} = {op:?}")?;
         }
         writeln!(f, "}}")?;
 

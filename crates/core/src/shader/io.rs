@@ -4,21 +4,21 @@ use crate::*;
 
 /// Read the shader data.
 ///
-/// Should be called inside of [`Graph::collect`]
+/// Should be called inside of [`Graph::scope`]
 pub fn read<T: ShaderData>() -> T::Data {
     T::read()
 }
 
 /// Get the current fragment position in physical pixels
 ///
-/// Should be called inside of [`Graph::collect`]
+/// Should be called inside of [`Graph::scope`]
 pub fn position() -> float2 {
     types::float2(Graph::push_scope(OpValue::Position).unwrap())
 }
 
 /// Get the current frame resolution in physical pixels.
 ///
-/// Should be called inside of [`Graph::collect`]
+/// Should be called inside of [`Graph::scope`]
 pub fn resolution() -> float2 {
     types::float2(Graph::push_scope(OpValue::Resolution).unwrap())
 }
@@ -26,7 +26,7 @@ pub fn resolution() -> float2 {
 /// Get the current quad bounds in physical pixels.
 /// Returns the position of the top left and bottom right corners.
 ///
-/// Should be called inside of [`Graph::collect`]
+/// Should be called inside of [`Graph::scope`]
 pub fn bounds() -> (float2, float2) {
     let start = types::float2(Graph::push_scope(OpValue::QuadStart).unwrap());
     let end = types::float2(Graph::push_scope(OpValue::QuadEnd).unwrap());
@@ -36,9 +36,6 @@ pub fn bounds() -> (float2, float2) {
 
 /// Arbitrary data that is serializable and readable by a shader.
 /// Shader data can be different per each rendered quad.
-///
-/// Use [`CommandBufferQuad`] (which implements [`ShaderDataWriter`]) to write data to the shader
-/// that can be read in the shader graph context by [`io::read`] or [`ShaderData::read`].
 pub trait ShaderData {
     type Data;
 
@@ -64,7 +61,7 @@ pub trait ShaderDataWriter {
     }
 }
 
-impl<'a, T: ShaderDataWriter + ?Sized> ShaderDataWriter for &'a mut T {
+impl<T: ShaderDataWriter + ?Sized> ShaderDataWriter for &mut T {
     #[inline]
     fn write_data(&mut self, value: QuadData) {
         (*self).write_data(value);
@@ -88,9 +85,7 @@ impl ShaderDataWriter for Vec<QuadData> {
 impl ShaderData for () {
     type Data = ();
 
-    fn read() -> Self::Data {
-        ()
-    }
+    fn read() -> Self::Data {}
 
     fn write(&self, _: impl ShaderDataWriter) {}
 }
@@ -143,7 +138,7 @@ impl ShaderData for i32 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_data(QuadData::Int(*self as i32));
+        writer.write_data(QuadData::Int(*self));
     }
 }
 
@@ -195,7 +190,7 @@ impl ShaderData for f32 {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_data(QuadData::Float(*self as f32));
+        writer.write_data(QuadData::Float(*self));
     }
 }
 
@@ -238,7 +233,7 @@ impl ShaderData for Texture {
     }
 }
 
-impl<'a, T: ShaderData> ShaderData for &'a T {
+impl<T: ShaderData> ShaderData for &T {
     type Data = T::Data;
 
     fn read() -> Self::Data {
@@ -247,7 +242,7 @@ impl<'a, T: ShaderData> ShaderData for &'a T {
 
     #[inline]
     fn write(&self, writer: impl ShaderDataWriter) {
-        T::write(&self, writer);
+        T::write(self, writer);
     }
 }
 
@@ -260,8 +255,8 @@ impl<const N: usize, T: ShaderData> ShaderData for [T; N] {
 
     #[inline]
     fn write(&self, mut writer: impl ShaderDataWriter) {
-        for i in 0..N {
-            self[i].write(&mut writer);
+        for elem in self {
+            elem.write(&mut writer);
         }
     }
 }
