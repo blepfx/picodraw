@@ -110,32 +110,52 @@ impl Bounds {
 }
 
 impl From<[u32; 2]> for Size {
-    fn from(value: [u32; 2]) -> Self {
-        Self {
-            width: value[0],
-            height: value[1],
-        }
+    fn from([width, height]: [u32; 2]) -> Self {
+        Self { width, height }
+    }
+}
+
+impl From<(u32, u32)> for Size {
+    fn from((width, height): (u32, u32)) -> Self {
+        Self { width, height }
     }
 }
 
 impl From<[u32; 4]> for Bounds {
-    fn from(value: [u32; 4]) -> Self {
+    fn from([left, top, right, bottom]: [u32; 4]) -> Self {
         Self {
-            left: value[0],
-            right: value[2],
-            top: value[1],
-            bottom: value[3],
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+}
+
+impl From<(u32, u32, u32, u32)> for Bounds {
+    fn from((left, top, right, bottom): (u32, u32, u32, u32)) -> Self {
+        Self {
+            left,
+            top,
+            right,
+            bottom,
         }
     }
 }
 
 impl From<[i32; 4]> for Bounds {
-    fn from(value: [i32; 4]) -> Self {
+    fn from([left, top, right, bottom]: [i32; 4]) -> Self {
         Self {
-            left: value[0].try_into().unwrap_or_default(),
-            right: value[2].try_into().unwrap_or_default(),
-            top: value[1].try_into().unwrap_or_default(),
-            bottom: value[3].try_into().unwrap_or_default(),
+            left: left.try_into().unwrap_or_default(),
+            right: right.try_into().unwrap_or_default(),
+            top: top.try_into().unwrap_or_default(),
+            bottom: bottom.try_into().unwrap_or_default(),
         }
+    }
+}
+
+impl From<(i32, i32, i32, i32)> for Bounds {
+    fn from((left, top, right, bottom): (i32, i32, i32, i32)) -> Self {
+        Self::from([left, top, right, bottom])
     }
 }

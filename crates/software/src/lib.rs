@@ -7,6 +7,8 @@ mod vm;
 pub use backend::*;
 pub use buffer::*;
 
+pub use vm::TILE_SIZE;
+
 // TODO: implement
 //
 // the idea is as follows:
