@@ -5,7 +5,9 @@ use crate::{
     vm::{CompiledShader, VMSlot},
 };
 use bumpalo::Bump;
-use picodraw_core::{Command, Context, DrawError, Graph, TextureData, QuadData, RenderTexture, Shader, Size, Texture};
+use picodraw_core::{
+    Command, Context, DrawError, Graph, QuadData, RenderTextureId, ShaderId, Size, TextureData, TextureId,
+};
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 
 pub struct SoftwareBackend {
@@ -110,36 +112,36 @@ impl<'a> SoftwareContext<'a> {
 }
 
 impl<'a> Context for SoftwareContext<'a> {
-    fn create_texture_render(&mut self, size: Size) -> RenderTexture {
+    fn create_texture_render(&mut self, size: Size) -> RenderTextureId {
         let id = self
             .owner
             .buffers
             .insert(Some(Buffer::new(size.width as _, size.height as _)));
-        RenderTexture(id.data().as_ffi())
+        RenderTextureId(id.data().as_ffi())
     }
 
-    fn delete_texture_render(&mut self, id: RenderTexture) -> bool {
+    fn delete_texture_render(&mut self, id: RenderTextureId) -> bool {
         self.owner.buffers.remove(KeyData::from_ffi(id.0).into()).is_some()
     }
 
-    fn create_texture_static(&mut self, data: TextureData) -> Texture {
+    fn create_texture_static(&mut self, data: TextureData) -> TextureId {
         let id = self.owner.textures.insert(Buffer::from(data));
-        Texture(id.data().as_ffi())
+        TextureId(id.data().as_ffi())
     }
 
-    fn delete_texture_static(&mut self, id: Texture) -> bool {
+    fn delete_texture_static(&mut self, id: TextureId) -> bool {
         self.owner.textures.remove(KeyData::from_ffi(id.0).into()).is_some()
     }
 
-    fn create_shader(&mut self, graph: Graph) -> Shader {
+    fn create_shader(&mut self, graph: Graph) -> ShaderId {
         let compiled = CompiledShader::compile(&self.owner.arena, &graph);
         let key = self.owner.shaders.insert(compiled);
         self.owner.arena.reset();
 
-        Shader(key.data().as_ffi())
+        ShaderId(key.data().as_ffi())
     }
 
-    fn delete_shader(&mut self, id: Shader) -> bool {
+    fn delete_shader(&mut self, id: ShaderId) -> bool {
         self.owner.shaders.remove(KeyData::from_ffi(id.0).into()).is_some()
     }
 
@@ -147,7 +149,7 @@ impl<'a> Context for SoftwareContext<'a> {
         self.draw_to_buffer(commands, None)
     }
 
-    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) -> Result<(), DrawError> {
+    fn draw_texture(&mut self, target: RenderTextureId, commands: &[Command]) -> Result<(), DrawError> {
         let mut buffer = self
             .owner
             .buffers

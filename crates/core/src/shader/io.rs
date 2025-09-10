@@ -207,7 +207,7 @@ impl ShaderData for f64 {
     }
 }
 
-impl ShaderData for RenderTexture {
+impl ShaderData for RenderTextureId {
     type Data = texture;
 
     fn read() -> Self::Data {
@@ -220,7 +220,7 @@ impl ShaderData for RenderTexture {
     }
 }
 
-impl ShaderData for Texture {
+impl ShaderData for TextureId {
     type Data = texture;
 
     fn read() -> Self::Data {

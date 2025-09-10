@@ -173,7 +173,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
 
     /// Take a screenshot of a region of a buffer.
     /// Useful for debugging and testing.
-    pub fn screenshot(&self, buffer: Option<RenderTexture>, bounds: impl Into<Bounds>) -> Vec<u8> {
+    pub fn screenshot(&self, buffer: Option<RenderTextureId>, bounds: impl Into<Bounds>) -> Vec<u8> {
         let bounds = bounds.into();
 
         let buffer = match buffer {
@@ -238,7 +238,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                 self.0
                     .shaders
                     .iter()
-                    .map(|(id, shader)| (Shader(id.data().as_ffi()), shader)),
+                    .map(|(id, shader)| (ShaderId(id.data().as_ffi()), shader)),
             );
 
             let program = GlProgram::compile(gl, &result.vertex, &result.fragment);
@@ -368,31 +368,31 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
 }
 
 impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
-    fn create_texture_render(&mut self, size: Size) -> RenderTexture {
+    fn create_texture_render(&mut self, size: Size) -> RenderTextureId {
         let id = self
             .0
             .framebuffers
             .insert(Some(GlTextureRender::new(&self.0.gl_context, size.width, size.height)));
 
-        RenderTexture(id.data().as_ffi())
+        RenderTextureId(id.data().as_ffi())
     }
 
-    fn create_texture_static(&mut self, data: TextureData) -> Texture {
+    fn create_texture_static(&mut self, data: TextureData) -> TextureId {
         let id = self.0.textures.insert(GlTextureStatic::new(&self.0.gl_context, data));
 
-        Texture(id.data().as_ffi())
+        TextureId(id.data().as_ffi())
     }
 
-    fn create_shader(&mut self, graph: Graph) -> Shader {
+    fn create_shader(&mut self, graph: Graph) -> ShaderId {
         if let Some(program) = self.0.program.take() {
             program.program.delete(&self.0.gl_context);
         }
 
         let id = self.0.shaders.insert(graph);
-        Shader(id.data().as_ffi())
+        ShaderId(id.data().as_ffi())
     }
 
-    fn delete_texture_render(&mut self, id: RenderTexture) -> bool {
+    fn delete_texture_render(&mut self, id: RenderTextureId) -> bool {
         match self.0.framebuffers.remove(KeyData::from_ffi(id.0).into()) {
             Some(fb) => {
                 if let Some(framebuffer) = fb {
@@ -405,7 +405,7 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         }
     }
 
-    fn delete_texture_static(&mut self, id: Texture) -> bool {
+    fn delete_texture_static(&mut self, id: TextureId) -> bool {
         match self.0.textures.remove(KeyData::from_ffi(id.0).into()) {
             Some(texture) => {
                 texture.delete(&self.0.gl_context);
@@ -415,7 +415,7 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         }
     }
 
-    fn delete_shader(&mut self, id: Shader) -> bool {
+    fn delete_shader(&mut self, id: ShaderId) -> bool {
         match self.0.shaders.remove(KeyData::from_ffi(id.0).into()) {
             Some(_) => true,
             _ => false,
@@ -426,7 +426,7 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         self.draw_to_target(commands, None)
     }
 
-    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) -> Result<(), DrawError> {
+    fn draw_texture(&mut self, target: RenderTextureId, commands: &[Command]) -> Result<(), DrawError> {
         let mut buffer = self
             .0
             .framebuffers

@@ -528,7 +528,7 @@ pub mod texture {
             });
 
             let shader = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 let uv = io::position() / io::resolution();
                 texture.sample(uv * float2(texture.size()), TextureFilter::Nearest)
             }));
@@ -550,7 +550,7 @@ pub mod texture {
             });
 
             let shader = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 let uv = io::position() / io::resolution();
                 texture.sample(uv * float2(texture.size()), TextureFilter::Linear)
             }));
@@ -576,7 +576,7 @@ pub mod texture {
             }));
 
             let shader_negative = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 let z = texture.sample(
                     io::position() / io::resolution() * float2(texture.size()),
                     TextureFilter::Linear,
@@ -610,7 +610,7 @@ pub mod texture {
             }));
 
             let shader_negative = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 let z = texture.sample(
                     io::position() / io::resolution() * float2(texture.size()),
                     TextureFilter::Linear,
@@ -640,7 +640,7 @@ pub mod texture {
             });
 
             let shader = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
 
@@ -661,7 +661,7 @@ pub mod texture {
             });
 
             let shader = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
 
@@ -682,7 +682,7 @@ pub mod texture {
             });
 
             let shader = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
 
@@ -765,7 +765,7 @@ pub mod stress {
                 .collect::<Vec<_>>();
 
             let shader = context.create_shader(Graph::scope(|| {
-                let texture = io::read::<Texture>();
+                let texture = io::read::<TextureId>();
                 texture.sample(float2(0.0), TextureFilter::Linear)
             }));
 
@@ -880,7 +880,7 @@ pub mod complex {
             });
 
             let shader = context.create_shader(Graph::scope(|| {
-                let atlas = io::read::<Texture>();
+                let atlas = io::read::<TextureId>();
                 let (x, y) = io::read::<(f32, f32)>();
                 let scale = io::read::<f32>();
 
@@ -942,7 +942,7 @@ pub mod complex {
             }));
 
             let shader_boxblur = context.create_shader(Graph::scope(|| {
-                let buffer = io::read::<RenderTexture>();
+                let buffer = io::read::<RenderTextureId>();
 
                 let mut result = float4(0.0);
                 for i in -5..=5 {
@@ -977,7 +977,7 @@ pub mod complex {
     }
 }
 
-fn add_quad<T: ShaderData>(mut cmds: &mut Vec<Command>, shader: Shader, bounds: impl Into<Bounds>, data: T) {
+fn add_quad<T: ShaderData>(mut cmds: &mut Vec<Command>, shader: ShaderId, bounds: impl Into<Bounds>, data: T) {
     cmds.push(Command::Begin(bounds.into(), shader));
     data.write(&mut cmds);
     cmds.push(Command::End);

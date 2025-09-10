@@ -1,5 +1,5 @@
 use picodraw::{
-    Command, Context, Graph, QuadData, Shader,
+    Command, Context, Graph, QuadData, ShaderId,
     opengl::{Native, OpenGlBackend},
     shader::{float1, float2, float4, io},
 };
@@ -8,7 +8,7 @@ use std::time::Duration;
 
 struct Data {
     gl: OpenGlBackend<Native>,
-    shader: Shader,
+    shader: ShaderId,
     width: u32,
     height: u32,
     scroll: f32,

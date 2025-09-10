@@ -16,7 +16,7 @@ pub const UNIFORM_BUFFER_DATA_OFFSET: &str = "uBufferDataOffset";
 
 pub fn compile_glsl<'a>(
     options: CompilerOptions,
-    shaders: impl IntoIterator<Item = (picodraw_core::Shader, &'a picodraw_core::Graph)>,
+    shaders: impl IntoIterator<Item = (picodraw_core::ShaderId, &'a picodraw_core::Graph)>,
 ) -> CompilerResult {
     let shaders = shaders.into_iter().collect::<HashMap<_, _>>();
 
@@ -85,5 +85,5 @@ pub struct CompilerOptions {
 pub struct CompilerResult {
     pub vertex: String,
     pub fragment: String,
-    pub layout: HashMap<picodraw_core::Shader, serialize::ShaderDataLayout>,
+    pub layout: HashMap<picodraw_core::ShaderId, serialize::ShaderDataLayout>,
 }

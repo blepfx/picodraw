@@ -36,18 +36,15 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         b.iter(|| {
             let mut cx = backend.open(BufferMut::from_slice(&mut buffer, 512, 512));
-            let mut commands = CommandBuffer::new();
+            let mut commands = vec![];
 
-            {
-                let mut commands = commands.begin_screen([512, 512]);
-                for i in 0..10 {
-                    commands
-                        .begin_quad(shader, [0, 0, 512, 512])
-                        .write_data(&(2.0 - i as f32 * 0.15));
-                }
+            for i in 0..10 {
+                commands.push(Command::Begin([0, 0, 512, 512].into(), shader));
+                commands.push(Command::Data(QuadData::Float(2.0 - i as f32 * 0.15)));
+                commands.push(Command::End);
             }
 
-            cx.draw(&commands);
+            cx.draw_screen(&commands).unwrap();
             black_box(&buffer);
         })
     });

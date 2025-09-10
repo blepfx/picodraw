@@ -32,12 +32,14 @@ let shader = context.create_shader(Graph::scope(||
         io::read::<f32>(),
     )));
 
-let mut commands = CommandBuffer::new();
-commands.begin_screen([512, 512])
-    .begin_quad(shader, [0, 0, 512, 512])
-    .write_data(256.0)
-    .write_data(256.0)
-    .write_data(100.0);
+
+context.draw_screen(&[
+    Command::Begin([0, 0, 512, 512].into(), shader),
+    Command::Data(QuadData::Float(256.0)),
+    Command::Data(QuadData::Float(256.0)),
+    Command::Data(QuadData::Float(100.0)),
+    Command::End,
+]);
 
 context.draw(&commands);
 ```

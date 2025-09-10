@@ -5,35 +5,35 @@ use std::fmt::{self, Display};
 ///
 /// Context is used to interact with the rendering backend.
 pub trait Context {
-    /// Create a dynamic render texture and returns its ID. See [`RenderTexture`] for more info.
+    /// Create a dynamic render texture and returns its ID. See [`RenderTextureId`] for more info.
     ///
     /// If you want to delete the render texture, you should call [`Context::delete_texture_render`] with the returned ID.
-    fn create_texture_render(&mut self, size: Size) -> RenderTexture;
+    fn create_texture_render(&mut self, size: Size) -> RenderTextureId;
 
     /// Delete a dynamic render texture by its ID.
-    fn delete_texture_render(&mut self, id: RenderTexture) -> bool;
+    fn delete_texture_render(&mut self, id: RenderTextureId) -> bool;
 
-    /// Create a static texture from the given image data and returns its ID. See [`Texture`] for more info.
+    /// Create a static texture from the given image data and returns its ID. See [`TextureId`] for more info.
     ///
     /// If you want to delete the texture, you should call [`Context::delete_texture_static`] with the returned ID.
-    fn create_texture_static(&mut self, data: TextureData) -> Texture;
+    fn create_texture_static(&mut self, data: TextureData) -> TextureId;
 
     /// Delete a static texture by its ID.
-    fn delete_texture_static(&mut self, id: Texture) -> bool;
+    fn delete_texture_static(&mut self, id: TextureId) -> bool;
 
-    /// Create a shader from the given shader graph and returns its ID. See [`Shader`] for more info.
+    /// Create a shader from the given shader graph and returns its ID. See [`ShaderId`] for more info.
     ///
     /// If you want to delete the shader, you should call [`Context::delete_shader`] with the returned ID.
-    fn create_shader(&mut self, graph: Graph) -> Shader;
+    fn create_shader(&mut self, graph: Graph) -> ShaderId;
 
     /// Delete a shader by its ID.
-    fn delete_shader(&mut self, id: Shader) -> bool;
+    fn delete_shader(&mut self, id: ShaderId) -> bool;
 
     /// Execute a list of draw commands on the backend
     fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError>;
 
     /// Execute a list of draw commands on the backend
-    fn draw_texture(&mut self, target: RenderTexture, commands: &[Command]) -> Result<(), DrawError>;
+    fn draw_texture(&mut self, target: RenderTextureId, commands: &[Command]) -> Result<(), DrawError>;
 }
 
 /// A single draw command.
@@ -43,7 +43,7 @@ pub enum Command {
     Clear(Bounds),
 
     /// Begin rendering a single quad.
-    Begin(Bounds, Shader),
+    Begin(Bounds, ShaderId),
 
     /// Add data to the current quad. Should be sandwiched between [`Command::Begin`] and [`Command::End`] commands.
     Data(QuadData),
@@ -57,8 +57,8 @@ pub enum Command {
 pub enum QuadData {
     Float(f32),
     Int(i32),
-    Texture(Texture),
-    RenderTexture(RenderTexture),
+    Texture(TextureId),
+    RenderTexture(RenderTextureId),
 }
 
 /// Shader.
@@ -67,19 +67,19 @@ pub enum QuadData {
 /// It is represented by a computation graph ([`Graph`]) that computes a pixel color based on it's position, frame resolution and other data.
 /// It's possible to send arbitrary data to a shader using the [`ShaderData`](crate::ShaderData) mechanism.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct Shader(pub u64);
+pub struct ShaderId(pub u64);
 
 /// Static texture.
 ///
 /// A texture is a 2D image that can be sampled in shaders.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct Texture(pub u64);
+pub struct TextureId(pub u64);
 
 /// Dynamic render texture.
 ///
 /// A render texture is an off-screen buffer you can render to and use it as a texture later.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct RenderTexture(pub u64);
+pub struct RenderTextureId(pub u64);
 
 /// An error that is occured while drawing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
