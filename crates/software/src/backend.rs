@@ -5,7 +5,7 @@ use crate::{
     vm::{CompiledShader, VMSlot},
 };
 use bumpalo::Bump;
-use picodraw_core::{Command, Context, DrawError, Graph, ImageData, QuadData, RenderTexture, Shader, Size, Texture};
+use picodraw_core::{Command, Context, DrawError, Graph, TextureData, QuadData, RenderTexture, Shader, Size, Texture};
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 
 pub struct SoftwareBackend {
@@ -122,7 +122,7 @@ impl<'a> Context for SoftwareContext<'a> {
         self.owner.buffers.remove(KeyData::from_ffi(id.0).into()).is_some()
     }
 
-    fn create_texture_static(&mut self, data: ImageData) -> Texture {
+    fn create_texture_static(&mut self, data: TextureData) -> Texture {
         let id = self.owner.textures.insert(Buffer::from(data));
         Texture(id.data().as_ffi())
     }

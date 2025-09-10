@@ -35,7 +35,8 @@ fn main() {
     let mut world = World::new_program().unwrap();
     let view = world
         .new_view(OpenGl {
-            version: OpenGlVersion::Core(3, 0),
+            version: OpenGlVersion::Core(3, 1),
+            debug: true,
             bits_alpha: 0,
             bits_depth: 0,
             bits_stencil: 0,

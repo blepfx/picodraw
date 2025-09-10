@@ -1,18 +1,18 @@
 /// Pixel format of an image.
 #[derive(Clone, Copy, Debug)]
-pub enum ImageFormat {
+pub enum TextureFormat {
     R8,
     RGB8,
     RGBA8,
 }
 
-impl ImageFormat {
+impl TextureFormat {
     /// Get the number of bytes per pixel for this format.
     pub fn bytes_per_pixel(&self) -> usize {
         match self {
-            ImageFormat::R8 => 1,
-            ImageFormat::RGB8 => 3,
-            ImageFormat::RGBA8 => 4,
+            TextureFormat::R8 => 1,
+            TextureFormat::RGB8 => 3,
+            TextureFormat::RGBA8 => 4,
         }
     }
 }
@@ -23,12 +23,12 @@ pub enum TextureFilter {
     Nearest,
 }
 
-/// Image/texture data. Used for uploading static textures to the backend.
+/// Texture data. Used for uploading static textures to the backend.
 #[derive(Clone, Copy, Debug)]
-pub struct ImageData<'a> {
+pub struct TextureData<'a> {
     pub width: u32,
     pub height: u32,
-    pub format: ImageFormat,
+    pub format: TextureFormat,
     pub data: &'a [u8],
 }
 

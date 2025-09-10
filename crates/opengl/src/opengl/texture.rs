@@ -20,7 +20,7 @@ pub struct GlFramebufferBinding<'a, T: HasContext> {
 }
 
 impl<T: HasContext> GlTextureStatic<T> {
-    pub fn new(gl: &T, data: picodraw_core::ImageData) -> Self {
+    pub fn new(gl: &T, data: picodraw_core::TextureData) -> Self {
         assert!(
             data.data.len() == data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
             "invalid {:?} data length: {} != {} (width x height x {})",
@@ -44,17 +44,17 @@ impl<T: HasContext> GlTextureStatic<T> {
                 TEXTURE_2D,
                 0,
                 match data.format {
-                    picodraw_core::ImageFormat::R8 => R8 as _,
-                    picodraw_core::ImageFormat::RGB8 => RGB8 as _,
-                    picodraw_core::ImageFormat::RGBA8 => RGBA8 as _,
+                    picodraw_core::TextureFormat::R8 => R8 as _,
+                    picodraw_core::TextureFormat::RGB8 => RGB8 as _,
+                    picodraw_core::TextureFormat::RGBA8 => RGBA8 as _,
                 },
                 data.width as _,
                 data.height as _,
                 0,
                 match data.format {
-                    picodraw_core::ImageFormat::R8 => RED as _,
-                    picodraw_core::ImageFormat::RGB8 => RGB as _,
-                    picodraw_core::ImageFormat::RGBA8 => RGBA as _,
+                    picodraw_core::TextureFormat::R8 => RED as _,
+                    picodraw_core::TextureFormat::RGB8 => RGB as _,
+                    picodraw_core::TextureFormat::RGBA8 => RGBA as _,
                 },
                 glow::UNSIGNED_BYTE,
                 PixelUnpackData::Slice(Some(data.data)),

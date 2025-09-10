@@ -1,4 +1,4 @@
-use picodraw_core::{ImageData, ImageFormat, TextureFilter};
+use picodraw_core::{TextureData, TextureFilter, TextureFormat};
 use std::{
     marker::PhantomData,
     ops::{Deref, Index, IndexMut},
@@ -59,8 +59,8 @@ impl Buffer {
     }
 }
 
-impl<'a> From<ImageData<'a>> for Buffer {
-    fn from(data: ImageData) -> Self {
+impl<'a> From<TextureData<'a>> for Buffer {
+    fn from(data: TextureData) -> Self {
         assert!(
             data.data.len() == data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
             "invalid {:?} data length: {} != {} (width x height x {})",
@@ -72,7 +72,7 @@ impl<'a> From<ImageData<'a>> for Buffer {
 
         let mut buffer = Self::new(data.width as usize, data.height as usize);
         match data.format {
-            ImageFormat::RGBA8 => {
+            TextureFormat::RGBA8 => {
                 let data = data.data.as_ref();
                 for y in 0..buffer.height {
                     for x in 0..buffer.width {
@@ -83,7 +83,7 @@ impl<'a> From<ImageData<'a>> for Buffer {
                 }
             }
 
-            ImageFormat::RGB8 => {
+            TextureFormat::RGB8 => {
                 let data = data.data.as_ref();
                 for y in 0..buffer.height {
                     for x in 0..buffer.width {
@@ -94,7 +94,7 @@ impl<'a> From<ImageData<'a>> for Buffer {
                 }
             }
 
-            ImageFormat::R8 => {
+            TextureFormat::R8 => {
                 let data = data.data.as_ref();
                 for y in 0..buffer.height {
                     for x in 0..buffer.width {

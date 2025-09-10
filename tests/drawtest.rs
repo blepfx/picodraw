@@ -520,10 +520,10 @@ pub mod texture {
     #[test]
     fn texture_static_nearest() {
         run("texture_static_nearest", 32, 32, |context| {
-            let texture = context.create_texture_static(ImageData {
+            let texture = context.create_texture_static(TextureData {
                 width: 4,
                 height: 4,
-                format: ImageFormat::R8,
+                format: TextureFormat::R8,
                 data: &TEST_DITHER0,
             });
 
@@ -542,10 +542,10 @@ pub mod texture {
     #[test]
     fn texture_static_linear() {
         run("texture_static_linear", 32, 32, |context| {
-            let texture = context.create_texture_static(ImageData {
+            let texture = context.create_texture_static(TextureData {
                 width: 4,
                 height: 4,
-                format: ImageFormat::R8,
+                format: TextureFormat::R8,
                 data: &TEST_DITHER0,
             });
 
@@ -632,10 +632,10 @@ pub mod texture {
     #[test]
     fn texture_load_r8() {
         run("texture_load_r8", 4, 4, |context| {
-            let texture = context.create_texture_static(ImageData {
+            let texture = context.create_texture_static(TextureData {
                 width: 1,
                 height: 1,
-                format: ImageFormat::R8,
+                format: TextureFormat::R8,
                 data: &[100],
             });
 
@@ -653,10 +653,10 @@ pub mod texture {
     #[test]
     fn texture_load_rgb8() {
         run("texture_load_rgb8", 4, 4, |context| {
-            let texture = context.create_texture_static(ImageData {
+            let texture = context.create_texture_static(TextureData {
                 width: 1,
                 height: 1,
-                format: ImageFormat::RGB8,
+                format: TextureFormat::RGB8,
                 data: &[100, 50, 200],
             });
 
@@ -674,10 +674,10 @@ pub mod texture {
     #[test]
     fn texture_load_rgba8() {
         run("texture_load_rgba8", 4, 4, |context| {
-            let texture = context.create_texture_static(ImageData {
+            let texture = context.create_texture_static(TextureData {
                 width: 1,
                 height: 1,
-                format: ImageFormat::RGBA8,
+                format: TextureFormat::RGBA8,
                 data: &[100, 50, 200, 150],
             });
 
@@ -755,10 +755,10 @@ pub mod stress {
         run("stress_texture_count", 256, 8, move |context| {
             let textures = (0..=255u8)
                 .map(|x| {
-                    context.create_texture_static(ImageData {
+                    context.create_texture_static(TextureData {
                         width: 1,
                         height: 1,
-                        format: ImageFormat::R8,
+                        format: TextureFormat::R8,
                         data: &[x],
                     })
                 })
@@ -872,10 +872,10 @@ pub mod complex {
         };
 
         run("complex_msdf", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
-            let texture = context.create_texture_static(ImageData {
+            let texture = context.create_texture_static(TextureData {
                 width,
                 height,
-                format: ImageFormat::RGBA8,
+                format: TextureFormat::RGBA8,
                 data: &data,
             });
 

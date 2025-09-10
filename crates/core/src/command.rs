@@ -1,4 +1,4 @@
-use crate::{Bounds, Graph, ImageData, Size};
+use crate::{Bounds, Graph, Size, TextureData};
 use std::fmt::{self, Display};
 
 /// The heart of `picodraw`.
@@ -16,7 +16,7 @@ pub trait Context {
     /// Create a static texture from the given image data and returns its ID. See [`Texture`] for more info.
     ///
     /// If you want to delete the texture, you should call [`Context::delete_texture_static`] with the returned ID.
-    fn create_texture_static(&mut self, data: ImageData) -> Texture;
+    fn create_texture_static(&mut self, data: TextureData) -> Texture;
 
     /// Delete a static texture by its ID.
     fn delete_texture_static(&mut self, id: Texture) -> bool;

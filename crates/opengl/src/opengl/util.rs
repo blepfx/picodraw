@@ -23,7 +23,7 @@ pub fn enable_debug(gl: &mut impl HasContext) {
         gl.enable(DEBUG_OUTPUT);
         gl.enable(DEBUG_OUTPUT_SYNCHRONOUS);
         gl.debug_message_callback(|_, _, _, _, message| {
-            println!("{}", message);
+            eprintln!("{}", message);
         });
     }
 }

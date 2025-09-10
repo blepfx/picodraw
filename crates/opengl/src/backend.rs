@@ -377,7 +377,7 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         RenderTexture(id.data().as_ffi())
     }
 
-    fn create_texture_static(&mut self, data: ImageData) -> Texture {
+    fn create_texture_static(&mut self, data: TextureData) -> Texture {
         let id = self.0.textures.insert(GlTextureStatic::new(&self.0.gl_context, data));
 
         Texture(id.data().as_ffi())
