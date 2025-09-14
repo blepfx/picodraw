@@ -314,7 +314,10 @@ impl FragmentCodegen {
             Ge(x, y) => emit!("({}>={})", x, y),
             And(x, y) => emit!("({}&{})", x, y),
             Or(x, y) => emit!("({}|{})", x, y),
+
+            Xor(x, y) if ty == Boolean => emit!("({}!={})", x, y),
             Xor(x, y) => emit!("({}^{})", x, y),
+
             Shl(x, y) => emit!("({}<<{})", x, y),
             Shr(x, y) => emit!("({}>>{})", x, y),
 
