@@ -273,13 +273,13 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             (self.drawcall_quads.len() * 6) as u32,
         );
 
-        self.drawcall_data.clear();
-        self.drawcall_quads.clear();
-        self.drawcall_textures.clear();
-
         self.total_bytes_written += range_quaddata.len() as u64;
         self.total_bytes_written += range_quadlist.len() as u64;
         self.total_quads_written += self.drawcall_quads.len() as u32;
         self.total_drawcalls_issued += 1;
+
+        self.drawcall_data.clear();
+        self.drawcall_quads.clear();
+        self.drawcall_textures.clear();
     }
 }
