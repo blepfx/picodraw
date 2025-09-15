@@ -25,7 +25,7 @@ impl ShaderDataLayout {
                     OpInput::U16 => (2, 2),
                     OpInput::U8 => (1, 1),
 
-                    OpInput::TextureRender | OpInput::TextureStatic => {
+                    OpInput::Texture => {
                         textures.push((textures_start + textures.len() as u32) % textures_limit);
                         continue;
                     }

@@ -24,7 +24,7 @@ impl CompiledShader {
         let mut slots_texture = 0;
 
         let builder = ir::IRBuilder::from_graph(arena, graph, |builder, addr, input| match input {
-            OpInput::TextureRender | OpInput::TextureStatic => {
+            OpInput::Texture => {
                 builder.set_texture(addr, slots_texture);
                 slots_texture += 1;
             }

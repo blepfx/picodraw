@@ -211,7 +211,7 @@ impl ShaderData for TextureId {
     type Data = texture;
 
     fn read() -> Self::Data {
-        types::texture(Graph::push_scope(OpValue::Input(OpInput::TextureStatic)).unwrap())
+        types::texture(Graph::push_scope(OpValue::Input(OpInput::Texture)).unwrap())
     }
 
     #[inline]

@@ -134,8 +134,7 @@ impl FragmentCodegen {
             OpValue::Resolution => true,
             OpValue::QuadStart => true,
             OpValue::QuadEnd => true,
-            OpValue::Input(OpInput::TextureRender) => true,
-            OpValue::Input(OpInput::TextureStatic) => true,
+            OpValue::Input(OpInput::Texture) => true,
             _ => {
                 let dependents = (graph.output() == op) as usize + graph.dependents_of(op).count();
                 dependents < 2
@@ -250,7 +249,7 @@ impl FragmentCodegen {
                 let offset = self.graph_inputs.pop_front().expect("codegen error");
                 format!("int({})", self.emit_input_int(offset, 1))
             }
-            Input(OpInput::TextureRender) | Input(OpInput::TextureStatic) => {
+            Input(OpInput::Texture) => {
                 let index = self.graph_textures.pop_front().expect("codegen error");
                 format!("{}", index)
             }

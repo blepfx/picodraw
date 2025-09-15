@@ -95,8 +95,7 @@ pub enum OpValue {
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum OpInput {
-    TextureStatic,
-    TextureRender,
+    Texture,
 
     F32,
     I32,
@@ -124,8 +123,7 @@ pub enum OpType {
     I3,
     I4,
     Boolean,
-    TextureStatic,
-    TextureRender,
+    Texture,
 }
 
 impl OpAddr {
@@ -140,8 +138,7 @@ impl OpAddr {
 
 impl OpType {
     pub fn is_numeric(self) -> bool {
-        use OpType::*;
-        matches!(self, F1 | F2 | F3 | F4 | I1 | I2 | I3 | I4)
+        self.is_float() || self.is_int()
     }
 
     pub fn is_float(self) -> bool {
@@ -154,11 +151,6 @@ impl OpType {
         matches!(self, I1 | I2 | I3 | I4)
     }
 
-    pub fn is_texture(self) -> bool {
-        use OpType::*;
-        matches!(self, TextureStatic | TextureRender)
-    }
-
     pub fn size(self) -> u32 {
         use OpType::*;
         match self {
@@ -166,7 +158,7 @@ impl OpType {
             F2 | I2 => 2,
             F3 | I3 => 3,
             F4 | I4 => 4,
-            TextureStatic | TextureRender => 1,
+            Texture => 1,
         }
     }
 }
@@ -182,8 +174,7 @@ impl OpInput {
             Self::I8 => I1,
             Self::U16 => I1,
             Self::U8 => I1,
-            Self::TextureStatic => TextureStatic,
-            Self::TextureRender => TextureRender,
+            Self::Texture => Texture,
         }
     }
 }
@@ -203,8 +194,7 @@ impl OpValue {
             Input(OpInput::I8) => I1,
             Input(OpInput::U16) => I1,
             Input(OpInput::U8) => I1,
-            Input(OpInput::TextureStatic) => TextureStatic,
-            Input(OpInput::TextureRender) => TextureRender,
+            Input(OpInput::Texture) => Texture,
 
             Literal(OpLiteral::Float(_)) => F1,
             Literal(OpLiteral::Int(_)) => I1,
@@ -441,7 +431,7 @@ impl OpValue {
             TextureSample(x, y, _) => {
                 let x = arg(x)?;
                 let y = arg(y)?;
-                if x.is_texture() && y == F2 {
+                if x == Texture && y == F2 {
                     F4
                 } else {
                     return None;
@@ -449,7 +439,7 @@ impl OpValue {
             }
 
             TextureSize(x) => match arg(x)? {
-                TextureStatic | TextureRender => I2,
+                Texture => I2,
                 _ => return None,
             },
         })
@@ -588,8 +578,7 @@ impl Debug for OpType {
             I3 => write!(f, "I3"),
             I4 => write!(f, "I4"),
             Boolean => write!(f, "B1"),
-            TextureStatic => write!(f, "TX"),
-            TextureRender => write!(f, "TR"),
+            Texture => write!(f, "TX"),
         }
     }
 }
