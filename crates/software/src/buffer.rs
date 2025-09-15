@@ -1,4 +1,4 @@
-use picodraw_core::{TextureData, TextureFilter, TextureFormat};
+use picodraw_core::{TextureFilter, TextureFormat};
 use std::{
     marker::PhantomData,
     ops::{Deref, Index, IndexMut},
@@ -56,56 +56,6 @@ impl Buffer {
 
     pub fn as_mut(&mut self) -> BufferMut<'_> {
         BufferMut::from_slice(&mut self.data, self.width, self.height)
-    }
-}
-
-impl<'a> From<TextureData<'a>> for Buffer {
-    fn from(data: TextureData) -> Self {
-        assert!(
-            data.data.len() == data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
-            "invalid {:?} data length: {} != {} (width x height x {})",
-            data.format,
-            data.data.len(),
-            data.width as usize * data.height as usize * data.format.bytes_per_pixel(),
-            data.format.bytes_per_pixel()
-        );
-
-        let mut buffer = Self::new(data.width as usize, data.height as usize);
-        match data.format {
-            TextureFormat::RGBA8 => {
-                let data = data.data.as_ref();
-                for y in 0..buffer.height {
-                    for x in 0..buffer.width {
-                        let offset = (y * buffer.width + x) * 4;
-                        buffer.data[y * buffer.width + x] =
-                            pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], data[offset + 3]);
-                    }
-                }
-            }
-
-            TextureFormat::RGB8 => {
-                let data = data.data.as_ref();
-                for y in 0..buffer.height {
-                    for x in 0..buffer.width {
-                        let offset = (y * buffer.width + x) * 3;
-                        buffer.data[y * buffer.width + x] =
-                            pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], 0xFF);
-                    }
-                }
-            }
-
-            TextureFormat::R8 => {
-                let data = data.data.as_ref();
-                for y in 0..buffer.height {
-                    for x in 0..buffer.width {
-                        let offset = y * buffer.width + x;
-                        buffer.data[offset] = pack_rgba(data[offset], 0, 0, 0xFF);
-                    }
-                }
-            }
-        }
-
-        buffer
     }
 }
 
@@ -256,6 +206,40 @@ impl<'a> BufferMut<'a> {
     pub fn subregion_mut(&mut self, x: usize, y: usize, width: usize, height: usize) -> Self {
         Self {
             0: self.subregion(x, y, width, height),
+        }
+    }
+
+    pub fn unpack_data(&mut self, width: usize, height: usize, format: TextureFormat, data: &[u8]) {
+        assert!(width * height * format.bytes_per_pixel() == data.len());
+
+        match format {
+            TextureFormat::RGBA8 => {
+                for y in 0..self.height.min(height) {
+                    for x in 0..self.width.min(width) {
+                        let offset = (y * width + x) * 4;
+                        self[(x, y)] =
+                            pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], data[offset + 3]);
+                    }
+                }
+            }
+
+            TextureFormat::RGB8 => {
+                for y in 0..self.height.min(height) {
+                    for x in 0..self.width.min(width) {
+                        let offset = (y * width + x) * 3;
+                        self[(x, y)] = pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], 0xFF);
+                    }
+                }
+            }
+
+            TextureFormat::R8 => {
+                for y in 0..self.height.min(height) {
+                    for x in 0..self.width.min(width) {
+                        let offset = y * width + x;
+                        self[(x, y)] = pack_rgba(data[offset + 0], 0, 0, 0xFF);
+                    }
+                }
+            }
         }
     }
 }

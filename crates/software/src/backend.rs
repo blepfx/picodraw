@@ -6,13 +6,12 @@ use crate::{
 };
 use bumpalo::Bump;
 use picodraw_core::{
-    Command, Context, DrawError, Graph, QuadData, RenderTextureId, ShaderId, Size, TextureData, TextureId,
+    Command, Context, DrawError, Graph, QuadData, ShaderId, Size, TextureData, TextureFormat, TextureId,
 };
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 
 pub struct SoftwareBackend {
     shaders: SlotMap<DefaultKey, CompiledShader>,
-    textures: SlotMap<DefaultKey, Buffer>,
     buffers: SlotMap<DefaultKey, Option<Buffer>>,
 
     arena: Bump,
@@ -33,7 +32,6 @@ impl SoftwareBackend {
             simd_dispatch: SimdDispatcher::new(),
 
             shaders: SlotMap::new(),
-            textures: SlotMap::new(),
             buffers: SlotMap::new(),
         }
     }
@@ -80,15 +78,6 @@ impl<'a> SoftwareContext<'a> {
                 Command::Data(QuadData::Texture(tex)) => {
                     let tex = self
                         .owner
-                        .textures
-                        .get(KeyData::from_ffi(tex.0).into())
-                        .ok_or_else(|| DrawError::InvalidTexture)?;
-
-                    dispatch.write_texture(tex.as_ref());
-                }
-                Command::Data(QuadData::RenderTexture(tex)) => {
-                    let tex = self
-                        .owner
                         .buffers
                         .get(KeyData::from_ffi(tex.0).into())
                         .ok_or_else(|| DrawError::InvalidTexture)?
@@ -112,25 +101,45 @@ impl<'a> SoftwareContext<'a> {
 }
 
 impl<'a> Context for SoftwareContext<'a> {
-    fn create_texture_render(&mut self, size: Size) -> RenderTextureId {
+    fn create_texture(&mut self, size: Size, _: TextureFormat) -> TextureId {
         let id = self
             .owner
             .buffers
             .insert(Some(Buffer::new(size.width as _, size.height as _)));
-        RenderTextureId(id.data().as_ffi())
-    }
-
-    fn delete_texture_render(&mut self, id: RenderTextureId) -> bool {
-        self.owner.buffers.remove(KeyData::from_ffi(id.0).into()).is_some()
-    }
-
-    fn create_texture_static(&mut self, data: TextureData) -> TextureId {
-        let id = self.owner.textures.insert(Buffer::from(data));
         TextureId(id.data().as_ffi())
     }
 
-    fn delete_texture_static(&mut self, id: TextureId) -> bool {
-        self.owner.textures.remove(KeyData::from_ffi(id.0).into()).is_some()
+    fn delete_texture(&mut self, id: TextureId) -> bool {
+        self.owner.buffers.remove(KeyData::from_ffi(id.0).into()).is_some()
+    }
+
+    fn upload_texture(&mut self, id: TextureId, data: TextureData) -> bool {
+        let buffer = self
+            .owner
+            .buffers
+            .get_mut(KeyData::from_ffi(id.0).into())
+            .map(|x| x.as_mut().expect("texture is invalid state"));
+
+        if let Some(buffer) = buffer {
+            buffer
+                .as_mut()
+                .subregion_mut(
+                    data.bounds.left as usize,
+                    data.bounds.top as usize,
+                    data.bounds.width() as usize,
+                    data.bounds.height() as usize,
+                )
+                .unpack_data(
+                    data.bounds.width() as usize,
+                    data.bounds.height() as usize,
+                    data.format,
+                    data.data,
+                );
+
+            return true;
+        }
+
+        false
     }
 
     fn create_shader(&mut self, graph: Graph) -> ShaderId {
@@ -149,7 +158,7 @@ impl<'a> Context for SoftwareContext<'a> {
         self.draw_to_buffer(commands, None)
     }
 
-    fn draw_texture(&mut self, target: RenderTextureId, commands: &[Command]) -> Result<(), DrawError> {
+    fn draw_texture(&mut self, target: TextureId, commands: &[Command]) -> Result<(), DrawError> {
         let mut buffer = self
             .owner
             .buffers
@@ -160,6 +169,7 @@ impl<'a> Context for SoftwareContext<'a> {
 
         self.draw_to_buffer(commands, Some(buffer.as_mut()))?;
 
+        // FIXME: put back even if we panic
         *self.owner.buffers.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
 
         Ok(())

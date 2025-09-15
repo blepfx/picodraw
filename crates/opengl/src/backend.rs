@@ -2,8 +2,8 @@ use crate::{
     compiler,
     dispatch::{Dispatcher, DispatcherScratch},
     opengl::{
-        GlFramebufferBinding, GlProfiler, GlProgram, GlStreamBuffer, GlTextureRender, GlTextureStatic, GlVertexArray,
-        enable_blend_normal, enable_debug,
+        GlFramebufferBinding, GlProfiler, GlProgram, GlStreamBuffer, GlTexture, GlVertexArray, enable_blend_normal,
+        enable_debug,
     },
 };
 use glow::HasContext;
@@ -36,8 +36,7 @@ pub struct OpenGlStats {
 /// A `picodraw` backend that uses OpenGL.
 pub struct OpenGlBackend<T: HasContext> {
     shaders: SlotMap<DefaultKey, Graph>,
-    textures: SlotMap<DefaultKey, GlTextureStatic<T>>,
-    framebuffers: SlotMap<DefaultKey, Option<GlTextureRender<T>>>,
+    textures: SlotMap<DefaultKey, Option<GlTexture<T>>>,
     program: Option<CompiledProgram<T>>,
 
     gl_context: T,
@@ -120,7 +119,6 @@ impl<T: HasContext> OpenGlBackend<T> {
 
             shaders: SlotMap::with_key(),
             textures: SlotMap::with_key(),
-            framebuffers: SlotMap::with_key(),
             program: None,
 
             gl_context,
@@ -151,12 +149,8 @@ impl<T: HasContext> OpenGlBackend<T> {
         self.gl_profiler.delete(&self.gl_context);
 
         for (_, texture) in self.textures.into_iter() {
-            texture.delete(&self.gl_context);
-        }
-
-        for (_, framebuffer) in self.framebuffers.into_iter() {
-            if let Some(framebuffer) = framebuffer {
-                framebuffer.delete(&self.gl_context);
+            if let Some(texture) = texture {
+                texture.delete(&self.gl_context);
             }
         }
 
@@ -173,19 +167,19 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
 
     /// Take a screenshot of a region of a buffer.
     /// Useful for debugging and testing.
-    pub fn screenshot(&self, buffer: Option<RenderTextureId>, bounds: impl Into<Bounds>) -> Vec<u8> {
+    pub fn screenshot(&self, buffer: Option<TextureId>, bounds: impl Into<Bounds>) -> Vec<u8> {
         let bounds = bounds.into();
 
         let buffer = match buffer {
             Some(buffer) => {
                 let framebuffer = self
                     .0
-                    .framebuffers
+                    .textures
                     .get(KeyData::from_ffi(buffer.0).into())
                     .expect("invalid render texture id");
 
                 if let Some(framebuffer) = framebuffer {
-                    framebuffer.bind(&self.0.gl_context)
+                    framebuffer.bind_framebuffer(&self.0.gl_context)
                 } else {
                     panic!("render texture is in use");
                 }
@@ -211,7 +205,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
         self.0.viewport_size = size.into();
     }
 
-    fn draw_to_target(&mut self, commands: &[Command], target: Option<&GlTextureRender<T>>) -> Result<(), DrawError> {
+    fn draw_to_target(&mut self, commands: &[Command], target: Option<&GlTexture<T>>) -> Result<(), DrawError> {
         let gl = &self.0.gl_context;
 
         let program = self.0.program.get_or_insert_with(|| {
@@ -333,21 +327,11 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                             .0
                             .textures
                             .get(KeyData::from_ffi(x.0).into())
-                            .ok_or_else(|| DrawError::InvalidTexture)?;
-
-                        dispatcher.quad_texture(texture.texture())?;
-                    }
-
-                    Command::Data(QuadData::RenderTexture(x)) => {
-                        let framebuffer = self
-                            .0
-                            .framebuffers
-                            .get(KeyData::from_ffi(x.0).into())
                             .ok_or_else(|| DrawError::InvalidTexture)?
                             .as_ref()
                             .ok_or_else(|| DrawError::TargetInUse)?;
 
-                        dispatcher.quad_texture(framebuffer.texture())?;
+                        dispatcher.quad_texture(texture.texture())?;
                     }
                 }
             }
@@ -368,17 +352,13 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
 }
 
 impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
-    fn create_texture_render(&mut self, size: Size) -> RenderTextureId {
-        let id = self
-            .0
-            .framebuffers
-            .insert(Some(GlTextureRender::new(&self.0.gl_context, size.width, size.height)));
-
-        RenderTextureId(id.data().as_ffi())
-    }
-
-    fn create_texture_static(&mut self, data: TextureData) -> TextureId {
-        let id = self.0.textures.insert(GlTextureStatic::new(&self.0.gl_context, data));
+    fn create_texture(&mut self, size: Size, format: TextureFormat) -> TextureId {
+        let id = self.0.textures.insert(Some(GlTexture::new(
+            &self.0.gl_context,
+            size.width,
+            size.height,
+            format,
+        )));
 
         TextureId(id.data().as_ffi())
     }
@@ -392,23 +372,13 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         ShaderId(id.data().as_ffi())
     }
 
-    fn delete_texture_render(&mut self, id: RenderTextureId) -> bool {
-        match self.0.framebuffers.remove(KeyData::from_ffi(id.0).into()) {
-            Some(fb) => {
-                if let Some(framebuffer) = fb {
-                    framebuffer.delete(&self.0.gl_context);
-                }
-
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn delete_texture_static(&mut self, id: TextureId) -> bool {
+    fn delete_texture(&mut self, id: TextureId) -> bool {
         match self.0.textures.remove(KeyData::from_ffi(id.0).into()) {
             Some(texture) => {
-                texture.delete(&self.0.gl_context);
+                if let Some(texture) = texture {
+                    texture.delete(&self.0.gl_context);
+                }
+
                 true
             }
             _ => false,
@@ -422,14 +392,28 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
         }
     }
 
+    fn upload_texture(&mut self, id: TextureId, data: TextureData) -> bool {
+        let buffer = self
+            .0
+            .textures
+            .get_mut(KeyData::from_ffi(id.0).into())
+            .map(|x| x.as_mut().expect("texture is invalid state"));
+
+        if let Some(buffer) = buffer {
+            return buffer.upload_subregion(&self.0.gl_context, data);
+        }
+
+        false
+    }
+
     fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError> {
         self.draw_to_target(commands, None)
     }
 
-    fn draw_texture(&mut self, target: RenderTextureId, commands: &[Command]) -> Result<(), DrawError> {
+    fn draw_texture(&mut self, target: TextureId, commands: &[Command]) -> Result<(), DrawError> {
         let mut buffer = self
             .0
-            .framebuffers
+            .textures
             .get_mut(KeyData::from_ffi(target.0).into())
             .ok_or_else(|| DrawError::InvalidTarget)?
             .take()
@@ -437,7 +421,7 @@ impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
 
         self.draw_to_target(commands, Some(&mut buffer))?;
 
-        *self.0.framebuffers.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
+        *self.0.textures.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
 
         Ok(())
     }

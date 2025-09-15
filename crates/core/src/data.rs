@@ -26,8 +26,7 @@ pub enum TextureFilter {
 /// Texture data. Used for uploading static textures to the backend.
 #[derive(Clone, Copy, Debug)]
 pub struct TextureData<'a> {
-    pub width: u32,
-    pub height: u32,
+    pub bounds: Bounds,
     pub format: TextureFormat,
     pub data: &'a [u8],
 }

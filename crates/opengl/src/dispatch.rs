@@ -1,8 +1,8 @@
 use crate::{
     compiler,
     opengl::{
-        BUFFER_ALIGNMENT, GlFramebufferBinding, GlProgramBinding, GlStreamBuffer, GlStreamBufferResource,
-        GlTextureRender, GlVertexArrayBinding, viewport,
+        BUFFER_ALIGNMENT, GlFramebufferBinding, GlProgramBinding, GlStreamBuffer, GlStreamBufferResource, GlTexture,
+        GlVertexArrayBinding, viewport,
     },
 };
 use glow::HasContext;
@@ -115,12 +115,12 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         viewport(self.global_context, 0, 0, size.width, size.height);
     }
 
-    pub fn set_target_texture(&mut self, texture: &'a GlTextureRender<T>) {
+    pub fn set_target_texture(&mut self, texture: &'a GlTexture<T>) {
         self.flush();
 
         let (width, height) = texture.size();
 
-        self.target_framebuffer = texture.bind(self.global_context);
+        self.target_framebuffer = texture.bind_framebuffer(self.global_context);
         self.target_framebuffer_screen = false;
         self.target_framebuffer_size = Size { width, height };
 

@@ -520,13 +520,16 @@ pub mod texture {
     #[test]
     fn texture_static_nearest() {
         run("texture_static_nearest", 32, 32, |context| {
-            let texture = context.create_texture_static(TextureData {
-                width: 4,
-                height: 4,
-                format: TextureFormat::R8,
-                data: &TEST_DITHER0,
-            });
+            let texture = context.create_texture([4, 4].into(), TextureFormat::R8);
 
+            assert!(context.upload_texture(
+                texture,
+                TextureData {
+                    bounds: [0, 0, 4, 4].into(),
+                    format: TextureFormat::R8,
+                    data: &TEST_DITHER0,
+                },
+            ));
             let shader = context.create_shader(Graph::scope(|| {
                 let texture = io::read::<TextureId>();
                 let uv = io::position() / io::resolution();
@@ -542,12 +545,16 @@ pub mod texture {
     #[test]
     fn texture_static_linear() {
         run("texture_static_linear", 32, 32, |context| {
-            let texture = context.create_texture_static(TextureData {
-                width: 4,
-                height: 4,
-                format: TextureFormat::R8,
-                data: &TEST_DITHER0,
-            });
+            let texture = context.create_texture([4, 4].into(), TextureFormat::R8);
+
+            assert!(context.upload_texture(
+                texture,
+                TextureData {
+                    bounds: [0, 0, 4, 4].into(),
+                    format: TextureFormat::R8,
+                    data: &TEST_DITHER0,
+                },
+            ));
 
             let shader = context.create_shader(Graph::scope(|| {
                 let texture = io::read::<TextureId>();
@@ -564,7 +571,7 @@ pub mod texture {
     #[test]
     fn texture_render_nearest() {
         run("texture_render_nearest", 32, 32, |context| {
-            let texture = context.create_texture_render([4, 4].into());
+            let texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8);
 
             let shader_fill = context.create_shader(Graph::scope(|| {
                 let a = float4((1.0, 0.5, 0.25, 1.0));
@@ -598,7 +605,7 @@ pub mod texture {
     #[test]
     fn texture_render_linear() {
         run("texture_render_linear", 32, 32, |context| {
-            let texture = context.create_texture_render([4, 4].into());
+            let texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8);
 
             let shader_fill = context.create_shader(Graph::scope(|| {
                 let a = float4((1.0, 0.5, 0.25, 1.0));
@@ -632,12 +639,16 @@ pub mod texture {
     #[test]
     fn texture_load_r8() {
         run("texture_load_r8", 4, 4, |context| {
-            let texture = context.create_texture_static(TextureData {
-                width: 1,
-                height: 1,
-                format: TextureFormat::R8,
-                data: &[100],
-            });
+            let texture = context.create_texture([1, 1].into(), TextureFormat::R8);
+
+            assert!(context.upload_texture(
+                texture,
+                TextureData {
+                    bounds: [0, 0, 1, 1].into(),
+                    format: TextureFormat::R8,
+                    data: &[100],
+                },
+            ));
 
             let shader = context.create_shader(Graph::scope(|| {
                 let texture = io::read::<TextureId>();
@@ -653,12 +664,16 @@ pub mod texture {
     #[test]
     fn texture_load_rgb8() {
         run("texture_load_rgb8", 4, 4, |context| {
-            let texture = context.create_texture_static(TextureData {
-                width: 1,
-                height: 1,
-                format: TextureFormat::RGB8,
-                data: &[100, 50, 200],
-            });
+            let texture = context.create_texture([1, 1].into(), TextureFormat::RGB8);
+
+            assert!(context.upload_texture(
+                texture,
+                TextureData {
+                    bounds: [0, 0, 1, 1].into(),
+                    format: TextureFormat::RGB8,
+                    data: &[100, 50, 200],
+                },
+            ));
 
             let shader = context.create_shader(Graph::scope(|| {
                 let texture = io::read::<TextureId>();
@@ -674,12 +689,16 @@ pub mod texture {
     #[test]
     fn texture_load_rgba8() {
         run("texture_load_rgba8", 4, 4, |context| {
-            let texture = context.create_texture_static(TextureData {
-                width: 1,
-                height: 1,
-                format: TextureFormat::RGBA8,
-                data: &[100, 50, 200, 150],
-            });
+            let texture = context.create_texture([1, 1].into(), TextureFormat::RGBA8);
+
+            assert!(context.upload_texture(
+                texture,
+                TextureData {
+                    bounds: [0, 0, 1, 1].into(),
+                    format: TextureFormat::RGBA8,
+                    data: &[100, 50, 200, 150],
+                },
+            ));
 
             let shader = context.create_shader(Graph::scope(|| {
                 let texture = io::read::<TextureId>();
@@ -755,12 +774,18 @@ pub mod stress {
         run("stress_texture_count", 256, 8, move |context| {
             let textures = (0..=255u8)
                 .map(|x| {
-                    context.create_texture_static(TextureData {
-                        width: 1,
-                        height: 1,
-                        format: TextureFormat::R8,
-                        data: &[x],
-                    })
+                    let texture = context.create_texture([1, 1].into(), TextureFormat::R8);
+
+                    assert!(context.upload_texture(
+                        texture,
+                        TextureData {
+                            bounds: [0, 0, 1, 1].into(),
+                            format: TextureFormat::R8,
+                            data: &[x],
+                        },
+                    ));
+
+                    texture
                 })
                 .collect::<Vec<_>>();
 
@@ -872,12 +897,16 @@ pub mod complex {
         };
 
         run("complex_msdf", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
-            let texture = context.create_texture_static(TextureData {
-                width,
-                height,
-                format: TextureFormat::RGBA8,
-                data: &data,
-            });
+            let texture = context.create_texture([width, height].into(), TextureFormat::RGBA8);
+
+            assert!(context.upload_texture(
+                texture,
+                TextureData {
+                    bounds: [0, 0, width, height].into(),
+                    format: TextureFormat::RGBA8,
+                    data: &data,
+                },
+            ));
 
             let shader = context.create_shader(Graph::scope(|| {
                 let atlas = io::read::<TextureId>();
@@ -942,7 +971,7 @@ pub mod complex {
             }));
 
             let shader_boxblur = context.create_shader(Graph::scope(|| {
-                let buffer = io::read::<RenderTextureId>();
+                let buffer = io::read::<TextureId>();
 
                 let mut result = float4(0.0);
                 for i in -5..=5 {
@@ -954,7 +983,7 @@ pub mod complex {
                 result / (11 * 11) as f32
             }));
 
-            let buffer = context.create_texture_render([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
+            let buffer = context.create_texture([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), TextureFormat::RGBA8);
 
             let mut commands = vec![];
             add_quad(

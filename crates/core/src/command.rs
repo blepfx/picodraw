@@ -1,25 +1,22 @@
-use crate::{Bounds, Graph, Size, TextureData};
+use crate::{Bounds, Graph, Size, TextureData, TextureFormat};
 use std::fmt::{self, Display};
 
 /// The heart of `picodraw`.
 ///
 /// Context is used to interact with the rendering backend.
 pub trait Context {
-    /// Create a dynamic render texture and returns its ID. See [`RenderTextureId`] for more info.
+    /// Create a texture of the given size and returns its ID. See [`TextureId`] for more info.
     ///
-    /// If you want to delete the render texture, you should call [`Context::delete_texture_render`] with the returned ID.
-    fn create_texture_render(&mut self, size: Size) -> RenderTextureId;
-
-    /// Delete a dynamic render texture by its ID.
-    fn delete_texture_render(&mut self, id: RenderTextureId) -> bool;
-
-    /// Create a static texture from the given image data and returns its ID. See [`TextureId`] for more info.
+    /// If you want to delete the texture, you should call [`Context::delete_texture`] with the returned ID.
     ///
-    /// If you want to delete the texture, you should call [`Context::delete_texture_static`] with the returned ID.
-    fn create_texture_static(&mut self, data: TextureData) -> TextureId;
+    /// To upload data from the CPU, use [`Context::upload_texture`].
+    fn create_texture(&mut self, size: Size, format: TextureFormat) -> TextureId;
 
-    /// Delete a static texture by its ID.
-    fn delete_texture_static(&mut self, id: TextureId) -> bool;
+    /// Delete a texture by its ID.
+    fn delete_texture(&mut self, id: TextureId) -> bool;
+
+    /// Upload texture data from the CPU and put it into a subregion of a texture object.
+    fn upload_texture(&mut self, id: TextureId, data: TextureData) -> bool;
 
     /// Create a shader from the given shader graph and returns its ID. See [`ShaderId`] for more info.
     ///
@@ -33,7 +30,7 @@ pub trait Context {
     fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError>;
 
     /// Execute a list of draw commands on the backend
-    fn draw_texture(&mut self, target: RenderTextureId, commands: &[Command]) -> Result<(), DrawError>;
+    fn draw_texture(&mut self, target: TextureId, commands: &[Command]) -> Result<(), DrawError>;
 }
 
 /// A single draw command.
@@ -58,7 +55,6 @@ pub enum QuadData {
     Float(f32),
     Int(i32),
     Texture(TextureId),
-    RenderTexture(RenderTextureId),
 }
 
 /// Shader.
@@ -74,12 +70,6 @@ pub struct ShaderId(pub u64);
 /// A texture is a 2D image that can be sampled in shaders.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct TextureId(pub u64);
-
-/// Dynamic render texture.
-///
-/// A render texture is an off-screen buffer you can render to and use it as a texture later.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct RenderTextureId(pub u64);
 
 /// An error that is occured while drawing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

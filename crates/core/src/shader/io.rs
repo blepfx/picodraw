@@ -207,19 +207,6 @@ impl ShaderData for f64 {
     }
 }
 
-impl ShaderData for RenderTextureId {
-    type Data = texture;
-
-    fn read() -> Self::Data {
-        types::texture(Graph::push_scope(OpValue::Input(OpInput::TextureRender)).unwrap())
-    }
-
-    #[inline]
-    fn write(&self, mut writer: impl ShaderDataWriter) {
-        writer.write_data(QuadData::RenderTexture(*self));
-    }
-}
-
 impl ShaderData for TextureId {
     type Data = texture;
 
