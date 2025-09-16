@@ -297,6 +297,13 @@ pub mod types {
                     Self(Graph::push_scope(OpValue::Neg(self.0)).unwrap())
                 }
             }
+        };
+    }
+
+    macro_rules! impl_num_vec {
+        ($type:ty, $elem:ty, $scalar:ident, 1) => {
+            impl_num_base!($type, $elem);
+            impl_binop!($type, $elem);
 
             impl $type {
                 pub fn eq(self, other: impl Into<Self>) -> boolean {
@@ -323,13 +330,6 @@ pub mod types {
                     boolean(Graph::push_scope(OpValue::Gt(self.0, other.into().0)).unwrap())
                 }
             }
-        };
-    }
-
-    macro_rules! impl_num_vec {
-        ($type:ty, $elem:ty, $scalar:ident, 1) => {
-            impl_num_base!($type, $elem);
-            impl_binop!($type, $elem);
         };
 
         ($type:ty, $elem:ty, $scalar:ident, 2) => {

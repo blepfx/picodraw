@@ -59,7 +59,7 @@ pub fn compile_glsl<'a>(
             codegen.emit_graph_end(graph);
         }
 
-        codegen.finish()
+        dbg!(codegen.finish())
     };
 
     CompilerResult {

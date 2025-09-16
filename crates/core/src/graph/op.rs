@@ -284,7 +284,7 @@ impl OpValue {
             Eq(x, y) | Ne(x, y) | Lt(x, y) | Le(x, y) | Gt(x, y) | Ge(x, y) => {
                 let l = arg(x)?;
                 let r = arg(y)?;
-                if l.is_numeric() && l == r {
+                if l.is_numeric() && l == r && l.size() == 1 {
                     Boolean
                 } else {
                     return None;
