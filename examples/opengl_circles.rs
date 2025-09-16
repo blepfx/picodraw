@@ -1,7 +1,7 @@
 use picodraw::{
     Command, Context, Graph, QuadData, ShaderId,
     opengl::{Native, OpenGlBackend},
-    shader::{float1, float2, float4, int1, io},
+    shader::{float1, float2, float4, io},
 };
 use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
 use std::time::Duration;

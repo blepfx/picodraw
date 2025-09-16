@@ -1,5 +1,5 @@
 use crate::{
-    compiler,
+    compiler::serialize::{QuadDescriptorStruct, ShaderDataLayout, encode},
     opengl::{
         BUFFER_ALIGNMENT, GlFramebufferBinding, GlProgramBinding, GlStreamBuffer, GlStreamBufferResource, GlTexture,
         GlVertexArrayBinding, viewport,
@@ -10,7 +10,7 @@ use picodraw_core::{Bounds, DrawError, Size};
 
 pub struct DispatcherScratch<T: HasContext> {
     drawcall_data: Vec<u8>,
-    drawcall_quads: Vec<compiler::serialize::QuadDescriptorStruct>,
+    drawcall_quads: Vec<QuadDescriptorStruct>,
     drawcall_textures: Vec<Option<T::Texture>>,
     quad_queue_data: Vec<u32>,
     quad_queue_textures: Vec<(u32, T::Texture)>,
@@ -39,12 +39,12 @@ pub struct Dispatcher<'a, T: HasContext> {
     pub target_framebuffer_size: Size,
 
     pub drawcall_data: &'a mut Vec<u8>,
-    pub drawcall_quads: &'a mut Vec<compiler::serialize::QuadDescriptorStruct>,
+    pub drawcall_quads: &'a mut Vec<QuadDescriptorStruct>,
     pub drawcall_textures: &'a mut Vec<Option<T::Texture>>,
 
     pub quad_queue_data: &'a mut Vec<u32>,
     pub quad_queue_textures: &'a mut Vec<(u32, T::Texture)>,
-    pub quad_layout: Option<&'a compiler::serialize::ShaderDataLayout>,
+    pub quad_layout: Option<&'a ShaderDataLayout>,
     pub quad_bounds: Bounds,
 
     pub total_bytes_written: u64,
@@ -150,7 +150,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         }
     }
 
-    pub fn quad_start(&mut self, layout: &'a compiler::serialize::ShaderDataLayout, bounds: Bounds) {
+    pub fn quad_start(&mut self, layout: &'a ShaderDataLayout, bounds: Bounds) {
         self.quad_layout = Some(layout);
         self.quad_bounds = bounds;
         self.quad_queue_data.clear();
@@ -163,7 +163,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
 
         let buffer_fits = self.drawcall_data.len()
             + layout.size as usize
-            + (self.drawcall_quads.len() + 1) * compiler::serialize::QuadDescriptorStruct::SIZE
+            + (self.drawcall_quads.len() + 1) * QuadDescriptorStruct::SIZE
             <= self.global_buffer.bytes_left() as usize;
 
         let can_bind_textures =
@@ -181,7 +181,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
 
         let offset = self.drawcall_data.len();
 
-        self.drawcall_quads.push(compiler::serialize::QuadDescriptorStruct {
+        self.drawcall_quads.push(QuadDescriptorStruct {
             left: bounds.left.try_into().unwrap_or(u16::MAX),
             top: bounds.top.try_into().unwrap_or(u16::MAX),
             right: bounds.right.try_into().unwrap_or(u16::MAX),
@@ -192,7 +192,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
 
         self.drawcall_data.resize(offset + layout.size as usize, 0);
 
-        compiler::serialize::encode(
+        encode(
             &mut self.drawcall_data[offset..],
             layout,
             self.quad_queue_data.drain(..),
@@ -232,19 +232,22 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             return;
         }
 
-        let slice_quaddata = self.drawcall_data.as_slice();
-        let slice_quadlist = compiler::serialize::QuadDescriptorStruct::as_byte_slice(self.drawcall_quads.as_slice());
-        let range_quaddata = self.global_buffer.write(self.global_context, slice_quaddata);
-        let range_quadlist = self.global_buffer.write(self.global_context, slice_quadlist);
+        let (start_data, start_list) = {
+            let length_data = self.drawcall_data.len() as u32;
+            let drawcall_data_quads = QuadDescriptorStruct::as_byte_slice(self.drawcall_quads.as_slice());
+            self.drawcall_data.extend_from_slice(drawcall_data_quads);
+            let range = self.global_buffer.write(self.global_context, &self.drawcall_data);
+            (range.start, range.start + length_data)
+        };
+
+        self.global_program
+            .set_uniform_i32(2, (start_data / BUFFER_ALIGNMENT) as i32);
+        self.global_program
+            .set_uniform_i32(3, (start_list / BUFFER_ALIGNMENT) as i32);
 
         match self.global_buffer.resource() {
             GlStreamBufferResource::Texture(texture) => {
                 self.global_program.set_buffer_texture(0, texture);
-
-                self.global_program
-                    .set_uniform_i32(2, (range_quaddata.start / BUFFER_ALIGNMENT) as i32);
-                self.global_program
-                    .set_uniform_i32(3, (range_quadlist.start / BUFFER_ALIGNMENT) as i32);
 
                 for (index, texture) in self.drawcall_textures.iter().enumerate() {
                     if let Some(texture) = texture {
@@ -254,10 +257,6 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             }
             GlStreamBufferResource::UniformBlock(buffer) => {
                 self.global_program.set_uniform_block(0, buffer);
-                self.global_program
-                    .set_uniform_i32(2, (range_quaddata.start / BUFFER_ALIGNMENT) as i32);
-                self.global_program
-                    .set_uniform_i32(3, (range_quadlist.start / BUFFER_ALIGNMENT) as i32);
 
                 for (index, texture) in self.drawcall_textures.iter().enumerate() {
                     if let Some(texture) = texture {
@@ -273,8 +272,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             (self.drawcall_quads.len() * 6) as u32,
         );
 
-        self.total_bytes_written += range_quaddata.len() as u64;
-        self.total_bytes_written += range_quadlist.len() as u64;
+        self.total_bytes_written += self.drawcall_data.len() as u64;
         self.total_quads_written += self.drawcall_quads.len() as u32;
         self.total_drawcalls_issued += 1;
 
