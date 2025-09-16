@@ -300,10 +300,7 @@ impl FragmentCodegen {
             Clamp(x, y, z) => emit!("clamp({},{},{})", x, y, z),
             Smoothstep(x, y, z) => emit!("smoothstep({},{},{})", y, z, x),
 
-            Select(x, y, z) if ty.size() == 1 => emit!("mix({},{},{})", z, y, x),
-            Select(x, y, z) if ty.size() == 2 => emit!("mix({},{},bvec2({}))", z, y, x),
-            Select(x, y, z) if ty.size() == 3 => emit!("mix({},{},bvec3({}))", z, y, x),
-            Select(x, y, z) if ty.size() == 4 => emit!("mix({},{},bvec4({}))", z, y, x),
+            Select(x, y, z) => emit!("({}?{}:{})", x, y, z),
 
             Eq(x, y) => emit!("({}=={})", x, y),
             Ne(x, y) => emit!("({}!={})", x, y),
