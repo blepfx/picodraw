@@ -6,11 +6,8 @@ use std::{
 };
 
 const VERTEX_SHADER: &str = r#"
-
-#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
-#endif
 
 uniform vec2 uResolution;
 uniform bool uScreenTarget;
@@ -40,11 +37,8 @@ void main() {
 }"#;
 
 const FRAGMENT_SHADER_HEADER: &str = r#"
-
-#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
 precision highp int;
-#endif
 
 uniform vec2 uResolution;
 uniform int uBufferDataOffset;
