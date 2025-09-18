@@ -4,7 +4,7 @@ mod interpreter;
 pub use compiler::*;
 pub use interpreter::*;
 
-pub const TILE_SIZE: usize = 16;
+pub const TILE_SIZE: usize = 8;
 pub const REGISTER_COUNT: usize = 64;
 pub const PIXEL_COUNT: usize = TILE_SIZE * TILE_SIZE;
 

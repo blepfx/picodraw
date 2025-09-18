@@ -255,8 +255,8 @@ impl FragmentCodegen {
             }
 
             Literal(x) => match x {
-                OpLiteral::Float(f32::INFINITY) => format!("4e+100"),
-                OpLiteral::Float(f32::NEG_INFINITY) => format!("(-4e+100)"),
+                OpLiteral::Float(f32::INFINITY) => format!("4.6e+18"), //2^62
+                OpLiteral::Float(f32::NEG_INFINITY) => format!("(-4.6e+18)"),
                 OpLiteral::Float(x) if x.is_nan() => format!("(0.0/0.0)"),
                 OpLiteral::Float(x) if x.is_sign_positive() => format!("{:?}", x),
                 OpLiteral::Float(x) => format!("({:?})", x),
