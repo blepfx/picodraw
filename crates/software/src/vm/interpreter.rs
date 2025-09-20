@@ -1,4 +1,4 @@
-use super::{PIXEL_COUNT, REGISTER_COUNT, TILE_SIZE, VMOp, VMOpcode, VMReg};
+use super::{REGISTER_COUNT, VMOp, VMOpcode, VMReg, VMRegister, VMSlot};
 use crate::BufferRef;
 use bumpalo::{Bump, boxed::Box};
 use std::alloc::Layout;
@@ -25,14 +25,7 @@ pub struct VMInterpreter<'a, T: VMRegister> {
 impl<'a, T: VMRegister> VMInterpreter<'a, T> {
     pub fn new(arena: &'a Bump) -> Self {
         Self {
-            data: unsafe {
-                Box::from_raw(
-                    arena
-                        .alloc_layout(Layout::new::<[VMTile; REGISTER_COUNT]>())
-                        .cast()
-                        .as_ptr(),
-                )
-            },
+            data: unsafe { Box::from_raw(arena.alloc_layout(Layout::new::<[T; REGISTER_COUNT]>()).cast().as_ptr()) },
         }
     }
 
@@ -41,6 +34,7 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
     /// - the `textures` array have at least the amount of elements that `Tex*` opcodes reference
     /// - every operation references a register that is less than `REGISTER_COUNT`
     /// - every operation writes to a register it doesn't read from (`AddF(0, 1, 1)` is NOT valid)
+    /// - every operation reads only from those registers that were written to by preceding operations
     #[allow(unused_unsafe)]
     #[inline(always)]
     pub unsafe fn execute(&mut self, program: VMContext) {
@@ -464,95 +458,6 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
 
     pub fn register(&self, id: VMReg) -> &T {
         &self.data[id as usize]
-    }
-}
-
-#[derive(Copy, Clone)]
-pub union VMSlot {
-    pub int: i32,
-    pub float: f32,
-}
-
-#[derive(Copy, Clone)]
-#[repr(align(128))]
-pub struct VMTile([VMSlot; PIXEL_COUNT]);
-
-impl VMTile {
-    #[inline(always)]
-    pub fn as_f32(&self) -> &[f32; PIXEL_COUNT] {
-        unsafe { &*(&self.0 as *const _ as *const [f32; PIXEL_COUNT]) }
-    }
-
-    #[inline(always)]
-    pub fn as_f32_mut(&mut self) -> &mut [f32; PIXEL_COUNT] {
-        unsafe { &mut *(&mut self.0 as *mut _ as *mut [f32; PIXEL_COUNT]) }
-    }
-
-    #[inline(always)]
-    pub fn as_i32(&self) -> &[i32; PIXEL_COUNT] {
-        unsafe { &*(&self.0 as *const _ as *const [i32; PIXEL_COUNT]) }
-    }
-
-    #[inline(always)]
-    pub fn as_i32_mut(&mut self) -> &mut [i32; PIXEL_COUNT] {
-        unsafe { &mut *(&mut self.0 as *mut _ as *mut [i32; PIXEL_COUNT]) }
-    }
-}
-
-pub trait VMRegister {
-    const SIZE: usize;
-
-    fn as_f32(&self) -> &[f32];
-    fn as_f32_mut(&mut self) -> &mut [f32];
-    fn as_i32(&self) -> &[i32];
-    fn as_i32_mut(&mut self) -> &mut [i32];
-}
-
-impl VMRegister for VMSlot {
-    const SIZE: usize = 1;
-
-    #[inline(always)]
-    fn as_f32(&self) -> &[f32] {
-        unsafe { &*(&self.float as *const _ as *const [f32; 1]) }
-    }
-
-    #[inline(always)]
-    fn as_f32_mut(&mut self) -> &mut [f32] {
-        unsafe { &mut *(&mut self.float as *mut _ as *mut [f32; 1]) }
-    }
-
-    #[inline(always)]
-    fn as_i32(&self) -> &[i32] {
-        unsafe { &*(&self.int as *const _ as *const [i32; 1]) }
-    }
-
-    #[inline(always)]
-    fn as_i32_mut(&mut self) -> &mut [i32] {
-        unsafe { &mut *(&mut self.int as *mut _ as *mut [i32; 1]) }
-    }
-}
-
-impl VMRegister for VMTile {
-    const SIZE: usize = TILE_SIZE;
-
-    #[inline(always)]
-    fn as_f32(&self) -> &[f32] {
-        self.as_f32()
-    }
-
-    #[inline(always)]
-    fn as_f32_mut(&mut self) -> &mut [f32] {
-        self.as_f32_mut()
-    }
-
-    #[inline(always)]
-    fn as_i32(&self) -> &[i32] {
-        self.as_i32()
-    }
-
-    #[inline(always)]
-    fn as_i32_mut(&mut self) -> &mut [i32] {
-        self.as_i32_mut()
     }
 }
 

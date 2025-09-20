@@ -187,10 +187,10 @@ impl<'a> Dispatcher<'a> {
         let workers = self
             .arena
             .alloc_slice_fill_iter((0..pool.num_workers()).map(|_| DispatchWorker {
-                r: self.arena.alloc([0.0; PIXEL_COUNT]),
-                g: self.arena.alloc([0.0; PIXEL_COUNT]),
-                b: self.arena.alloc([0.0; PIXEL_COUNT]),
-                a: self.arena.alloc([0.0; PIXEL_COUNT]),
+                r: VMTile::zeroed(),
+                g: VMTile::zeroed(),
+                b: VMTile::zeroed(),
+                a: VMTile::zeroed(),
                 interpreter: VMInterpreter::new(self.arena),
             }));
 
@@ -204,13 +204,21 @@ impl<'a> Dispatcher<'a> {
                     // it's alive for the duration of the outer scope,
                     // and we access each region only once
                     // (i.e. threads have no intersecting read-write regions)
-                    let mut buffer = unsafe { std::ptr::read::<BufferMut<'_>>(&buffer as *const _) };
+                    let (buffer, width, height) = unsafe {
+                        let mut buffer = std::ptr::read::<BufferMut<'_>>(&buffer as *const _);
+
+                        (
+                            buffer.subregion_mut(group.x as usize, group.y as usize, TILE_SIZE, TILE_SIZE),
+                            buffer.width(),
+                            buffer.height(),
+                        )
+                    };
 
                     // clear the local buffer
-                    worker.r.fill(0.0);
-                    worker.g.fill(0.0);
-                    worker.b.fill(0.0);
-                    worker.a.fill(0.0);
+                    worker.r.as_f32_mut().fill(0.0);
+                    worker.g.as_f32_mut().fill(0.0);
+                    worker.b.as_f32_mut().fill(0.0);
+                    worker.a.as_f32_mut().fill(0.0);
 
                     // draw the objects in sequence
                     for job in group.objects.iter() {
@@ -224,9 +232,9 @@ impl<'a> Dispatcher<'a> {
                                 });
 
                                 for j in bounds.top as usize..bounds.bottom as usize {
-                                    for i in bounds.left as usize..bounds.right as usize {
-                                        worker.a[j * TILE_SIZE + i] = 0.0;
-                                    }
+                                    worker.a.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE]
+                                        [bounds.left as usize..bounds.right as usize]
+                                        .fill(0.0);
                                 }
                             }
 
@@ -246,8 +254,8 @@ impl<'a> Dispatcher<'a> {
                                         textures: &texture_buffer[textures.clone()],
                                         pos_x: group.x as f32 + 0.5,
                                         pos_y: group.y as f32 + 0.5,
-                                        res_x: buffer.width() as f32,
-                                        res_y: buffer.height() as f32,
+                                        res_x: width as f32,
+                                        res_y: height as f32,
                                         quad_t: bounds.top as f32,
                                         quad_l: bounds.left as f32,
                                         quad_b: bounds.bottom as f32,
@@ -256,10 +264,10 @@ impl<'a> Dispatcher<'a> {
                                 }
 
                                 let bounds = bounds.offset(-(group.x as i32), -(group.y as i32));
-                                let r = worker.interpreter.register(shader.dynamic_outputs()[0]).as_f32();
-                                let g = worker.interpreter.register(shader.dynamic_outputs()[1]).as_f32();
-                                let b = worker.interpreter.register(shader.dynamic_outputs()[2]).as_f32();
-                                let a = worker.interpreter.register(shader.dynamic_outputs()[3]).as_f32();
+                                let r = worker.interpreter.register(shader.dynamic_outputs()[0]);
+                                let g = worker.interpreter.register(shader.dynamic_outputs()[1]);
+                                let b = worker.interpreter.register(shader.dynamic_outputs()[2]);
+                                let a = worker.interpreter.register(shader.dynamic_outputs()[3]);
 
                                 blend_tile(
                                     &mut worker.r,
@@ -276,13 +284,7 @@ impl<'a> Dispatcher<'a> {
                         }
                     }
 
-                    finish_tile(
-                        buffer.subregion_mut(group.x as usize, group.y as usize, TILE_SIZE, TILE_SIZE),
-                        worker.r,
-                        worker.g,
-                        worker.b,
-                        worker.a,
-                    );
+                    finish_tile(buffer, &mut worker.r, &mut worker.g, &mut worker.b, &mut worker.a);
                 },
             );
         });
@@ -301,25 +303,28 @@ struct DispatchGroup<'a> {
 }
 
 struct DispatchWorker<'a> {
-    r: &'a mut [f32; PIXEL_COUNT],
-    g: &'a mut [f32; PIXEL_COUNT],
-    b: &'a mut [f32; PIXEL_COUNT],
-    a: &'a mut [f32; PIXEL_COUNT],
+    r: VMTile,
+    g: VMTile,
+    b: VMTile,
+    a: VMTile,
     interpreter: VMInterpreter<'a, VMTile>,
 }
 
 #[inline(always)]
 fn blend_tile(
-    r0: &mut [f32; PIXEL_COUNT],
-    g0: &mut [f32; PIXEL_COUNT],
-    b0: &mut [f32; PIXEL_COUNT],
-    a0: &mut [f32; PIXEL_COUNT],
-    r1: &[f32; PIXEL_COUNT],
-    g1: &[f32; PIXEL_COUNT],
-    b1: &[f32; PIXEL_COUNT],
-    a1: &[f32; PIXEL_COUNT],
+    r0: &mut VMTile,
+    g0: &mut VMTile,
+    b0: &mut VMTile,
+    a0: &mut VMTile,
+    r1: &VMTile,
+    g1: &VMTile,
+    b1: &VMTile,
+    a1: &VMTile,
     bounds: Bounds,
 ) {
+    let (a0, r0, g0, b0) = (a0.as_f32_mut(), r0.as_f32_mut(), g0.as_f32_mut(), b0.as_f32_mut());
+    let (a1, r1, g1, b1) = (a1.as_f32(), r1.as_f32(), g1.as_f32(), b1.as_f32());
+
     for i in 0..PIXEL_COUNT {
         let mask = {
             let x = i % TILE_SIZE;
@@ -340,18 +345,13 @@ fn blend_tile(
 }
 
 #[inline(always)]
-fn finish_tile(
-    mut buffer: BufferMut,
-    r: &mut [f32; PIXEL_COUNT],
-    g: &mut [f32; PIXEL_COUNT],
-    b: &mut [f32; PIXEL_COUNT],
-    a: &mut [f32; PIXEL_COUNT],
-) {
+fn finish_tile(mut buffer: BufferMut, r: &mut VMTile, g: &mut VMTile, b: &mut VMTile, a: &mut VMTile) {
     #[inline(always)]
-    fn convert_color_0_255(x: &mut [f32; PIXEL_COUNT]) {
+    fn convert_color_0_255(x: &mut VMTile) {
         #[cold]
         fn cold() {}
 
+        let x = x.as_f32_mut();
         for i in 0..PIXEL_COUNT {
             if x[i] == x[i] {
                 x[i] = (x[i] * 255.0 + 0.5).clamp(0.0, 255.0);
@@ -367,6 +367,7 @@ fn finish_tile(
     convert_color_0_255(b);
     convert_color_0_255(a);
 
+    let (a, r, g, b) = (a.as_f32_mut(), r.as_f32_mut(), g.as_f32_mut(), b.as_f32_mut());
     for j in 0..TILE_SIZE.min(buffer.height()) {
         for i in 0..TILE_SIZE.min(buffer.width()) {
             unsafe {
