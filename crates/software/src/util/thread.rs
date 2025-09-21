@@ -53,10 +53,18 @@ impl ThreadPool {
         jobs: &'a [Job],
         run: impl Fn(&'a mut Worker, &'a Job) + Send + Sync,
     ) {
+        #[derive(Clone, Copy)]
+        struct AssertSendSync<T>(T);
+        unsafe impl<T> Send for AssertSendSync<T> {}
+        unsafe impl<T> Sync for AssertSendSync<T> {}
+
         assert_eq!(workers.len(), self.num_workers());
 
+        let workers = AssertSendSync(workers.as_mut_ptr());
+
         self.run_indexed(jobs.len(), |worker, job| {
-            run(unsafe { &mut *(workers.as_ptr().add(worker) as *mut _) }, &jobs[job]);
+            let worker = unsafe { &mut *(&workers).0.add(worker) };
+            run(worker, &jobs[job]);
         });
     }
 }
