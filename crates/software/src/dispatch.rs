@@ -103,9 +103,9 @@ impl<'a> Dispatcher<'a> {
                     // SAFETY: the program is guaranteed to be valid
                     // because [`CompiledShader::compile`] is expected to return a valid program
                     // data is guaranteed to be valid because we checked it in [`write_end`]
-                    unsafe {
+                    let result = unsafe {
                         interpreter.execute(VMContext {
-                            ops: shader.static_opcodes(),
+                            program: shader.static_program(),
                             inputs: &data,
                             textures: &textures,
                             pos_x: 0.0,
@@ -116,15 +116,10 @@ impl<'a> Dispatcher<'a> {
                             quad_l: bounds.left as f32,
                             quad_b: bounds.bottom as f32,
                             quad_r: bounds.right as f32,
-                        });
-                    }
+                        })
+                    };
 
-                    let data = &*self.arena.alloc_slice_fill_iter(
-                        shader
-                            .static_outputs()
-                            .iter()
-                            .map(|output| *interpreter.register(*output)),
-                    );
+                    let data = &*self.arena.alloc_slice_fill_iter(result.iter().copied());
 
                     &*self.arena.alloc(DispatchJob { object, data })
                 }
@@ -247,9 +242,9 @@ impl<'a> Dispatcher<'a> {
                                 // SAFETY: the program is guaranteed to be valid
                                 // because [`CompiledShader::compile`] is expected to return a valid program
                                 // data is guaranteed to be valid because we checked it in [`write_end`]
-                                unsafe {
+                                let result = unsafe {
                                     worker.interpreter.execute(VMContext {
-                                        ops: shader.dynamic_opcodes(),
+                                        program: shader.dynamic_program(),
                                         inputs: &job.data,
                                         textures: &texture_buffer[textures.clone()],
                                         pos_x: group.x as f32 + 0.5,
@@ -260,14 +255,14 @@ impl<'a> Dispatcher<'a> {
                                         quad_l: bounds.left as f32,
                                         quad_b: bounds.bottom as f32,
                                         quad_r: bounds.right as f32,
-                                    });
-                                }
+                                    })
+                                };
 
                                 let bounds = bounds.offset(-(group.x as i32), -(group.y as i32));
-                                let r = worker.interpreter.register(shader.dynamic_outputs()[0]);
-                                let g = worker.interpreter.register(shader.dynamic_outputs()[1]);
-                                let b = worker.interpreter.register(shader.dynamic_outputs()[2]);
-                                let a = worker.interpreter.register(shader.dynamic_outputs()[3]);
+                                let r = result.get(0);
+                                let g = result.get(1);
+                                let b = result.get(2);
+                                let a = result.get(3);
 
                                 blend_tile(
                                     &mut worker.r,

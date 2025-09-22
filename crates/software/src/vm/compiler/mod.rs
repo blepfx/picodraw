@@ -18,6 +18,13 @@ pub struct CompiledShader {
     dynamic_registers: u8,
 }
 
+#[derive(Debug)]
+pub struct CompiledProgram<'a> {
+    opcodes: &'a [VMOpcode],
+    outputs: &'a [u8],
+    registers: u8,
+}
+
 impl CompiledShader {
     pub fn compile(arena: &Bump, graph: &Graph) -> Self {
         let mut slots_input = 0;
@@ -68,28 +75,12 @@ impl CompiledShader {
         }
     }
 
-    pub fn static_opcodes(&self) -> &[VMOpcode] {
-        &self.static_opcodes
+    pub fn static_program(&self) -> CompiledProgram<'_> {
+        unsafe { CompiledProgram::new_unchecked(&self.static_opcodes, &self.static_outputs, self.static_registers) }
     }
 
-    pub fn dynamic_opcodes(&self) -> &[VMOpcode] {
-        &self.dynamic_opcodes
-    }
-
-    pub fn static_registers(&self) -> u8 {
-        self.static_registers
-    }
-
-    pub fn dynamic_registers(&self) -> u8 {
-        self.dynamic_registers
-    }
-
-    pub fn static_outputs(&self) -> &[u8] {
-        &self.static_outputs
-    }
-
-    pub fn dynamic_outputs(&self) -> &[u8; 4] {
-        &self.dynamic_outputs
+    pub fn dynamic_program(&self) -> CompiledProgram<'_> {
+        unsafe { CompiledProgram::new_unchecked(&self.dynamic_opcodes, &self.dynamic_outputs, self.dynamic_registers) }
     }
 
     pub fn input_slots(&self) -> u32 {
@@ -98,6 +89,29 @@ impl CompiledShader {
 
     pub fn texture_slots(&self) -> u8 {
         self.slots_texture
+    }
+}
+
+impl<'a> CompiledProgram<'a> {
+    pub unsafe fn new_unchecked(opcodes: &'a [VMOpcode], outputs: &'a [u8], registers: u8) -> Self {
+        Self {
+            opcodes,
+            outputs,
+            registers,
+        }
+    }
+
+    pub fn opcodes(&self) -> &'a [VMOpcode] {
+        self.opcodes
+    }
+
+    pub fn output_registers(&self) -> &'a [u8] {
+        self.outputs
+    }
+
+    #[allow(unused)]
+    pub fn used_registers(&self) -> usize {
+        self.registers as usize
     }
 }
 
