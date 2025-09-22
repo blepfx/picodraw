@@ -1,6 +1,6 @@
 mod ir;
 
-use super::{REGISTER_COUNT, VMOp, VMOpcode};
+use super::{VMOp, VMOpcode};
 use bumpalo::Bump;
 use picodraw_core::{Graph, graph::OpInput};
 
@@ -51,10 +51,7 @@ impl CompiledShader {
         let program_static = ir::lower_to_opcodes(&program_static, arena);
         let program_dynamic = ir::lower_to_opcodes(&program_dynamic, arena);
 
-        assert!(
-            program_static.registers <= REGISTER_COUNT as u8 && program_dynamic.registers <= REGISTER_COUNT as u8,
-            "too many registers used"
-        );
+        assert!(program_dynamic.registers <= 64, "too many registers used");
 
         Self {
             slots_input,

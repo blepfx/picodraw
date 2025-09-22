@@ -43,9 +43,9 @@ checksum = "1628fb46dfa0b37568d12e5edd512553eccf6a22a78e8bde00bb4aed84d5bdbf"
 
 [[package]]
 name = "bytemuck"
-version = "1.22.0"
+version = "1.23.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6b1fc10dbac614ebc03540c9dbd60e83887fda27794998c6528f1782047d540"
+checksum = "3995eaeebcdf32f91f980d360f78732ddc061097ab4e39991ae7a6ace9194677"
 
 [[package]]
 name = "byteorder-lite"
@@ -337,6 +337,7 @@ name = "picodraw-software"
 version = "0.1.0"
 dependencies = [
  "bumpalo",
+ "bytemuck",
  "picodraw-core",
  "slotmap",
 ]

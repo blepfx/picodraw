@@ -2,11 +2,14 @@ use crate::{
     buffer::{BufferMut, BufferRef},
     pack_rgba,
     util::{SimdDispatcher, ThreadPool},
-    vm::{CompiledShader, PIXEL_COUNT, TILE_SIZE, VMContext, VMInterpreter, VMSlot, VMTile},
+    vm::{CompiledShader, VMContext, VMMemory, VMSlot, VMTile16},
 };
 use bumpalo::{Bump, collections::Vec};
+use bytemuck::Zeroable;
 use picodraw_core::{Bounds, DrawError};
 use std::{iter::from_fn, ops::Range};
+
+const TILE_SIZE: usize = 16;
 
 enum DispatchObject<'a> {
     Draw {
@@ -88,7 +91,7 @@ impl<'a> Dispatcher<'a> {
 
         // run the "static" parts of the object shaders
         // (i.e. the parts that don't depend on the current pixel)
-        let mut interpreter = VMInterpreter::<VMSlot>::new(self.arena);
+        let mut memory = VMMemory::new(256, self.arena);
         let jobs = self.objects.iter().map(|object| {
             match object {
                 DispatchObject::Draw {
@@ -104,7 +107,7 @@ impl<'a> Dispatcher<'a> {
                     // because [`CompiledShader::compile`] is expected to return a valid program
                     // data is guaranteed to be valid because we checked it in [`write_end`]
                     let result = unsafe {
-                        interpreter.execute(VMContext {
+                        VMContext {
                             program: shader.static_program(),
                             inputs: &data,
                             textures: &textures,
@@ -116,7 +119,8 @@ impl<'a> Dispatcher<'a> {
                             quad_l: bounds.left as f32,
                             quad_b: bounds.bottom as f32,
                             quad_r: bounds.right as f32,
-                        })
+                        }
+                        .run::<VMSlot>(&mut memory)
                     };
 
                     let data = &*self.arena.alloc_slice_fill_iter(result.iter().copied());
@@ -182,11 +186,11 @@ impl<'a> Dispatcher<'a> {
         let workers = self
             .arena
             .alloc_slice_fill_iter((0..pool.num_workers()).map(|_| DispatchWorker {
-                r: VMTile::zeroed(),
-                g: VMTile::zeroed(),
-                b: VMTile::zeroed(),
-                a: VMTile::zeroed(),
-                interpreter: VMInterpreter::new(self.arena),
+                r: VMTile16::zeroed(),
+                g: VMTile16::zeroed(),
+                b: VMTile16::zeroed(),
+                a: VMTile16::zeroed(),
+                memory: VMMemory::new(256 * 64, self.arena),
             }));
 
         // dispatch groups
@@ -243,7 +247,7 @@ impl<'a> Dispatcher<'a> {
                                 // because [`CompiledShader::compile`] is expected to return a valid program
                                 // data is guaranteed to be valid because we checked it in [`write_end`]
                                 let result = unsafe {
-                                    worker.interpreter.execute(VMContext {
+                                    VMContext {
                                         program: shader.dynamic_program(),
                                         inputs: &job.data,
                                         textures: &texture_buffer[textures.clone()],
@@ -255,7 +259,8 @@ impl<'a> Dispatcher<'a> {
                                         quad_l: bounds.left as f32,
                                         quad_b: bounds.bottom as f32,
                                         quad_r: bounds.right as f32,
-                                    })
+                                    }
+                                    .run(&mut worker.memory)
                                 };
 
                                 let bounds = bounds.offset(-(group.x as i32), -(group.y as i32));
@@ -298,29 +303,29 @@ struct DispatchGroup<'a> {
 }
 
 struct DispatchWorker<'a> {
-    r: VMTile,
-    g: VMTile,
-    b: VMTile,
-    a: VMTile,
-    interpreter: VMInterpreter<'a, VMTile>,
+    r: VMTile16,
+    g: VMTile16,
+    b: VMTile16,
+    a: VMTile16,
+    memory: VMMemory<'a>,
 }
 
 #[inline(always)]
 fn blend_tile(
-    r0: &mut VMTile,
-    g0: &mut VMTile,
-    b0: &mut VMTile,
-    a0: &mut VMTile,
-    r1: &VMTile,
-    g1: &VMTile,
-    b1: &VMTile,
-    a1: &VMTile,
+    r0: &mut VMTile16,
+    g0: &mut VMTile16,
+    b0: &mut VMTile16,
+    a0: &mut VMTile16,
+    r1: &VMTile16,
+    g1: &VMTile16,
+    b1: &VMTile16,
+    a1: &VMTile16,
     bounds: Bounds,
 ) {
     let (a0, r0, g0, b0) = (a0.as_f32_mut(), r0.as_f32_mut(), g0.as_f32_mut(), b0.as_f32_mut());
     let (a1, r1, g1, b1) = (a1.as_f32(), r1.as_f32(), g1.as_f32(), b1.as_f32());
 
-    for i in 0..PIXEL_COUNT {
+    for i in 0..r0.len() {
         let mask = {
             let x = i % TILE_SIZE;
             let y = i / TILE_SIZE;
@@ -340,14 +345,14 @@ fn blend_tile(
 }
 
 #[inline(always)]
-fn finish_tile(mut buffer: BufferMut, r: &mut VMTile, g: &mut VMTile, b: &mut VMTile, a: &mut VMTile) {
+fn finish_tile(mut buffer: BufferMut, r: &mut VMTile16, g: &mut VMTile16, b: &mut VMTile16, a: &mut VMTile16) {
     #[inline(always)]
-    fn convert_color_0_255(x: &mut VMTile) {
+    fn convert_color_0_255(x: &mut VMTile16) {
         #[cold]
         fn cold() {}
 
         let x = x.as_f32_mut();
-        for i in 0..PIXEL_COUNT {
+        for i in 0..x.len() {
             if x[i] == x[i] {
                 x[i] = (x[i] * 255.0 + 0.5).clamp(0.0, 255.0);
             } else {

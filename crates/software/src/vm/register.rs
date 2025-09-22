@@ -1,44 +1,6 @@
-pub const TILE_SIZE: usize = 8;
-pub const REGISTER_COUNT: usize = 64;
-pub const PIXEL_COUNT: usize = TILE_SIZE * TILE_SIZE;
+use bytemuck::{Pod, Zeroable, must_cast_mut, must_cast_ref};
 
-#[derive(Copy, Clone)]
-pub union VMSlot {
-    pub int: i32,
-    pub float: f32,
-}
-
-#[derive(Copy, Clone)]
-#[repr(align(128))]
-pub struct VMTile([VMSlot; PIXEL_COUNT]);
-
-impl VMTile {
-    pub fn zeroed() -> Self {
-        Self([VMSlot { int: 0 }; PIXEL_COUNT])
-    }
-
-    #[inline(always)]
-    pub fn as_f32(&self) -> &[f32; PIXEL_COUNT] {
-        unsafe { &*(&self.0 as *const _ as *const [f32; PIXEL_COUNT]) }
-    }
-
-    #[inline(always)]
-    pub fn as_f32_mut(&mut self) -> &mut [f32; PIXEL_COUNT] {
-        unsafe { &mut *(&mut self.0 as *mut _ as *mut [f32; PIXEL_COUNT]) }
-    }
-
-    #[inline(always)]
-    pub fn as_i32(&self) -> &[i32; PIXEL_COUNT] {
-        unsafe { &*(&self.0 as *const _ as *const [i32; PIXEL_COUNT]) }
-    }
-
-    #[inline(always)]
-    pub fn as_i32_mut(&mut self) -> &mut [i32; PIXEL_COUNT] {
-        unsafe { &mut *(&mut self.0 as *mut _ as *mut [i32; PIXEL_COUNT]) }
-    }
-}
-
-pub trait VMRegister: Copy + Sized + 'static {
+pub trait VMRegister: Pod + Copy + Sized + 'static {
     const SIZE: usize;
 
     fn as_f32(&self) -> &[f32];
@@ -47,50 +9,106 @@ pub trait VMRegister: Copy + Sized + 'static {
     fn as_i32_mut(&mut self) -> &mut [i32];
 }
 
+#[derive(Copy, Clone)]
+pub union VMSlot {
+    pub int: i32,
+    pub float: f32,
+}
+
+unsafe impl Zeroable for VMSlot {}
+unsafe impl Pod for VMSlot {}
+
 impl VMRegister for VMSlot {
     const SIZE: usize = 1;
 
     #[inline(always)]
     fn as_f32(&self) -> &[f32] {
-        unsafe { &*(&self.float as *const _ as *const [f32; 1]) }
+        must_cast_ref::<_, [f32; 1]>(self)
     }
 
     #[inline(always)]
     fn as_f32_mut(&mut self) -> &mut [f32] {
-        unsafe { &mut *(&mut self.float as *mut _ as *mut [f32; 1]) }
+        must_cast_mut::<_, [f32; 1]>(self)
     }
 
     #[inline(always)]
     fn as_i32(&self) -> &[i32] {
-        unsafe { &*(&self.int as *const _ as *const [i32; 1]) }
+        must_cast_ref::<_, [i32; 1]>(self)
     }
 
     #[inline(always)]
     fn as_i32_mut(&mut self) -> &mut [i32] {
-        unsafe { &mut *(&mut self.int as *mut _ as *mut [i32; 1]) }
+        must_cast_mut::<_, [i32; 1]>(self)
     }
 }
 
-impl VMRegister for VMTile {
-    const SIZE: usize = TILE_SIZE;
+#[derive(Copy, Clone)]
+#[repr(align(128))]
+pub struct VMTile16([[VMSlot; 16]; 16]);
+#[derive(Copy, Clone)]
+#[repr(align(128))]
+pub struct VMTile8([[VMSlot; 8]; 8]);
+#[derive(Copy, Clone)]
+#[repr(align(64))]
+pub struct VMTile4([[VMSlot; 4]; 4]);
+#[derive(Copy, Clone)]
+#[repr(align(16))]
+pub struct VMTile2([[VMSlot; 2]; 2]);
 
-    #[inline(always)]
-    fn as_f32(&self) -> &[f32] {
-        self.as_f32()
-    }
+macro_rules! impl_tile {
+    ($type:ty, $size:literal) => {
+        unsafe impl Zeroable for $type {}
+        unsafe impl Pod for $type {}
 
-    #[inline(always)]
-    fn as_f32_mut(&mut self) -> &mut [f32] {
-        self.as_f32_mut()
-    }
+        impl $type {
+            #[inline(always)]
+            pub fn as_f32(&self) -> &[f32; $size * $size] {
+                must_cast_ref(&self.0)
+            }
 
-    #[inline(always)]
-    fn as_i32(&self) -> &[i32] {
-        self.as_i32()
-    }
+            #[inline(always)]
+            pub fn as_f32_mut(&mut self) -> &mut [f32; $size * $size] {
+                must_cast_mut(&mut self.0)
+            }
 
-    #[inline(always)]
-    fn as_i32_mut(&mut self) -> &mut [i32] {
-        self.as_i32_mut()
-    }
+            #[inline(always)]
+            pub fn as_i32(&self) -> &[i32; $size * $size] {
+                must_cast_ref(&self.0)
+            }
+
+            #[inline(always)]
+            pub fn as_i32_mut(&mut self) -> &mut [i32; $size * $size] {
+                must_cast_mut(&mut self.0)
+            }
+        }
+
+        impl VMRegister for $type {
+            const SIZE: usize = $size;
+
+            #[inline(always)]
+            fn as_f32(&self) -> &[f32] {
+                self.as_f32()
+            }
+
+            #[inline(always)]
+            fn as_f32_mut(&mut self) -> &mut [f32] {
+                self.as_f32_mut()
+            }
+
+            #[inline(always)]
+            fn as_i32(&self) -> &[i32] {
+                self.as_i32()
+            }
+
+            #[inline(always)]
+            fn as_i32_mut(&mut self) -> &mut [i32] {
+                self.as_i32_mut()
+            }
+        }
+    };
 }
+
+impl_tile!(VMTile16, 16);
+impl_tile!(VMTile8, 8);
+impl_tile!(VMTile4, 4);
+impl_tile!(VMTile2, 2);

@@ -1,7 +1,10 @@
-use super::{REGISTER_COUNT, VMOp, VMRegister, VMSlot};
-use crate::{BufferRef, vm::CompiledProgram};
+use super::{VMOp, VMRegister, VMSlot};
+use crate::{
+    BufferRef,
+    vm::{CompiledProgram, VMTile16},
+};
 use bumpalo::{Bump, boxed::Box};
-use std::alloc::Layout;
+use bytemuck::{Zeroable, cast_slice_mut};
 
 pub struct VMContext<'a> {
     pub program: CompiledProgram<'a>,
@@ -18,37 +21,41 @@ pub struct VMContext<'a> {
     pub res_y: f32,
 }
 
-pub struct VMInterpreter<'a, T: VMRegister> {
-    data: Box<'a, [T; REGISTER_COUNT]>,
-}
-
-pub struct VMInterpreterResult<'a, T: VMRegister> {
+pub struct VMResult<'a, T: VMRegister> {
     registers: &'a [T],
     outputs: &'a [u8],
 }
 
-impl<'a, T: VMRegister> VMInterpreter<'a, T> {
-    pub fn new(arena: &'a Bump) -> Self {
+pub struct VMMemory<'a> {
+    memory: Box<'a, [VMTile16]>,
+}
+
+impl<'a> VMMemory<'a> {
+    pub fn new(slots: usize, arena: &'a Bump) -> Self {
         Self {
-            data: unsafe { Box::from_raw(arena.alloc_layout(Layout::new::<[T; REGISTER_COUNT]>()).cast().as_ptr()) },
+            memory: Box::from_iter_in((0..slots.div_ceil(256)).map(|_| VMTile16::zeroed()), arena),
         }
     }
+}
 
+impl<'a> VMContext<'a> {
     /// SAFETY: caller must ensure that the program context is valid:
     /// - the `inputs` array have at least the amount of elements that the `Read` opcode references
     /// - the `textures` array have at least the amount of elements that `Tex*` opcodes reference
-    /// - every operation references a register that is less than `REGISTER_COUNT`
+    /// - every operation references a register that is less than the size of the `registers` argument
     /// - every operation writes to a register it doesn't read from (`AddF(0, 1, 1)` is NOT valid)
     /// - every operation reads only from those registers that were written to by preceding operations
     #[allow(unused_unsafe)]
     #[inline(always)]
-    pub unsafe fn execute<'s>(&'s mut self, context: VMContext<'s>) -> VMInterpreterResult<'s, T> {
+    pub unsafe fn run<T: VMRegister>(self, memory: &'a mut VMMemory<'_>) -> VMResult<'a, T> {
         use VMOp::*;
+
+        let registers = cast_slice_mut::<_, T>(&mut memory.memory[..]);
 
         macro_rules! registers {
                 ($($input:expr,)* mut $output:expr) => {
                     unsafe {
-                        let ptr = self.data.as_mut_ptr();
+                        let ptr = registers.as_mut_ptr();
 
                         (
                             $(
@@ -152,7 +159,7 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
             }};
         }
 
-        for op in context.program.opcodes().iter().copied() {
+        for op in self.program.opcodes().iter().copied() {
             match op {
                 AddF(a, b, c) => {
                     op!(|a: f32, b: f32, c: mut f32| a + b);
@@ -336,7 +343,7 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
 
                 Read(idx, reg) => unsafe {
                     let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut().fill(context.inputs.get_unchecked(idx as usize).int);
+                    reg.as_i32_mut().fill(self.inputs.get_unchecked(idx as usize).int);
                 },
 
                 LitF(val, reg) => {
@@ -350,27 +357,27 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
 
                 ResX(reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut().fill(context.res_x);
+                    reg.as_f32_mut().fill(self.res_x);
                 }
                 ResY(reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut().fill(context.res_y);
+                    reg.as_f32_mut().fill(self.res_y);
                 }
                 QuadT(reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut().fill(context.quad_t);
+                    reg.as_f32_mut().fill(self.quad_t);
                 }
                 QuadL(reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut().fill(context.quad_l);
+                    reg.as_f32_mut().fill(self.quad_l);
                 }
                 QuadB(reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut().fill(context.quad_b);
+                    reg.as_f32_mut().fill(self.quad_b);
                 }
                 QuadR(reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_f32_mut().fill(context.quad_r);
+                    reg.as_f32_mut().fill(self.quad_r);
                 }
 
                 PosX(reg) => {
@@ -379,7 +386,7 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
 
                     for i in 0..T::SIZE {
                         for j in 0..T::SIZE {
-                            reg[i * T::SIZE + j] = context.pos_x + j as f32;
+                            reg[i * T::SIZE + j] = self.pos_x + j as f32;
                         }
                     }
                 }
@@ -389,7 +396,7 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
 
                     for i in 0..T::SIZE {
                         for j in 0..T::SIZE {
-                            reg[i * T::SIZE + j] = context.pos_y + i as f32;
+                            reg[i * T::SIZE + j] = self.pos_y + i as f32;
                         }
                     }
                 }
@@ -428,46 +435,46 @@ impl<'a, T: VMRegister> VMInterpreter<'a, T> {
                     }
                 }
 
-                TexW(tex, reg) => {
+                TexW(tex, reg) => unsafe {
                     let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut().fill(context.textures[tex as usize].width() as i32);
-                }
+                    reg.as_i32_mut()
+                        .fill(self.textures.get_unchecked(tex as usize).width() as i32);
+                },
 
-                TexH(tex, reg) => {
+                TexH(tex, reg) => unsafe {
                     let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut().fill(context.textures[tex as usize].height() as i32);
-                }
+                    reg.as_i32_mut()
+                        .fill(self.textures.get_unchecked(tex as usize).height() as i32);
+                },
 
-                Tex(tex, chan, filt, x, y, reg) => {
+                Tex(tex, chan, filt, x, y, reg) => unsafe {
                     let (x, y, out) = registers!(x, y, mut reg);
-                    let tex = context.textures[tex as usize];
+                    let tex = self.textures.get_unchecked(tex as usize);
                     let out = out.as_f32_mut();
                     let x = x.as_f32();
                     let y = y.as_f32();
 
                     for i in 0..T::SIZE {
                         for j in 0..T::SIZE {
-                            unsafe {
-                                out[i * T::SIZE + j] =
-                                    *tex.sample(x[i * T::SIZE + j] - 0.5, y[i * T::SIZE + j] - 0.5, filt)
-                                        .to_le_bytes()
-                                        .get_unchecked(chan as usize) as f32
-                                        / 255.0
-                            }
+                            out[i * T::SIZE + j] = *tex
+                                .sample(x[i * T::SIZE + j] - 0.5, y[i * T::SIZE + j] - 0.5, filt)
+                                .to_le_bytes()
+                                .get_unchecked(chan as usize) as f32
+                                / 255.0;
                         }
                     }
-                }
+                },
             }
         }
 
-        VMInterpreterResult {
-            registers: &self.data[..],
-            outputs: &context.program.output_registers(),
+        VMResult {
+            registers,
+            outputs: &self.program.output_registers(),
         }
     }
 }
 
-impl<'a, T: VMRegister> VMInterpreterResult<'a, T> {
+impl<'a, T: VMRegister> VMResult<'a, T> {
     pub fn get(&self, index: usize) -> &'a T {
         &self.registers[self.outputs[index] as usize]
     }
@@ -488,10 +495,11 @@ mod test {
     #[test]
     fn test_vm() {
         let arena = Bump::new();
-        let mut interpreter = VMInterpreter::<VMSlot>::new(&arena);
-        let program = VMContext {
+        let mut memory = VMMemory::new(3, &arena);
+
+        let context = VMContext {
             program: unsafe {
-                CompiledProgram::new_unchecked(&[VMOp::LitF(1.0, 0), VMOp::Read(0, 1), VMOp::AddF(0, 1, 2)], &[2], 2)
+                CompiledProgram::new_unchecked(&[VMOp::LitF(1.0, 0), VMOp::Read(0, 1), VMOp::AddF(0, 1, 2)], &[2], 3)
             },
             inputs: &[VMSlot { float: -1.5 }],
             textures: &[],
@@ -505,7 +513,7 @@ mod test {
             res_y: 32.0,
         };
 
-        let result = unsafe { interpreter.execute(program) };
+        let result = unsafe { context.run::<VMSlot>(&mut memory) };
         let result = result.get(0).as_f32();
         assert_eq!(result[0], -0.5);
     }
