@@ -337,7 +337,6 @@ name = "picodraw-software"
 version = "0.1.0"
 dependencies = [
  "bumpalo",
- "bytemuck",
  "picodraw-core",
  "slotmap",
 ]

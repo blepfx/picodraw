@@ -15,7 +15,6 @@ yansi = "1.0"
 
 # feature(software)
 bumpalo = { version = "3.17", features = ["boxed", "collections"] }
-bytemuck = { version = "1.23", features = ["must_cast"] }
 
 # feature(opengl)
 glow = { git = "https://github.com/Quant1um/glow", branch = "main" }

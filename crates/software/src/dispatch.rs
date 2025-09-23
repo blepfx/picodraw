@@ -1,11 +1,10 @@
 use crate::{
     buffer::{BufferMut, BufferRef},
     pack_rgba,
-    util::{SimdDispatcher, ThreadPool},
+    util::{Pod, SimdDispatcher, ThreadPool},
     vm::{CompiledShader, VMContext, VMMemory, VMSlot, VMTile16},
 };
 use bumpalo::{Bump, collections::Vec};
-use bytemuck::Zeroable;
 use picodraw_core::{Bounds, DrawError};
 use std::{iter::from_fn, ops::Range};
 

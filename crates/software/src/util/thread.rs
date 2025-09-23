@@ -1,8 +1,9 @@
 use std::{
-    panic::{AssertUnwindSafe, catch_unwind},
+    any::Any,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     ptr::null_mut,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
     },
     thread::{Thread, available_parallelism, current, park, spawn},
@@ -28,7 +29,7 @@ impl ThreadPool {
     }
 
     pub fn run_indexed(&mut self, jobs: usize, run: impl Fn(usize, usize) + Send + Sync) {
-        let scope = Scope::new(&run, jobs);
+        let mut scope = Scope::new(&run, jobs);
 
         unsafe {
             for worker in self.workers.iter_mut() {
@@ -42,9 +43,7 @@ impl ThreadPool {
             }
         }
 
-        if scope.has_panicked() {
-            panic!("one of the worker threads has panicked")
-        }
+        scope.consume_panic();
     }
 
     pub fn run_arrays<'a, Worker: 'a + Send + Sync, Job: 'a + Send + Sync>(
@@ -72,7 +71,7 @@ impl ThreadPool {
 #[repr(align(64))]
 struct Scope<'a> {
     coordinator: Thread,
-    panicked: AtomicBool,
+    panic: Mutex<Option<Box<dyn Any + Send>>>,
 
     job_runner: &'a (dyn Fn(usize, usize) + Send + Sync),
     job_count: AtomicUsize,
@@ -94,7 +93,7 @@ impl<'a> Scope<'a> {
     fn new(runner: &'a (dyn Fn(usize, usize) + Send + Sync), jobs: usize) -> Self {
         Self {
             coordinator: current(),
-            panicked: AtomicBool::new(false),
+            panic: Mutex::new(None),
             job_count: AtomicUsize::new(0),
             job_total: jobs,
             job_runner: runner,
@@ -113,14 +112,16 @@ impl<'a> Scope<'a> {
                 (self.job_runner)(thread, task);
             }));
 
-            if result.is_err() {
-                self.panicked.store(true, Ordering::Relaxed);
+            if let Err(err) = result {
+                *self.panic.lock().unwrap() = Some(err);
             }
         }
     }
 
-    fn has_panicked(&self) -> bool {
-        self.panicked.load(Ordering::Relaxed)
+    fn consume_panic(&mut self) {
+        if let Some(err) = self.panic.get_mut().unwrap().take() {
+            resume_unwind(err);
+        }
     }
 }
 

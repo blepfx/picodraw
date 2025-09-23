@@ -1,10 +1,10 @@
 use super::{VMOp, VMRegister, VMSlot};
 use crate::{
     BufferRef,
+    util::Pod,
     vm::{CompiledProgram, VMTile16},
 };
 use bumpalo::{Bump, boxed::Box};
-use bytemuck::{Zeroable, cast_slice_mut};
 
 pub struct VMContext<'a> {
     pub program: CompiledProgram<'a>,
@@ -50,7 +50,7 @@ impl<'a> VMContext<'a> {
     pub unsafe fn run<T: VMRegister>(self, memory: &'a mut VMMemory<'_>) -> VMResult<'a, T> {
         use VMOp::*;
 
-        let registers = cast_slice_mut::<_, T>(&mut memory.memory[..]);
+        let registers: &mut [T] = VMTile16::cast_slice_mut(&mut memory.memory[..]);
 
         macro_rules! registers {
                 ($($input:expr,)* mut $output:expr) => {
