@@ -26,7 +26,7 @@ enum DispatchObject<'a> {
 pub struct Dispatcher<'a> {
     arena: &'a Bump,
     objects: Vec<'a, DispatchObject<'a>>,
-    data: Vec<'a, VMSlot>,
+    inputs: Vec<'a, VMSlot>,
     textures: Vec<'a, BufferRef<'a>>,
 }
 
@@ -35,7 +35,7 @@ impl<'a> Dispatcher<'a> {
         Self {
             arena,
             objects: Vec::new_in(arena),
-            data: Vec::new_in(arena),
+            inputs: Vec::new_in(arena),
             textures: Vec::new_in(arena),
         }
     }
@@ -47,14 +47,14 @@ impl<'a> Dispatcher<'a> {
     pub fn write_start(&mut self, bounds: impl Into<Bounds>, shader: &'a CompiledShader) {
         self.objects.push(DispatchObject::Draw {
             shader,
-            data: self.data.len()..0,
+            data: self.inputs.len()..0,
             textures: self.textures.len()..0,
             bounds: bounds.into(),
         });
     }
 
     pub fn write_data(&mut self, data: &[VMSlot]) {
-        self.data.extend_from_slice(data);
+        self.inputs.extend_from_slice(data);
     }
 
     pub fn write_texture(&mut self, texture: BufferRef<'a>) {
@@ -66,15 +66,15 @@ impl<'a> Dispatcher<'a> {
             data, textures, shader, ..
         }) = self.objects.last_mut()
         {
-            data.end = self.data.len();
+            data.end = self.inputs.len();
             textures.end = self.textures.len();
 
             if shader.input_slots() as usize != data.len() {
-                return Err(DrawError::MalformedStream);
+                return Err(DrawError::InvalidQuadData);
             }
 
             if shader.texture_slots() as usize != textures.len() {
-                return Err(DrawError::MalformedStream);
+                return Err(DrawError::InvalidQuadData);
             }
         } else {
             return Err(DrawError::MalformedStream);
@@ -85,7 +85,7 @@ impl<'a> Dispatcher<'a> {
 
     pub fn dispatch(self, pool: &mut ThreadPool, simd: SimdDispatcher, buffer: BufferMut<'a>) {
         // prepare data
-        let data_buffer = self.data.into_bump_slice();
+        let input_buffer = self.inputs.into_bump_slice();
         let texture_buffer = self.textures.into_bump_slice();
 
         // run the "static" parts of the object shaders
@@ -99,7 +99,7 @@ impl<'a> Dispatcher<'a> {
                     textures,
                     bounds,
                 } => {
-                    let data = &data_buffer[data.clone()];
+                    let inputs = &input_buffer[data.clone()];
                     let textures = &texture_buffer[textures.clone()];
 
                     // SAFETY: the program is guaranteed to be valid
@@ -108,7 +108,7 @@ impl<'a> Dispatcher<'a> {
                     let result = unsafe {
                         VMContext {
                             program: shader.static_program(),
-                            inputs: &data,
+                            inputs: &inputs,
                             textures: &textures,
                             pos_x: 0.0,
                             pos_y: 0.0,
@@ -124,10 +124,15 @@ impl<'a> Dispatcher<'a> {
 
                     let data = &*self.arena.alloc_slice_fill_iter(result.iter().copied());
 
-                    &*self.arena.alloc(DispatchJob { object, data })
+                    &*self.arena.alloc(DispatchOperation::Draw16 {
+                        shader,
+                        data,
+                        textures,
+                        bounds: *bounds,
+                    })
                 }
 
-                object => &*self.arena.alloc(DispatchJob { object, data: &[] }),
+                DispatchObject::Clear { bounds } => &*self.arena.alloc(DispatchOperation::Clear { bounds: *bounds }),
             }
         });
 
@@ -141,9 +146,9 @@ impl<'a> Dispatcher<'a> {
             );
 
             for job in jobs {
-                let bounds = match job.object {
-                    DispatchObject::Draw { bounds, .. } => bounds,
-                    DispatchObject::Clear { bounds } => bounds,
+                let bounds = match job {
+                    DispatchOperation::Draw16 { bounds, .. } => bounds,
+                    DispatchOperation::Clear { bounds } => bounds,
                 };
 
                 let x0 = bounds.left as usize / TILE_SIZE;
@@ -174,7 +179,7 @@ impl<'a> Dispatcher<'a> {
                     &*self.arena.alloc(DispatchGroup {
                         x,
                         y,
-                        objects: objects.into_bump_slice(),
+                        ops: objects.into_bump_slice(),
                     })
                 }),
             self.arena,
@@ -219,9 +224,9 @@ impl<'a> Dispatcher<'a> {
                     worker.a.as_f32_mut().fill(0.0);
 
                     // draw the objects in sequence
-                    for job in group.objects.iter() {
-                        match job.object {
-                            DispatchObject::Clear { bounds } => {
+                    for job in group.ops.iter() {
+                        match job {
+                            DispatchOperation::Clear { bounds } => {
                                 let bounds = bounds.offset(-(group.x as i32), -(group.y as i32)).intersect(Bounds {
                                     top: 0,
                                     left: 0,
@@ -236,11 +241,11 @@ impl<'a> Dispatcher<'a> {
                                 }
                             }
 
-                            DispatchObject::Draw {
+                            DispatchOperation::Draw16 {
                                 shader,
+                                data,
                                 textures,
                                 bounds,
-                                ..
                             } => {
                                 // SAFETY: the program is guaranteed to be valid
                                 // because [`CompiledShader::compile`] is expected to return a valid program
@@ -248,8 +253,8 @@ impl<'a> Dispatcher<'a> {
                                 let result = unsafe {
                                     VMContext {
                                         program: shader.dynamic_program(),
-                                        inputs: &job.data,
-                                        textures: &texture_buffer[textures.clone()],
+                                        inputs: data,
+                                        textures,
                                         pos_x: group.x as f32 + 0.5,
                                         pos_y: group.y as f32 + 0.5,
                                         res_x: width as f32,
@@ -290,15 +295,23 @@ impl<'a> Dispatcher<'a> {
     }
 }
 
-struct DispatchJob<'a> {
-    object: &'a DispatchObject<'a>,
-    data: &'a [VMSlot],
+enum DispatchOperation<'a> {
+    Draw16 {
+        shader: &'a CompiledShader,
+        data: &'a [VMSlot],
+        textures: &'a [BufferRef<'a>],
+        bounds: Bounds,
+    },
+
+    Clear {
+        bounds: Bounds,
+    },
 }
 
 struct DispatchGroup<'a> {
     x: u32,
     y: u32,
-    objects: &'a [&'a DispatchJob<'a>],
+    ops: &'a [&'a DispatchOperation<'a>],
 }
 
 struct DispatchWorker<'a> {

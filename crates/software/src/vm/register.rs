@@ -1,7 +1,8 @@
 use crate::util::Pod;
 
-pub trait VMRegister: Pod + Copy + Sized + 'static {
-    const SIZE: usize;
+pub unsafe trait VMRegister: Pod + Copy + Sized + 'static {
+    const WIDTH: usize;
+    const HEIGHT: usize;
 
     fn as_f32(&self) -> &[f32];
     fn as_f32_mut(&mut self) -> &mut [f32];
@@ -30,33 +31,34 @@ pub struct VMTile4([[VMSlot; 4]; 4]);
 pub struct VMTile2([[VMSlot; 2]; 2]);
 
 macro_rules! impl_tile {
-    ($type:ty, $size:literal) => {
+    ($type:ty, $width:literal, $height:literal) => {
         unsafe impl Pod for $type {}
 
         impl $type {
             #[inline(always)]
-            pub fn as_f32(&self) -> &[f32; $size * $size] {
+            pub fn as_f32(&self) -> &[f32; $width * $height] {
                 self.cast_ref()
             }
 
             #[inline(always)]
-            pub fn as_f32_mut(&mut self) -> &mut [f32; $size * $size] {
+            pub fn as_f32_mut(&mut self) -> &mut [f32; $width * $height] {
                 self.cast_mut()
             }
 
             #[inline(always)]
-            pub fn as_i32(&self) -> &[i32; $size * $size] {
+            pub fn as_i32(&self) -> &[i32; $width * $height] {
                 self.cast_ref()
             }
 
             #[inline(always)]
-            pub fn as_i32_mut(&mut self) -> &mut [i32; $size * $size] {
+            pub fn as_i32_mut(&mut self) -> &mut [i32; $width * $height] {
                 self.cast_mut()
             }
         }
 
-        impl VMRegister for $type {
-            const SIZE: usize = $size;
+        unsafe impl VMRegister for $type {
+            const WIDTH: usize = $width;
+            const HEIGHT: usize = $height;
 
             #[inline(always)]
             fn as_f32(&self) -> &[f32] {
@@ -81,8 +83,8 @@ macro_rules! impl_tile {
     };
 }
 
-impl_tile!(VMTile16, 16);
-impl_tile!(VMTile8, 8);
-impl_tile!(VMTile4, 4);
-impl_tile!(VMTile2, 2);
-impl_tile!(VMSlot, 1);
+impl_tile!(VMTile16, 16, 16);
+impl_tile!(VMTile8, 8, 8);
+impl_tile!(VMTile4, 4, 4);
+impl_tile!(VMTile2, 2, 2);
+impl_tile!(VMSlot, 1, 1);

@@ -65,19 +65,34 @@ pub enum QuadData {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct ShaderId(pub u64);
 
-/// Static texture.
+/// Texture.
 ///
 /// A texture is a 2D image that can be sampled in shaders.
+/// An empty texture can be created by calling [`Context::create_texture`],
+/// which can be later populated by either drawing onto it with [`Context::draw_texture`]
+/// or uploading texture data from an external source via [`Context::upload_texture`]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct TextureId(pub u64);
 
-/// An error that is occured while drawing.
+/// An error that has occured while drawing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrawError {
+    /// Command stream contains an invalid [`ShaderId`]
     InvalidShader,
+
+    /// Command stream contains an invalid [`TextureId`]
     InvalidTexture,
+
+    /// Render target passed to [`Context::draw_texture`] is invalid
     InvalidTarget,
+
+    /// Quad data passed via [`Command::Data`] does not correspond to the input schema expected by the shader
+    InvalidQuadData,
+
+    /// Attempt to sample from a texture that is being used as the target as the same time
     TargetInUse,
+
+    /// The command stream is malformed. See [`Command::Begin`] and [`Command::End`] for more info
     MalformedStream,
 }
 
@@ -87,6 +102,7 @@ impl Display for DrawError {
             DrawError::InvalidShader => write!(f, "command stream contains an invalid shader reference"),
             DrawError::InvalidTexture => write!(f, "command stream contains an invalid source texture"),
             DrawError::InvalidTarget => write!(f, "passed render target is not valid"),
+            DrawError::InvalidQuadData => write!(f, "passed quad data does not correspond to the used shader's schema"),
             DrawError::TargetInUse => write!(f, "attempt to use the destination render target as a texture"),
             DrawError::MalformedStream => write!(f, "command stream is malformed"),
         }

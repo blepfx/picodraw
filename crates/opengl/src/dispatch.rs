@@ -197,7 +197,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             layout,
             self.quad_queue_data.drain(..),
         )
-        .map_err(|_| DrawError::MalformedStream)?;
+        .map_err(|_| DrawError::InvalidQuadData)?;
 
         for (slot, texture) in self.quad_queue_textures.drain(..) {
             if self.drawcall_textures.len() <= slot as usize {
@@ -220,7 +220,7 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             .textures
             .get(self.quad_queue_textures.len())
             .copied()
-            .ok_or_else(|| DrawError::MalformedStream)?;
+            .ok_or_else(|| DrawError::InvalidQuadData)?;
 
         self.quad_queue_textures.push((slot, texture));
 

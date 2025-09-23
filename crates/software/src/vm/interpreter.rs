@@ -51,22 +51,16 @@ impl<'a> VMContext<'a> {
         use VMOp::*;
 
         let registers: &mut [T] = VMTile16::cast_slice_mut(&mut memory.memory[..]);
+        debug_assert!(self.program.used_registers() <= registers.len());
 
         macro_rules! registers {
-                ($($input:expr,)* mut $output:expr) => {
-                    unsafe {
-                        let ptr = registers.as_mut_ptr();
-
-                        (
-                            $(
-                                &*ptr.add($input as usize),
-                            )*
-                            &mut *ptr.add($output as usize),
-                        )
-                    }
-                };
-
-            }
+            ($($input:expr,)* mut $output:expr) => {
+                unsafe {
+                    let ptr = registers.as_mut_ptr();
+                    ($(&*ptr.add($input as usize),)* &mut *ptr.add($output as usize),)
+                }
+            };
+        }
 
         macro_rules! op {
             (|$a:ident: f32, $b:ident: mut f32| $x:expr) => {{
@@ -384,9 +378,9 @@ impl<'a> VMContext<'a> {
                     let (reg,) = registers!(mut reg);
                     let reg = reg.as_f32_mut();
 
-                    for i in 0..T::SIZE {
-                        for j in 0..T::SIZE {
-                            reg[i * T::SIZE + j] = self.pos_x + j as f32;
+                    for i in 0..T::HEIGHT {
+                        for j in 0..T::WIDTH {
+                            reg[i * T::WIDTH + j] = self.pos_x + j as f32;
                         }
                     }
                 }
@@ -394,9 +388,9 @@ impl<'a> VMContext<'a> {
                     let (reg,) = registers!(mut reg);
                     let reg = reg.as_f32_mut();
 
-                    for i in 0..T::SIZE {
-                        for j in 0..T::SIZE {
-                            reg[i * T::SIZE + j] = self.pos_y + i as f32;
+                    for i in 0..T::HEIGHT {
+                        for j in 0..T::WIDTH {
+                            reg[i * T::WIDTH + j] = self.pos_y + i as f32;
                         }
                     }
                 }
@@ -406,14 +400,14 @@ impl<'a> VMContext<'a> {
                     let reg = reg.as_f32();
                     let out = out.as_f32_mut();
 
-                    for i in (0..T::SIZE).step_by(2) {
-                        for j in (0..T::SIZE).step_by(2) {
-                            let d = reg[i * T::SIZE + j + 1] - reg[i * T::SIZE + j];
+                    for i in (0..T::HEIGHT).step_by(2) {
+                        for j in (0..T::WIDTH).step_by(2) {
+                            let d = reg[i * T::WIDTH + j + 1] - reg[i * T::WIDTH + j];
 
-                            out[i * T::SIZE + j] = d;
-                            out[i * T::SIZE + j + 1] = d;
-                            out[(i + 1) * T::SIZE + j] = d;
-                            out[(i + 1) * T::SIZE + j + 1] = d;
+                            out[i * T::WIDTH + j] = d;
+                            out[i * T::WIDTH + j + 1] = d;
+                            out[i * T::WIDTH + j + T::WIDTH] = d;
+                            out[i * T::WIDTH + j + T::WIDTH + 1] = d;
                         }
                     }
                 }
@@ -423,14 +417,14 @@ impl<'a> VMContext<'a> {
                     let reg = reg.as_f32();
                     let out = out.as_f32_mut();
 
-                    for i in (0..T::SIZE).step_by(2) {
-                        for j in (0..T::SIZE).step_by(2) {
-                            let d = reg[i * T::SIZE + j] - reg[(i + 1) * T::SIZE + j];
+                    for i in (0..T::HEIGHT).step_by(2) {
+                        for j in (0..T::WIDTH).step_by(2) {
+                            let d = reg[i * T::WIDTH + j] - reg[i * T::WIDTH + j + T::WIDTH];
 
-                            out[i * T::SIZE + j] = d;
-                            out[(i + 1) * T::SIZE + j] = d;
-                            out[i * T::SIZE + j + 1] = d;
-                            out[(i + 1) * T::SIZE + j + 1] = d;
+                            out[i * T::WIDTH + j] = d;
+                            out[i * T::WIDTH + j + 1] = d;
+                            out[i * T::WIDTH + j + T::WIDTH] = d;
+                            out[i * T::WIDTH + j + T::WIDTH + 1] = d;
                         }
                     }
                 }
@@ -454,13 +448,13 @@ impl<'a> VMContext<'a> {
                     let x = x.as_f32();
                     let y = y.as_f32();
 
-                    for i in 0..T::SIZE {
-                        for j in 0..T::SIZE {
-                            out[i * T::SIZE + j] = *tex
-                                .sample(x[i * T::SIZE + j] - 0.5, y[i * T::SIZE + j] - 0.5, filt)
-                                .to_le_bytes()
-                                .get_unchecked(chan as usize) as f32
-                                / 255.0;
+                    for i in 0..T::HEIGHT {
+                        for j in 0..T::WIDTH {
+                            out[i * T::WIDTH + j] =
+                                *tex.sample(x[i * T::WIDTH + j] - 0.5, y[i * T::WIDTH + j] - 0.5, filt)
+                                    .to_le_bytes()
+                                    .get_unchecked(chan as usize) as f32
+                                    / 255.0;
                         }
                     }
                 },
