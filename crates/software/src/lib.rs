@@ -29,5 +29,5 @@ pub use buffer::*;
 //      - after every action is executed we blit the local tile buffer to the global target buffer
 
 // TODO: possible optimizations and fixes
-//      - dynamically run shaders at lower tile sizes within a single tile (fixes register overflow issues and reduces discarded fragments per tile)
-//      - use a better binning strategy (vector requires too much memory)
+//      + dynamically run shaders at lower tile sizes within a single tile (fixes register overflow issues and reduces discarded fragments per tile)
+//      + use a better binning strategy (vector requires too much memory)

@@ -51,8 +51,6 @@ impl CompiledShader {
         let program_static = ir::lower_to_opcodes(&program_static, arena);
         let program_dynamic = ir::lower_to_opcodes(&program_dynamic, arena);
 
-        assert!(program_dynamic.registers <= 64, "too many registers used");
-
         Self {
             slots_input,
             slots_texture,

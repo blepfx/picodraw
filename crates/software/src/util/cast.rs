@@ -27,7 +27,6 @@ pub unsafe trait Pod: Sized + Copy + 'static {
     }
 
     #[inline(always)]
-    #[allow(unused)]
     fn cast_slice<T: Pod>(slice: &[Self]) -> &[T] {
         const {
             assert!(align_of::<Self>() >= align_of::<T>());

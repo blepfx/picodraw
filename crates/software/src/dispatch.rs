@@ -182,13 +182,7 @@ impl<'a> Dispatcher<'a> {
         // allocate memory for workers
         let workers = self
             .arena
-            .alloc_slice_fill_iter((0..pool.num_workers()).map(|_| DispatchWorker {
-                r: VMTile16::zeroed(),
-                g: VMTile16::zeroed(),
-                b: VMTile16::zeroed(),
-                a: VMTile16::zeroed(),
-                memory: VMMemory::new(256 * 64, self.arena),
-            }));
+            .alloc_slice_fill_iter((0..pool.num_workers()).map(|_| DispatchWorker::new(self.arena)));
 
         // dispatch groups
 
@@ -309,6 +303,16 @@ struct DispatchWorker<'a> {
 }
 
 impl<'a> DispatchWorker<'a> {
+    fn new(arena: &'a Bump) -> Self {
+        Self {
+            r: VMTile16::zeroed(),
+            g: VMTile16::zeroed(),
+            b: VMTile16::zeroed(),
+            a: VMTile16::zeroed(),
+            memory: VMMemory::new(256 * 64, arena),
+        }
+    }
+
     #[inline(always)]
     fn clear_region(&mut self, x0: usize, y0: usize, x1: usize, y1: usize) {
         for j in y0..y1 {
@@ -318,14 +322,18 @@ impl<'a> DispatchWorker<'a> {
 
     #[inline(always)]
     unsafe fn draw_region(&mut self, context: VMContext, bounds: Bounds) {
-        if bounds.contains([0, 0, 16, 16]) {
+        debug_assert!(self.memory.slots::<VMTile4>() >= context.program.used_registers());
+
+        if bounds.contains([0, 0, 16, 16]) && self.memory.slots::<VMTile16>() >= context.program.used_registers() {
             unsafe {
                 self.draw_region_subtile::<VMTile16>(context, 0, 0, 0, 0, 16, 16);
             }
         } else {
             for i in 0..4u32 {
                 let (x0, y0) = ((i % 2) * 8, (i / 2) * 8);
-                if bounds.contains([x0, y0, x0 + 8, y0 + 8]) {
+                if bounds.contains([x0, y0, x0 + 8, y0 + 8])
+                    && self.memory.slots::<VMTile8>() >= context.program.used_registers()
+                {
                     unsafe {
                         self.draw_region_subtile::<VMTile8>(context, x0 as usize, y0 as usize, 0, 0, 8, 8);
                     }

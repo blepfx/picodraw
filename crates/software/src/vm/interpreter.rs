@@ -37,6 +37,10 @@ impl<'a> VMMemory<'a> {
             memory: Box::from_iter_in((0..slots.div_ceil(256)).map(|_| VMTile16::zeroed()), arena),
         }
     }
+
+    pub fn slots<T: VMTile>(&self) -> usize {
+        VMTile16::cast_slice::<T>(&self.memory).len()
+    }
 }
 
 impl<'a> VMContext<'a> {
