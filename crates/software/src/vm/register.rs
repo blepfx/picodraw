@@ -1,6 +1,6 @@
 use crate::util::Pod;
 
-pub unsafe trait VMRegister: Pod + Copy + Sized + 'static {
+pub unsafe trait VMTile: Pod + Copy + Sized + 'static {
     const WIDTH: usize;
     const HEIGHT: usize;
 
@@ -26,9 +26,6 @@ pub struct VMTile8([[VMSlot; 8]; 8]);
 #[derive(Copy, Clone)]
 #[repr(C, align(64))]
 pub struct VMTile4([[VMSlot; 4]; 4]);
-#[derive(Copy, Clone)]
-#[repr(C, align(16))]
-pub struct VMTile2([[VMSlot; 2]; 2]);
 
 macro_rules! impl_tile {
     ($type:ty, $width:literal, $height:literal) => {
@@ -56,7 +53,7 @@ macro_rules! impl_tile {
             }
         }
 
-        unsafe impl VMRegister for $type {
+        unsafe impl VMTile for $type {
             const WIDTH: usize = $width;
             const HEIGHT: usize = $height;
 
@@ -86,5 +83,4 @@ macro_rules! impl_tile {
 impl_tile!(VMTile16, 16, 16);
 impl_tile!(VMTile8, 8, 8);
 impl_tile!(VMTile4, 4, 4);
-impl_tile!(VMTile2, 2, 2);
 impl_tile!(VMSlot, 1, 1);

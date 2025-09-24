@@ -126,6 +126,8 @@ impl<'a> BufferRef<'a> {
         match filter {
             TextureFilter::Nearest => sample_neasert(*self, x as usize, y as usize),
             TextureFilter::Linear => {
+                let (x, y) = (x - 0.5, y - 0.5);
+
                 let lerp = |a: u8, b: u8, x: u8| {
                     let a = a as u16;
                     let b = b as u16;

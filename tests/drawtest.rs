@@ -586,7 +586,7 @@ pub mod texture {
                 let texture = io::read::<TextureId>();
                 let z = texture.sample(
                     io::position() / io::resolution() * float2(texture.size()),
-                    TextureFilter::Linear,
+                    TextureFilter::Nearest,
                 );
 
                 float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
@@ -761,6 +761,94 @@ pub mod semantics {
             let mut commands = vec![];
             add_clear(&mut commands, [4, 4, 8, 8]);
             add_quad(&mut commands, shader, [1, 1, 7, 7], [0.0, 1.0, 1.0, 0.25]);
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+}
+
+pub mod tiling {
+    use super::*;
+
+    #[test]
+    fn tiling_aligned_8() {
+        run("tiling_aligned_8", 16, 16, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let data = (io::position() % 3.0) / 3.0;
+                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+            }));
+
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 8, 8, 16], ());
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+
+    #[test]
+    fn tiling_centered_8() {
+        run("tiling_centered_8", 16, 16, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let data = (io::position() % 3.0) / 3.0;
+                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+            }));
+
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [4, 4, 12, 12], ());
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+
+    #[test]
+    fn tiling_aligned_4() {
+        run("tiling_aligned_4", 16, 16, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let data = (io::position() % 3.0) / 3.0;
+                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+            }));
+
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 8, 4, 12], ());
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+
+    #[test]
+    fn tiling_centered_4() {
+        run("tiling_centered_4", 16, 16, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let data = (io::position() % 3.0) / 3.0;
+                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+            }));
+
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [6, 6, 10, 10], ());
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+
+    #[test]
+    fn tiling_aligned_2() {
+        run("tiling_aligned_2", 16, 16, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let data = (io::position() % 3.0) / 3.0;
+                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+            }));
+
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [4, 8, 6, 10], ());
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+
+    #[test]
+    fn tiling_centered_2() {
+        run("tiling_centered_2", 16, 16, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let data = (io::position() % 3.0) / 3.0;
+                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+            }));
+
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [7, 7, 9, 9], ());
             context.draw_screen(&commands).unwrap();
         });
     }

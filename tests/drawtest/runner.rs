@@ -9,9 +9,9 @@ use yansi::Paint;
 
 pub const MAX_CANVAS_SIZE: u32 = 512;
 
-const MAX_P50_ERROR: u64 = 1;
-const MAX_P95_ERROR: u64 = 5;
-const MAX_P99_ERROR: u64 = 20;
+const MAX_P50_ERROR: f64 = 0.0;
+const MAX_P95_ERROR: f64 = 0.0;
+const MAX_P99_ERROR: f64 = 0.0;
 
 #[allow(unused_variables, dead_code)]
 pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
@@ -252,9 +252,9 @@ enum Outcome<'a> {
         test: &'a str,
         backend: &'a str,
 
-        p50: u64,
-        p95: u64,
-        p99: u64,
+        p50: f64,
+        p95: f64,
+        p99: f64,
 
         image: DynamicImage,
         diff: DynamicImage,
@@ -297,7 +297,7 @@ fn write_image(test: &str, backend: &str, image: SaveImage) {
     }
 }
 
-fn measure_difference(a: &DynamicImage, b: &DynamicImage) -> (u64, u64, u64) {
+fn measure_difference(a: &DynamicImage, b: &DynamicImage) -> (f64, f64, f64) {
     let mut samples = Vec::with_capacity((a.width() * a.height()) as usize);
 
     for i in 0..a.width() {
@@ -305,19 +305,31 @@ fn measure_difference(a: &DynamicImage, b: &DynamicImage) -> (u64, u64, u64) {
             let Rgba([r0, g0, b0, a0]) = a.get_pixel(i, j);
             let Rgba([r1, g1, b1, a1]) = b.get_pixel(i, j);
 
-            let mut sum = 0;
-            sum += (r0 as u64 * a0 as u64).abs_diff(r1 as u64 * a1 as u64) / (255 * 255);
-            sum += (g0 as u64 * a0 as u64).abs_diff(g1 as u64 * a1 as u64) / (255 * 255);
-            sum += (b0 as u64 * a0 as u64).abs_diff(b1 as u64 * a1 as u64) / (255 * 255);
-            sum += (a0 as u64).abs_diff(a1 as u64);
-            samples.push(sum);
+            let mut sum = 0.0;
+            sum += (r0 as f64 * a0 as f64 - r1 as f64 * a1 as f64) / (255.0 * 255.0);
+            sum += (g0 as f64 * a0 as f64 - g1 as f64 * a1 as f64) / (255.0 * 255.0);
+            sum += (b0 as f64 * a0 as f64 - b1 as f64 * a1 as f64) / (255.0 * 255.0);
+            sum += (a0 as f64 - a1 as f64).abs();
+
+            if sum > 0.0 {
+                samples.push(sum);
+            }
         }
     }
 
-    samples.sort();
-    let p50 = samples[(samples.len() as f64 * 0.50).floor() as usize];
-    let p95 = samples[(samples.len() as f64 * 0.95).floor() as usize];
-    let p99 = samples[(samples.len() as f64 * 0.99).floor() as usize];
+    samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let p50 = samples
+        .get((samples.len() as f64 * 0.50).floor() as usize)
+        .copied()
+        .unwrap_or_default();
+    let p95 = samples
+        .get((samples.len() as f64 * 0.95).floor() as usize)
+        .copied()
+        .unwrap_or_default();
+    let p99 = samples
+        .get((samples.len() as f64 * 0.99).floor() as usize)
+        .copied()
+        .unwrap_or_default();
     (p50, p95, p99)
 }
 

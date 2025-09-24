@@ -1,4 +1,4 @@
-use super::{VMOp, VMRegister, VMSlot};
+use super::{VMOp, VMSlot, VMTile};
 use crate::{
     BufferRef,
     util::Pod,
@@ -6,6 +6,7 @@ use crate::{
 };
 use bumpalo::{Bump, boxed::Box};
 
+#[derive(Clone, Copy)]
 pub struct VMContext<'a> {
     pub program: CompiledProgram<'a>,
     pub inputs: &'a [VMSlot],
@@ -21,7 +22,7 @@ pub struct VMContext<'a> {
     pub res_y: f32,
 }
 
-pub struct VMResult<'a, T: VMRegister> {
+pub struct VMResult<'a, T: VMTile> {
     registers: &'a [T],
     outputs: &'a [u8],
 }
@@ -47,7 +48,7 @@ impl<'a> VMContext<'a> {
     /// - every operation reads only from those registers that were written to by preceding operations
     #[allow(unused_unsafe)]
     #[inline(always)]
-    pub unsafe fn run<T: VMRegister>(self, memory: &'a mut VMMemory<'_>) -> VMResult<'a, T> {
+    pub unsafe fn run<T: VMTile>(&self, memory: &'a mut VMMemory<'_>) -> VMResult<'a, T> {
         use VMOp::*;
 
         let registers: &mut [T] = VMTile16::cast_slice_mut(&mut memory.memory[..]);
@@ -450,11 +451,12 @@ impl<'a> VMContext<'a> {
 
                     for i in 0..T::HEIGHT {
                         for j in 0..T::WIDTH {
-                            out[i * T::WIDTH + j] =
-                                *tex.sample(x[i * T::WIDTH + j] - 0.5, y[i * T::WIDTH + j] - 0.5, filt)
-                                    .to_le_bytes()
-                                    .get_unchecked(chan as usize) as f32
-                                    / 255.0;
+                            let value = *tex
+                                .sample(x[i * T::WIDTH + j], y[i * T::WIDTH + j], filt)
+                                .to_le_bytes()
+                                .get_unchecked(chan as usize);
+
+                            out[i * T::WIDTH + j] = value as f32 / 255.0;
                         }
                     }
                 },
@@ -468,15 +470,18 @@ impl<'a> VMContext<'a> {
     }
 }
 
-impl<'a, T: VMRegister> VMResult<'a, T> {
+impl<'a, T: VMTile> VMResult<'a, T> {
+    #[inline(always)]
     pub fn get(&self, index: usize) -> &'a T {
         &self.registers[self.outputs[index] as usize]
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.outputs.len()
     }
 
+    #[inline(always)]
     pub fn iter(&self) -> impl Iterator<Item = &'a T> + ExactSizeIterator + DoubleEndedIterator {
         (0..self.len()).map(|i| self.get(i))
     }

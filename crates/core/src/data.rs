@@ -66,11 +66,25 @@ impl Bounds {
         self.size().height
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.left >= self.right || self.top >= self.bottom
     }
 
-    pub fn intersect(&self, other: Self) -> Self {
+    #[inline]
+    pub fn contains(&self, other: impl Into<Self>) -> bool {
+        let other = other.into();
+        self.left <= other.left && self.right >= other.right && self.top <= other.top && self.bottom >= other.bottom
+    }
+
+    #[inline]
+    pub fn intersects(&self, other: impl Into<Self>) -> bool {
+        !self.intersect(other).is_empty()
+    }
+
+    #[inline]
+    pub fn intersect(&self, other: impl Into<Self>) -> Self {
+        let other = other.into();
         let left = self.left.max(other.left);
         let right = self.right.min(other.right);
         let top = self.top.max(other.top);
@@ -84,7 +98,9 @@ impl Bounds {
         }
     }
 
-    pub fn union(&self, other: Self) -> Self {
+    #[inline]
+    pub fn union(&self, other: impl Into<Self>) -> Self {
+        let other = other.into();
         let left = self.left.min(other.left);
         let right = self.right.max(other.right);
         let top = self.top.min(other.top);
@@ -98,6 +114,7 @@ impl Bounds {
         }
     }
 
+    #[inline]
     pub fn offset(&self, x: i32, y: i32) -> Self {
         Self {
             left: self.left.saturating_add_signed(x),
@@ -109,18 +126,21 @@ impl Bounds {
 }
 
 impl From<[u32; 2]> for Size {
+    #[inline]
     fn from([width, height]: [u32; 2]) -> Self {
         Self { width, height }
     }
 }
 
 impl From<(u32, u32)> for Size {
+    #[inline]
     fn from((width, height): (u32, u32)) -> Self {
         Self { width, height }
     }
 }
 
 impl From<[u32; 4]> for Bounds {
+    #[inline]
     fn from([left, top, right, bottom]: [u32; 4]) -> Self {
         Self {
             left,
@@ -132,6 +152,7 @@ impl From<[u32; 4]> for Bounds {
 }
 
 impl From<(u32, u32, u32, u32)> for Bounds {
+    #[inline]
     fn from((left, top, right, bottom): (u32, u32, u32, u32)) -> Self {
         Self {
             left,
@@ -143,6 +164,7 @@ impl From<(u32, u32, u32, u32)> for Bounds {
 }
 
 impl From<[i32; 4]> for Bounds {
+    #[inline]
     fn from([left, top, right, bottom]: [i32; 4]) -> Self {
         Self {
             left: left.try_into().unwrap_or_default(),
@@ -154,6 +176,7 @@ impl From<[i32; 4]> for Bounds {
 }
 
 impl From<(i32, i32, i32, i32)> for Bounds {
+    #[inline]
     fn from((left, top, right, bottom): (i32, i32, i32, i32)) -> Self {
         Self::from([left, top, right, bottom])
     }

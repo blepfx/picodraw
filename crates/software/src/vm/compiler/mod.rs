@@ -18,7 +18,7 @@ pub struct CompiledShader {
     dynamic_registers: u8,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct CompiledProgram<'a> {
     opcodes: &'a [VMOpcode],
     outputs: &'a [u8],
