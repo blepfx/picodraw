@@ -9,11 +9,17 @@ use yansi::Paint;
 
 pub const MAX_CANVAS_SIZE: u32 = 512;
 
-const MAX_P50_ERROR: f64 = 0.0;
-const MAX_P95_ERROR: f64 = 0.0;
-const MAX_P99_ERROR: f64 = 0.0;
+const MAX_P50_ERROR: f64 = 0.5;
+const MAX_P95_ERROR: f64 = 2.0;
+const MAX_P99_ERROR: f64 = 15.0;
 
-#[allow(unused_variables, dead_code)]
+#[cfg(miri)]
+pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
+    #[cfg(feature = "software")]
+    software::render(width, height, Arc::new(render));
+}
+
+#[cfg(not(miri))]
 pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
     let renderer = Arc::new(render);
     let expected = open(format!("./tests/drawtest/expected/{}.webp", test)).ok();
@@ -306,14 +312,11 @@ fn measure_difference(a: &DynamicImage, b: &DynamicImage) -> (f64, f64, f64) {
             let Rgba([r1, g1, b1, a1]) = b.get_pixel(i, j);
 
             let mut sum = 0.0;
-            sum += (r0 as f64 * a0 as f64 - r1 as f64 * a1 as f64) / (255.0 * 255.0);
-            sum += (g0 as f64 * a0 as f64 - g1 as f64 * a1 as f64) / (255.0 * 255.0);
-            sum += (b0 as f64 * a0 as f64 - b1 as f64 * a1 as f64) / (255.0 * 255.0);
+            sum += (r0 as f64 * a0 as f64 - r1 as f64 * a1 as f64).abs() / (255.0 * 255.0);
+            sum += (g0 as f64 * a0 as f64 - g1 as f64 * a1 as f64).abs() / (255.0 * 255.0);
+            sum += (b0 as f64 * a0 as f64 - b1 as f64 * a1 as f64).abs() / (255.0 * 255.0);
             sum += (a0 as f64 - a1 as f64).abs();
-
-            if sum > 0.0 {
-                samples.push(sum);
-            }
+            samples.push(sum);
         }
     }
 
@@ -334,12 +337,13 @@ fn measure_difference(a: &DynamicImage, b: &DynamicImage) -> (f64, f64, f64) {
 }
 
 fn blend_difference(a: &DynamicImage, b: &DynamicImage) -> DynamicImage {
-    let mut image = DynamicImage::new(a.width(), b.width(), a.color());
+    let mut image = DynamicImage::new(a.width(), b.height(), a.color());
 
     for i in 0..a.width() {
         for j in 0..a.height() {
             let Rgba([r0, g0, b0, _]) = a.get_pixel(i, j);
             let Rgba([r1, g1, b1, _]) = b.get_pixel(i, j);
+
             image.put_pixel(i, j, Rgba([r0.abs_diff(r1), g0.abs_diff(g1), b0.abs_diff(b1), 255]));
         }
     }

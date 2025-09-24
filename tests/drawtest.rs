@@ -1,3 +1,5 @@
+#![allow(unused_variables, unused_imports, dead_code)]
+
 #[path = "./drawtest/runner.rs"]
 mod runner;
 
@@ -716,6 +718,21 @@ pub mod semantics {
     use super::*;
 
     #[test]
+    fn semantics_alpha() {
+        run("semantics_alpha", 64, 8, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let x = io::position().x() / io::resolution().x();
+                float4((1.0, 1.0, 1.0, x))
+            }));
+
+            let mut commands = vec![];
+            add_quad(&mut commands, shader, [0, 0, 64, 8], ());
+            add_quad(&mut commands, shader, [0, 4, 64, 8], ());
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+
+    #[test]
     fn semantics_blend() {
         run("semantics_blend", 8, 8, |context| {
             let shader = context.create_shader(Graph::scope(|| {
@@ -854,6 +871,7 @@ pub mod tiling {
     }
 }
 
+#[cfg(not(miri))]
 pub mod stress {
     use super::*;
 
@@ -963,6 +981,7 @@ pub mod stress {
     }
 }
 
+#[cfg(not(miri))]
 pub mod complex {
     use super::*;
 

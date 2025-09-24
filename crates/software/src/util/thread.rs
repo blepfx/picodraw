@@ -142,10 +142,11 @@ impl Worker {
                     if !scope.is_null() {
                         unsafe {
                             let scope = &*(scope as *mut Scope);
-                            scope.run(index);
+                            let coordinator = scope.coordinator.clone();
 
-                            worker.scope.store(null_mut(), Ordering::Release);
-                            scope.coordinator.unpark();
+                            scope.run(index);
+                            worker.scope.store(null_mut(), Ordering::Release); // scope is dropped past this point, do NOT use. that is the reason we clone `coordinator` instead of using it via the `scope` reference
+                            coordinator.unpark();
                         }
                     }
 
@@ -191,7 +192,7 @@ mod tests {
 
     #[test]
     fn run_indexed() {
-        const ITERS: usize = if cfg!(miri) { 10 } else { 1000 };
+        const ITERS: usize = if cfg!(miri) { 10 } else { 10000 };
 
         let mut pool = ThreadPool::new();
         for _ in 0..ITERS {
@@ -208,10 +209,10 @@ mod tests {
 
     #[test]
     fn run_arrays() {
-        const ITERS: usize = if cfg!(miri) { 10 } else { 1000 };
+        const ITERS: usize = if cfg!(miri) { 10 } else { 10000 };
 
         let mut pool = ThreadPool::new();
-        for _ in 0..ITERS {
+        for i in 0..ITERS {
             let data = (1..=10000).collect::<Vec<_>>();
             let mut workers = (0..pool.num_workers()).map(|_| 0usize).collect::<Vec<_>>();
 
@@ -220,7 +221,13 @@ mod tests {
                 *worker += data;
             });
 
-            assert_eq!(workers.iter().copied().sum::<usize>(), 50005000);
+            assert_eq!(
+                workers.iter().copied().sum::<usize>(),
+                50005000,
+                "i={} workers={:?}",
+                i,
+                workers
+            );
         }
     }
 }
