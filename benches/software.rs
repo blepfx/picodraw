@@ -39,9 +39,9 @@ fn criterion_benchmark(c: &mut Criterion) {
             let mut commands = vec![];
 
             for i in 0..10 {
-                commands.push(Command::Begin([0, 0, 512, 512].into(), shader));
-                commands.push(Command::Data(QuadData::Float(2.0 - i as f32 * 0.15)));
-                commands.push(Command::End);
+                commands.push(Command::ObjectBegin([0, 0, 512, 512].into(), shader));
+                commands.push(Command::ObjectData(QuadData::Float(2.0 - i as f32 * 0.15)));
+                commands.push(Command::ObjectEnd);
             }
 
             cx.draw_screen(&commands).unwrap();

@@ -6,7 +6,7 @@ use crate::{
 };
 use bumpalo::Bump;
 use picodraw_core::{
-    Command, Context, DrawError, Graph, QuadData, ShaderId, Size, TextureData, TextureFormat, TextureId,
+    Command, Context, DrawError, Graph, ObjectData, ShaderId, Size, TextureData, TextureFormat, TextureId,
 };
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 
@@ -55,27 +55,30 @@ impl<'a> SoftwareContext<'a> {
         for command in commands {
             match *command {
                 Command::Clear(bounds) => {
-                    dispatch.write_clear(bounds);
+                    dispatch.clear(bounds);
                 }
-                Command::Begin(bounds, shader) => {
+                Command::ObjectBegin(shader) => {
                     let shader = self
                         .owner
                         .shaders
                         .get(KeyData::from_ffi(shader.0).into())
                         .ok_or_else(|| DrawError::InvalidShader)?;
 
-                    dispatch.write_start(bounds, &shader);
+                    dispatch.object_start(&shader);
                 }
-                Command::End => {
-                    dispatch.write_end()?;
+                Command::ObjectRect(bounds) => {
+                    dispatch.object_rect(bounds);
                 }
-                Command::Data(QuadData::Float(float)) => {
-                    dispatch.write_data(&[VMSlot { float }]);
+                Command::ObjectEnd => {
+                    dispatch.object_end()?;
                 }
-                Command::Data(QuadData::Int(int)) => {
-                    dispatch.write_data(&[VMSlot { int }]);
+                Command::ObjectData(ObjectData::Float(float)) => {
+                    dispatch.object_data(&[VMSlot { float }]);
                 }
-                Command::Data(QuadData::Texture(tex)) => {
+                Command::ObjectData(ObjectData::Int(int)) => {
+                    dispatch.object_data(&[VMSlot { int }]);
+                }
+                Command::ObjectData(ObjectData::Texture(tex)) => {
                     let tex = self
                         .owner
                         .buffers
@@ -84,7 +87,7 @@ impl<'a> SoftwareContext<'a> {
                         .as_ref()
                         .ok_or_else(|| DrawError::TargetInUse)?;
 
-                    dispatch.write_texture(tex.as_ref());
+                    dispatch.object_texture(tex.as_ref());
                 }
             }
         }

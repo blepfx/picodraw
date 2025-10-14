@@ -1,5 +1,5 @@
 use picodraw::{
-    Command, Context, Graph, QuadData, ShaderId,
+    Command, Context, Graph, ObjectData, ShaderId,
     opengl::{Native, OpenGlBackend},
     shader::{float1, float4, io},
 };
@@ -68,19 +68,20 @@ fn main() {
                         let p = (i + j) % 2 == 0;
 
                         commands.extend([
-                            Command::Begin([i, j, i + 1, j + 1].into(), data.shader),
-                            Command::Data(QuadData::Int(255 * p as i32)),
-                            Command::Data(QuadData::Int(255 * !p as i32)),
-                            Command::Data(QuadData::Int(255 * p as i32)),
-                            Command::Data(QuadData::Int(255)),
-                            Command::Data(QuadData::Int(0)),
-                            Command::Data(QuadData::Int(0)),
-                            Command::Data(QuadData::Int(0)),
-                            Command::Data(QuadData::Int(0)),
-                            Command::Data(QuadData::Int(0)),
-                            Command::Data(QuadData::Int(0)),
-                            Command::Data(QuadData::Int(0)),
-                            Command::End,
+                            Command::ObjectBegin(data.shader),
+                            Command::ObjectRect([i, j, i + 1, j + 1].into()),
+                            Command::ObjectData(ObjectData::Int(255 * p as i32)),
+                            Command::ObjectData(ObjectData::Int(255 * !p as i32)),
+                            Command::ObjectData(ObjectData::Int(255 * p as i32)),
+                            Command::ObjectData(ObjectData::Int(255)),
+                            Command::ObjectData(ObjectData::Int(0)),
+                            Command::ObjectData(ObjectData::Int(0)),
+                            Command::ObjectData(ObjectData::Int(0)),
+                            Command::ObjectData(ObjectData::Int(0)),
+                            Command::ObjectData(ObjectData::Int(0)),
+                            Command::ObjectData(ObjectData::Int(0)),
+                            Command::ObjectData(ObjectData::Int(0)),
+                            Command::ObjectEnd,
                         ]);
                     }
                 }

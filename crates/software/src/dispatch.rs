@@ -28,6 +28,11 @@ pub struct Dispatcher<'a> {
     objects: Vec<'a, DispatchObject<'a>>,
     inputs: Vec<'a, VMSlot>,
     textures: Vec<'a, BufferRef<'a>>,
+
+    current_inputs: usize,
+    current_textures: usize,
+    current_shader: Option<&'a CompiledShader>,
+    current_bounds: Vec<'a, Bounds>,
 }
 
 impl<'a> Dispatcher<'a> {
@@ -37,47 +42,46 @@ impl<'a> Dispatcher<'a> {
             objects: Vec::new_in(arena),
             inputs: Vec::new_in(arena),
             textures: Vec::new_in(arena),
+
+            current_inputs: 0,
+            current_textures: 0,
+            current_bounds: Vec::new_in(arena),
+            current_shader: None,
         }
     }
 
-    pub fn write_clear(&mut self, bounds: impl Into<Bounds>) {
+    pub fn clear(&mut self, bounds: impl Into<Bounds>) {
         self.objects.push(DispatchObject::Clear { bounds: bounds.into() });
     }
 
-    pub fn write_start(&mut self, bounds: impl Into<Bounds>, shader: &'a CompiledShader) {
-        self.objects.push(DispatchObject::Draw {
-            shader,
-            data: self.inputs.len()..0,
-            textures: self.textures.len()..0,
-            bounds: bounds.into(),
-        });
+    pub fn object_start(&mut self, shader: &'a CompiledShader) {
+        self.current_bounds.clear();
+        self.current_inputs = self.inputs.len();
+        self.current_textures = self.textures.len();
+        self.current_shader = Some(shader);
     }
 
-    pub fn write_data(&mut self, data: &[VMSlot]) {
+    pub fn object_rect(&mut self, bounds: Bounds) {
+        self.current_bounds.push(bounds);
+    }
+
+    pub fn object_data(&mut self, data: &[VMSlot]) {
         self.inputs.extend_from_slice(data);
     }
 
-    pub fn write_texture(&mut self, texture: BufferRef<'a>) {
+    pub fn object_texture(&mut self, texture: BufferRef<'a>) {
         self.textures.push(texture);
     }
 
-    pub fn write_end(&mut self) -> Result<(), DrawError> {
-        if let Some(DispatchObject::Draw {
-            data, textures, shader, ..
-        }) = self.objects.last_mut()
-        {
-            data.end = self.inputs.len();
-            textures.end = self.textures.len();
-
-            if shader.input_slots() as usize != data.len() {
-                return Err(DrawError::InvalidQuadData);
-            }
-
-            if shader.texture_slots() as usize != textures.len() {
-                return Err(DrawError::InvalidQuadData);
-            }
-        } else {
-            return Err(DrawError::MalformedStream);
+    pub fn object_end(&mut self) -> Result<(), DrawError> {
+        let shader = self.current_shader.take().ok_or(DrawError::MalformedStream)?;
+        for bounds in self.current_bounds.drain(..) {
+            self.objects.push(DispatchObject::Draw {
+                shader,
+                data: self.current_inputs..self.inputs.len(),
+                textures: self.current_textures..self.textures.len(),
+                bounds,
+            });
         }
 
         Ok(())

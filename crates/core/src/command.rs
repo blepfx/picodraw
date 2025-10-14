@@ -40,18 +40,20 @@ pub enum Command {
     Clear(Bounds),
 
     /// Begin rendering a single quad.
-    Begin(Bounds, ShaderId),
+    ObjectBegin(ShaderId),
 
-    /// Add data to the current quad. Should be sandwiched between [`Command::Begin`] and [`Command::End`] commands.
-    Data(QuadData),
+    ObjectRect(Bounds),
+
+    /// Add data to the current quad. Should be sandwiched between [`Command::ObjectBegin`] and [`Command::ObjectEnd`] commands.
+    ObjectData(ObjectData),
 
     /// Close the scope of a single quad.
-    /// Must be preceded by a [`Command::Begin`] command.
-    End,
+    /// Must be preceded by a [`Command::ObjectBegin`] command.
+    ObjectEnd,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum QuadData {
+pub enum ObjectData {
     Float(f32),
     Int(i32),
     Texture(TextureId),
@@ -86,8 +88,8 @@ pub enum DrawError {
     /// Render target passed to [`Context::draw_texture`] is invalid
     InvalidTarget,
 
-    /// Quad data passed via [`Command::Data`] does not correspond to the input schema expected by the shader
-    InvalidQuadData,
+    /// Object data passed via [`Command::Data`] does not correspond to the input schema expected by the shader
+    InvalidObjectData,
 
     /// Attempt to sample from a texture that is being used as the target as the same time
     TargetInUse,
@@ -102,7 +104,9 @@ impl Display for DrawError {
             DrawError::InvalidShader => write!(f, "command stream contains an invalid shader reference"),
             DrawError::InvalidTexture => write!(f, "command stream contains an invalid source texture"),
             DrawError::InvalidTarget => write!(f, "passed render target is not valid"),
-            DrawError::InvalidQuadData => write!(f, "passed quad data does not correspond to the used shader's schema"),
+            DrawError::InvalidObjectData => {
+                write!(f, "passed quad data does not correspond to the used shader's schema")
+            }
             DrawError::TargetInUse => write!(f, "attempt to use the destination render target as a texture"),
             DrawError::MalformedStream => write!(f, "command stream is malformed"),
         }

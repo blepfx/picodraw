@@ -781,6 +781,29 @@ pub mod semantics {
             context.draw_screen(&commands).unwrap();
         });
     }
+
+    #[test]
+    fn semantics_object_multiquad() {
+        run("semantics_object_multiquad", 8, 8, |context| {
+            let shader = context.create_shader(Graph::scope(|| {
+                let data = io::read::<[f32; 4]>();
+                float4((data[0], data[1], data[2], data[3]))
+            }));
+
+            let commands = vec![
+                Command::ObjectBegin(shader),
+                Command::ObjectRect([1, 1, 5, 5].into()),
+                Command::ObjectRect([3, 3, 7, 7].into()),
+                Command::ObjectData(ObjectData::Float(0.0)),
+                Command::ObjectData(ObjectData::Float(0.5)),
+                Command::ObjectData(ObjectData::Float(1.0)),
+                Command::ObjectData(ObjectData::Float(0.5)),
+                Command::ObjectEnd,
+            ];
+
+            context.draw_screen(&commands).unwrap();
+        });
+    }
 }
 
 pub mod tiling {
@@ -1114,9 +1137,10 @@ pub mod complex {
 }
 
 fn add_quad<T: ShaderData>(mut cmds: &mut Vec<Command>, shader: ShaderId, bounds: impl Into<Bounds>, data: T) {
-    cmds.push(Command::Begin(bounds.into(), shader));
+    cmds.push(Command::ObjectBegin(shader));
+    cmds.push(Command::ObjectRect(bounds.into()));
     data.write(&mut cmds);
-    cmds.push(Command::End);
+    cmds.push(Command::ObjectEnd);
 }
 
 fn add_clear(cmds: &mut Vec<Command>, bounds: impl Into<Bounds>) {

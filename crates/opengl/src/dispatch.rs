@@ -12,8 +12,10 @@ pub struct DispatcherScratch<T: HasContext> {
     drawcall_data: Vec<u8>,
     drawcall_quads: Vec<QuadDescriptorStruct>,
     drawcall_textures: Vec<Option<T::Texture>>,
-    quad_queue_data: Vec<u32>,
-    quad_queue_textures: Vec<(u32, T::Texture)>,
+
+    object_queue_rects: Vec<Bounds>,
+    object_queue_data: Vec<u32>,
+    object_queue_textures: Vec<(u32, T::Texture)>,
 }
 
 impl<T: HasContext> Default for DispatcherScratch<T> {
@@ -22,8 +24,10 @@ impl<T: HasContext> Default for DispatcherScratch<T> {
             drawcall_data: Vec::new(),
             drawcall_quads: Vec::new(),
             drawcall_textures: Vec::new(),
-            quad_queue_data: Vec::new(),
-            quad_queue_textures: Vec::new(),
+
+            object_queue_rects: Vec::new(),
+            object_queue_data: Vec::new(),
+            object_queue_textures: Vec::new(),
         }
     }
 }
@@ -42,13 +46,14 @@ pub struct Dispatcher<'a, T: HasContext> {
     pub drawcall_quads: &'a mut Vec<QuadDescriptorStruct>,
     pub drawcall_textures: &'a mut Vec<Option<T::Texture>>,
 
-    pub quad_queue_data: &'a mut Vec<u32>,
-    pub quad_queue_textures: &'a mut Vec<(u32, T::Texture)>,
+    pub object_queue_data: &'a mut Vec<u32>,
+    pub object_queue_textures: &'a mut Vec<(u32, T::Texture)>,
+    pub object_queue_rects: &'a mut Vec<Bounds>,
     pub quad_layout: Option<&'a ShaderDataLayout>,
-    pub quad_bounds: Bounds,
 
     pub total_bytes_written: u64,
     pub total_quads_written: u32,
+    pub total_objects_written: u32,
     pub total_drawcalls_issued: u32,
 }
 
@@ -68,8 +73,9 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         let drawcall_quads = &mut scratch.drawcall_quads;
         let drawcall_textures = &mut scratch.drawcall_textures;
 
-        let quad_queue_data = &mut scratch.quad_queue_data;
-        let quad_queue_textures = &mut scratch.quad_queue_textures;
+        let object_queue_data = &mut scratch.object_queue_data;
+        let object_queue_textures = &mut scratch.object_queue_textures;
+        let object_queue_rects = &mut scratch.object_queue_rects;
 
         Self {
             global_context,
@@ -85,18 +91,14 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             drawcall_quads,
             drawcall_textures,
 
-            quad_queue_data,
-            quad_queue_textures,
+            object_queue_data,
+            object_queue_textures,
+            object_queue_rects,
             quad_layout: None,
-            quad_bounds: Bounds {
-                left: 0,
-                top: 0,
-                right: 0,
-                bottom: 0,
-            },
 
             total_bytes_written: 0,
             total_quads_written: 0,
+            total_objects_written: 0,
             total_drawcalls_issued: 0,
         }
     }
@@ -150,24 +152,31 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
         }
     }
 
-    pub fn quad_start(&mut self, layout: &'a ShaderDataLayout, bounds: Bounds) {
+    pub fn object_start(&mut self, layout: &'a ShaderDataLayout) {
         self.quad_layout = Some(layout);
-        self.quad_bounds = bounds;
-        self.quad_queue_data.clear();
-        self.quad_queue_textures.clear();
+        self.object_queue_rects.clear();
+        self.object_queue_data.clear();
+        self.object_queue_textures.clear();
     }
 
-    pub fn quad_end(&mut self) -> Result<(), DrawError> {
+    pub fn object_rect(&mut self, rect: Bounds) {
+        self.object_queue_rects.push(rect);
+    }
+
+    pub fn object_end(&mut self) -> Result<(), DrawError> {
+        if self.object_queue_rects.len() == 0 {
+            return Ok(());
+        }
+
         let layout = self.quad_layout.take().ok_or_else(|| DrawError::MalformedStream)?;
-        let bounds = self.quad_bounds;
 
         let buffer_fits = self.drawcall_data.len()
             + layout.size as usize
-            + (self.drawcall_quads.len() + 1) * QuadDescriptorStruct::SIZE
+            + (self.drawcall_quads.len() + self.object_queue_rects.len()) * QuadDescriptorStruct::SIZE
             <= self.global_buffer.bytes_left() as usize;
 
         let can_bind_textures =
-            self.quad_queue_textures
+            self.object_queue_textures
                 .iter()
                 .all(|(slot, tex)| match self.drawcall_textures.get(*slot as usize) {
                     Some(Some(existing_texture)) => *tex == *existing_texture,
@@ -181,25 +190,27 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
 
         let offset = self.drawcall_data.len();
 
-        self.drawcall_quads.push(QuadDescriptorStruct {
-            left: bounds.left.try_into().unwrap_or(u16::MAX),
-            top: bounds.top.try_into().unwrap_or(u16::MAX),
-            right: bounds.right.try_into().unwrap_or(u16::MAX),
-            bottom: bounds.bottom.try_into().unwrap_or(u16::MAX),
-            shader: layout.branch_id,
-            offset: offset as u32 / BUFFER_ALIGNMENT,
-        });
+        for bounds in self.object_queue_rects.drain(..) {
+            self.drawcall_quads.push(QuadDescriptorStruct {
+                left: bounds.left.try_into().unwrap_or(u16::MAX),
+                top: bounds.top.try_into().unwrap_or(u16::MAX),
+                right: bounds.right.try_into().unwrap_or(u16::MAX),
+                bottom: bounds.bottom.try_into().unwrap_or(u16::MAX),
+                shader: layout.branch_id,
+                offset: offset as u32 / BUFFER_ALIGNMENT,
+            });
+        }
 
         self.drawcall_data.resize(offset + layout.size as usize, 0);
 
         encode(
             &mut self.drawcall_data[offset..],
             layout,
-            self.quad_queue_data.drain(..),
+            self.object_queue_data.drain(..),
         )
-        .map_err(|_| DrawError::InvalidQuadData)?;
+        .map_err(|_| DrawError::InvalidObjectData)?;
 
-        for (slot, texture) in self.quad_queue_textures.drain(..) {
+        for (slot, texture) in self.object_queue_textures.drain(..) {
             if self.drawcall_textures.len() <= slot as usize {
                 self.drawcall_textures.resize(slot as usize + 1, None);
             }
@@ -207,22 +218,23 @@ impl<'a, T: HasContext> Dispatcher<'a, T> {
             self.drawcall_textures[slot as usize] = Some(texture);
         }
 
+        self.total_objects_written += 1;
         Ok(())
     }
 
-    pub fn quad_data(&mut self, data: u32) {
-        self.quad_queue_data.push(data);
+    pub fn object_data(&mut self, data: u32) {
+        self.object_queue_data.push(data);
     }
 
-    pub fn quad_texture(&mut self, texture: T::Texture) -> Result<(), DrawError> {
+    pub fn object_texture(&mut self, texture: T::Texture) -> Result<(), DrawError> {
         let layout = self.quad_layout.ok_or_else(|| DrawError::MalformedStream)?;
         let slot = layout
             .textures
-            .get(self.quad_queue_textures.len())
+            .get(self.object_queue_textures.len())
             .copied()
-            .ok_or_else(|| DrawError::InvalidQuadData)?;
+            .ok_or_else(|| DrawError::InvalidObjectData)?;
 
-        self.quad_queue_textures.push((slot, texture));
+        self.object_queue_textures.push((slot, texture));
 
         Ok(())
     }

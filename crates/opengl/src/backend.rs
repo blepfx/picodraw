@@ -31,6 +31,9 @@ pub struct OpenGlStats {
 
     /// Number of quads sent to the GPU
     pub total_quads: u32,
+
+    /// Number of objects sent to the GPU
+    pub total_objects: u32,
 }
 
 /// A `picodraw` backend that uses OpenGL.
@@ -301,28 +304,32 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                         dispatcher.clear_rect(bounds);
                     }
 
-                    Command::Begin(bounds, shader) => {
+                    Command::ObjectBegin(shader) => {
                         let layout = program
                             .layouts
                             .get(KeyData::from_ffi(shader.0).into())
                             .ok_or_else(|| DrawError::InvalidShader)?;
 
-                        dispatcher.quad_start(layout, bounds);
+                        dispatcher.object_start(layout);
                     }
 
-                    Command::End => {
-                        dispatcher.quad_end()?;
+                    Command::ObjectEnd => {
+                        dispatcher.object_end()?;
                     }
 
-                    Command::Data(QuadData::Float(x)) => {
-                        dispatcher.quad_data(x.to_bits());
+                    Command::ObjectRect(bounds) => {
+                        dispatcher.object_rect(bounds);
                     }
 
-                    Command::Data(QuadData::Int(x)) => {
-                        dispatcher.quad_data(x as u32);
+                    Command::ObjectData(ObjectData::Float(x)) => {
+                        dispatcher.object_data(x.to_bits());
                     }
 
-                    Command::Data(QuadData::Texture(x)) => {
+                    Command::ObjectData(ObjectData::Int(x)) => {
+                        dispatcher.object_data(x as u32);
+                    }
+
+                    Command::ObjectData(ObjectData::Texture(x)) => {
                         let texture = self
                             .0
                             .textures
@@ -331,7 +338,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                             .as_ref()
                             .ok_or_else(|| DrawError::TargetInUse)?;
 
-                        dispatcher.quad_texture(texture.texture())?;
+                        dispatcher.object_texture(texture.texture())?;
                     }
                 }
             }
@@ -341,6 +348,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
             self.0.stats.draw_calls = dispatcher.total_drawcalls_issued;
             self.0.stats.bytes_sent = dispatcher.total_bytes_written;
             self.0.stats.total_quads = dispatcher.total_quads_written;
+            self.0.stats.total_objects = dispatcher.total_objects_written;
 
             Ok(())
         })?;

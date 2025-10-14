@@ -1,5 +1,5 @@
 use picodraw::{
-    Command, Context, Graph, QuadData, ShaderId,
+    Command, Context, Graph, ObjectData, ShaderId,
     opengl::{Native, OpenGlBackend},
     shader::{float1, float2, float4, io},
 };
@@ -81,12 +81,13 @@ fn main() {
                     let alpha = if i + 1 == (n as i32) { alpha * n.fract() } else { alpha };
 
                     commands.extend([
-                        Command::Begin([0, 0, data.width, data.height].into(), data.shader),
-                        Command::Data(QuadData::Float(x)),
-                        Command::Data(QuadData::Float(y)),
-                        Command::Data(QuadData::Float(200.0)),
-                        Command::Data(QuadData::Float(alpha)),
-                        Command::End,
+                        Command::ObjectBegin(data.shader),
+                        Command::ObjectRect([0, 0, data.width, data.height].into()),
+                        Command::ObjectData(ObjectData::Float(x)),
+                        Command::ObjectData(ObjectData::Float(y)),
+                        Command::ObjectData(ObjectData::Float(200.0)),
+                        Command::ObjectData(ObjectData::Float(alpha)),
+                        Command::ObjectEnd,
                     ]);
                 }
 
