@@ -13,14 +13,14 @@ pub fn read<T: ShaderData>() -> T::Data {
 ///
 /// Should be called inside of [`Graph::scope`]
 pub fn position() -> float2 {
-    types::float2(Graph::push_scope(OpValue::Position).unwrap())
+    types::float2(Graph::push_trace(OpValue::Position).unwrap())
 }
 
 /// Get the current frame resolution in physical pixels.
 ///
 /// Should be called inside of [`Graph::scope`]
 pub fn resolution() -> float2 {
-    types::float2(Graph::push_scope(OpValue::Resolution).unwrap())
+    types::float2(Graph::push_trace(OpValue::Resolution).unwrap())
 }
 
 /// Get the current quad bounds in physical pixels.
@@ -28,8 +28,8 @@ pub fn resolution() -> float2 {
 ///
 /// Should be called inside of [`Graph::scope`]
 pub fn bounds() -> (float2, float2) {
-    let start = types::float2(Graph::push_scope(OpValue::QuadStart).unwrap());
-    let end = types::float2(Graph::push_scope(OpValue::QuadEnd).unwrap());
+    let start = types::float2(Graph::push_trace(OpValue::QuadStart).unwrap());
+    let end = types::float2(Graph::push_trace(OpValue::QuadEnd).unwrap());
 
     (start, end)
 }
@@ -107,7 +107,7 @@ impl ShaderData for i8 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_scope(OpValue::Input(OpInput::I8)).unwrap())
+        types::int1(Graph::push_trace(OpValue::Input(OpInput::I8)).unwrap())
     }
 
     #[inline]
@@ -120,7 +120,7 @@ impl ShaderData for i16 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_scope(OpValue::Input(OpInput::I16)).unwrap())
+        types::int1(Graph::push_trace(OpValue::Input(OpInput::I16)).unwrap())
     }
 
     #[inline]
@@ -133,7 +133,7 @@ impl ShaderData for i32 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_scope(OpValue::Input(OpInput::I32)).unwrap())
+        types::int1(Graph::push_trace(OpValue::Input(OpInput::I32)).unwrap())
     }
 
     #[inline]
@@ -146,7 +146,7 @@ impl ShaderData for u8 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_scope(OpValue::Input(OpInput::U8)).unwrap())
+        types::int1(Graph::push_trace(OpValue::Input(OpInput::U8)).unwrap())
     }
 
     #[inline]
@@ -159,7 +159,7 @@ impl ShaderData for u16 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_scope(OpValue::Input(OpInput::U16)).unwrap())
+        types::int1(Graph::push_trace(OpValue::Input(OpInput::U16)).unwrap())
     }
 
     #[inline]
@@ -172,7 +172,7 @@ impl ShaderData for u32 {
     type Data = int1;
 
     fn read() -> Self::Data {
-        types::int1(Graph::push_scope(OpValue::Input(OpInput::I32)).unwrap())
+        types::int1(Graph::push_trace(OpValue::Input(OpInput::I32)).unwrap())
     }
 
     #[inline]
@@ -185,7 +185,7 @@ impl ShaderData for f32 {
     type Data = float1;
 
     fn read() -> Self::Data {
-        types::float1(Graph::push_scope(OpValue::Input(OpInput::F32)).unwrap())
+        types::float1(Graph::push_trace(OpValue::Input(OpInput::F32)).unwrap())
     }
 
     #[inline]
@@ -198,7 +198,7 @@ impl ShaderData for f64 {
     type Data = float1;
 
     fn read() -> Self::Data {
-        types::float1(Graph::push_scope(OpValue::Input(OpInput::F32)).unwrap())
+        types::float1(Graph::push_trace(OpValue::Input(OpInput::F32)).unwrap())
     }
 
     #[inline]
@@ -211,7 +211,7 @@ impl ShaderData for TextureId {
     type Data = texture;
 
     fn read() -> Self::Data {
-        types::texture(Graph::push_scope(OpValue::Input(OpInput::Texture)).unwrap())
+        types::texture(Graph::push_trace(OpValue::Input(OpInput::Texture)).unwrap())
     }
 
     #[inline]

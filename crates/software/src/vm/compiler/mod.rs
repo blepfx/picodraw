@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let graph = Graph::scope(|| {
+        let graph = Graph::trace(|| {
             let z = io::read::<f32>();
 
             let y = io::resolution().x() * z;

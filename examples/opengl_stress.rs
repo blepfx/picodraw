@@ -40,7 +40,7 @@ fn main() {
                 // SAFETY: there's a current OpenGL context because we are inside of the Expose event
                 let data = data.get_or_insert_with(|| unsafe {
                     let mut gl = OpenGlBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap();
-                    let shader = gl.open().create_shader(Graph::scope(|| {
+                    let shader = gl.open().create_shader(Graph::trace(|| {
                         let color = io::read::<[u8; 4]>();
                         let _extra = io::read::<[u32; 7]>();
 

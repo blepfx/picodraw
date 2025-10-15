@@ -3,25 +3,25 @@ use crate::{graph::GraphError, shader::float4};
 use std::cell::RefCell;
 
 thread_local! {
-    static SCOPE_GRAPH: RefCell<Option<GraphBuilder>> = const { RefCell::new(None) };
+    static TRACE_GRAPH: RefCell<Option<GraphBuilder>> = const { RefCell::new(None) };
 }
 
 impl Graph {
-    pub fn push_scope(op: OpValue) -> Result<OpAddr, GraphError> {
-        SCOPE_GRAPH.with(|graph| {
+    pub fn push_trace(op: OpValue) -> Result<OpAddr, GraphError> {
+        TRACE_GRAPH.with(|graph| {
             let mut graph = graph.borrow_mut();
             let graph = graph
                 .as_mut()
-                .expect("attempt to execute a graph operation outside of a graph scope");
+                .expect("attempt to trace a graph operation outside of `Graph::trace`");
 
             graph.push(op)
         })
     }
 
-    pub fn scope(f: impl FnOnce() -> float4) -> Self {
-        let prev = SCOPE_GRAPH.with(|engine| engine.borrow_mut().replace(GraphBuilder::new()));
+    pub fn trace(f: impl FnOnce() -> float4) -> Self {
+        let prev = TRACE_GRAPH.with(|engine| engine.borrow_mut().replace(GraphBuilder::new()));
         let output = f();
-        SCOPE_GRAPH
+        TRACE_GRAPH
             .with(|engine| std::mem::replace(&mut *engine.borrow_mut(), prev))
             .unwrap()
             .finish(output.0)

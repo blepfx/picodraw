@@ -94,7 +94,7 @@ pub enum DrawError {
     /// Attempt to sample from a texture that is being used as the target as the same time
     TargetInUse,
 
-    /// The command stream is malformed. See [`Command::Begin`] and [`Command::End`] for more info
+    /// The command stream is malformed. See [`Command::ObjectBegin`] and [`Command::ObjectEnd`] for more info
     MalformedStream,
 }
 

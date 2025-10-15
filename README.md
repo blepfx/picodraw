@@ -34,11 +34,12 @@ let shader = context.create_shader(Graph::scope(||
 
 
 context.draw_screen(&[
-    Command::Begin([0, 0, 512, 512].into(), shader),
-    Command::Data(QuadData::Float(256.0)),
-    Command::Data(QuadData::Float(256.0)),
-    Command::Data(QuadData::Float(100.0)),
-    Command::End,
+    Command::ObjectBegin(shader),
+    Command::ObjectRect([0, 0, 512, 512].into()),
+    Command::ObjectData(ObjectData::Float(256.0)),
+    Command::ObjectData(ObjectData::Float(256.0)),
+    Command::ObjectData(ObjectData::Float(100.0)),
+    Command::ObjectEnd,
 ]);
 
 context.draw(&commands);

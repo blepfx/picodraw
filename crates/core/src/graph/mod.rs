@@ -1,5 +1,5 @@
 mod op;
-mod scope;
+mod trace;
 
 use std::fmt::{Debug, Display};
 use std::hash::{DefaultHasher, Hash, Hasher};

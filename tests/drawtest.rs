@@ -13,7 +13,7 @@ macro_rules! gen_simple {
         #[test]
         fn $id() {
             run(stringify!($id), $width, $height, |context| {
-                let shader = context.create_shader(Graph::scope(|| {
+                let shader = context.create_shader(Graph::trace(|| {
                     let z = $render;
                     float4((z.x(), z.y(), z.z(), 1.0))
                 }));
@@ -37,7 +37,7 @@ macro_rules! gen_serialize {
                 value: T,
                 render: impl Fn(T::Data) -> float3,
             ) {
-                let shader = context.create_shader(Graph::scope(|| {
+                let shader = context.create_shader(Graph::trace(|| {
                     let z = render(io::read::<T>());
                     float4((z.x(), z.y(), z.z(), 1.0))
                 }));
@@ -532,7 +532,7 @@ pub mod texture {
                     data: &TEST_DITHER0,
                 },
             ));
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 let uv = io::position() / io::resolution();
                 texture.sample(uv * float2(texture.size()), TextureFilter::Nearest)
@@ -558,7 +558,7 @@ pub mod texture {
                 },
             ));
 
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 let uv = io::position() / io::resolution();
                 texture.sample(uv * float2(texture.size()), TextureFilter::Linear)
@@ -575,7 +575,7 @@ pub mod texture {
         run("texture_render_nearest", 32, 32, |context| {
             let texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8);
 
-            let shader_fill = context.create_shader(Graph::scope(|| {
+            let shader_fill = context.create_shader(Graph::trace(|| {
                 let a = float4((1.0, 0.5, 0.25, 1.0));
                 let b = float4((0.5, 0.25, 1.0, 1.0));
                 let p = io::position() / io::resolution();
@@ -584,7 +584,7 @@ pub mod texture {
                 float4(p).lerp(a, b)
             }));
 
-            let shader_negative = context.create_shader(Graph::scope(|| {
+            let shader_negative = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 let z = texture.sample(
                     io::position() / io::resolution() * float2(texture.size()),
@@ -609,7 +609,7 @@ pub mod texture {
         run("texture_render_linear", 32, 32, |context| {
             let texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8);
 
-            let shader_fill = context.create_shader(Graph::scope(|| {
+            let shader_fill = context.create_shader(Graph::trace(|| {
                 let a = float4((1.0, 0.5, 0.25, 1.0));
                 let b = float4((0.5, 0.25, 1.0, 1.0));
                 let p = io::position() / io::resolution();
@@ -618,7 +618,7 @@ pub mod texture {
                 float4(p).lerp(a, b)
             }));
 
-            let shader_negative = context.create_shader(Graph::scope(|| {
+            let shader_negative = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 let z = texture.sample(
                     io::position() / io::resolution() * float2(texture.size()),
@@ -652,7 +652,7 @@ pub mod texture {
                 },
             ));
 
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
@@ -677,7 +677,7 @@ pub mod texture {
                 },
             ));
 
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
@@ -702,7 +702,7 @@ pub mod texture {
                 },
             ));
 
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 texture.sample(0.0, TextureFilter::Nearest)
             }));
@@ -720,7 +720,7 @@ pub mod semantics {
     #[test]
     fn semantics_alpha() {
         run("semantics_alpha", 64, 8, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let x = io::position().x() / io::resolution().x();
                 float4((1.0, 1.0, 1.0, x))
             }));
@@ -735,7 +735,7 @@ pub mod semantics {
     #[test]
     fn semantics_blend() {
         run("semantics_blend", 8, 8, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = io::read::<[f32; 4]>();
                 float4((data[0], data[1], data[2], data[3]))
             }));
@@ -751,7 +751,7 @@ pub mod semantics {
     #[test]
     fn semantics_clear() {
         run("semantics_clear", 8, 8, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = io::read::<[f32; 4]>();
                 float4((data[0], data[1], data[2], data[3]))
             }));
@@ -766,7 +766,7 @@ pub mod semantics {
     #[test]
     fn semantics_screen_preserve() {
         run("semantics_screen_preserve", 8, 8, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = io::read::<[f32; 4]>();
                 float4((data[0], data[1], data[2], data[3]))
             }));
@@ -785,7 +785,7 @@ pub mod semantics {
     #[test]
     fn semantics_object_multiquad() {
         run("semantics_object_multiquad", 8, 8, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = io::read::<[f32; 4]>();
                 float4((data[0], data[1], data[2], data[3]))
             }));
@@ -812,7 +812,7 @@ pub mod tiling {
     #[test]
     fn tiling_aligned_8() {
         run("tiling_aligned_8", 16, 16, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = (io::position() % 3.0) / 3.0;
                 float4((data.x(), data.y(), data.x() + data.y(), 1.0))
             }));
@@ -826,7 +826,7 @@ pub mod tiling {
     #[test]
     fn tiling_centered_8() {
         run("tiling_centered_8", 16, 16, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = (io::position() % 3.0) / 3.0;
                 float4((data.x(), data.y(), data.x() + data.y(), 1.0))
             }));
@@ -840,7 +840,7 @@ pub mod tiling {
     #[test]
     fn tiling_aligned_4() {
         run("tiling_aligned_4", 16, 16, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = (io::position() % 3.0) / 3.0;
                 float4((data.x(), data.y(), data.x() + data.y(), 1.0))
             }));
@@ -854,7 +854,7 @@ pub mod tiling {
     #[test]
     fn tiling_centered_4() {
         run("tiling_centered_4", 16, 16, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = (io::position() % 3.0) / 3.0;
                 float4((data.x(), data.y(), data.x() + data.y(), 1.0))
             }));
@@ -868,7 +868,7 @@ pub mod tiling {
     #[test]
     fn tiling_aligned_2() {
         run("tiling_aligned_2", 16, 16, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = (io::position() % 3.0) / 3.0;
                 float4((data.x(), data.y(), data.x() + data.y(), 1.0))
             }));
@@ -882,7 +882,7 @@ pub mod tiling {
     #[test]
     fn tiling_centered_2() {
         run("tiling_centered_2", 16, 16, |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let data = (io::position() % 3.0) / 3.0;
                 float4((data.x(), data.y(), data.x() + data.y(), 1.0))
             }));
@@ -918,7 +918,7 @@ pub mod stress {
                 })
                 .collect::<Vec<_>>();
 
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let texture = io::read::<TextureId>();
                 texture.sample(float2(0.0), TextureFilter::Linear)
             }));
@@ -934,7 +934,7 @@ pub mod stress {
     #[test]
     fn stress_fill_rate() {
         run("stress_fill_rate", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let i = io::read::<i32>();
                 let j = int1(io::position().x()) + int1(io::position().y()) * int1(io::resolution().x());
                 float4((1.0, 1.0, 1.0, (j % i).eq(0).select(float1(i).sqrt() / 255.0, 0.0)))
@@ -956,7 +956,7 @@ pub mod stress {
     #[test]
     fn stress_quad_count() {
         run("stress_quad_count", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let [r, g, b] = io::read::<[f32; 3]>();
                 io::read::<[u32; 8]>();
                 float4((r, g, b, 1.0))
@@ -989,7 +989,7 @@ pub mod stress {
     #[test] //TODO: Fix
     fn stress_shader_complexity() {
         run("stress_shader_complexity", 4, 4, move |context| {
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let mut a = float4((1.0, 0.5, 0.25, 1.0));
                 for _ in 0..1000 {
                     a = a * float4((0.999, 1.0, 1.001, 1.0));
@@ -1038,7 +1038,7 @@ pub mod complex {
                 },
             ));
 
-            let shader = context.create_shader(Graph::scope(|| {
+            let shader = context.create_shader(Graph::trace(|| {
                 let atlas = io::read::<TextureId>();
                 let (x, y) = io::read::<(f32, f32)>();
                 let scale = io::read::<f32>();
@@ -1088,7 +1088,7 @@ pub mod complex {
                 ((center - pos).len() - radius).smoothstep(0.707, -0.707)
             }
 
-            let shader_circle = context.create_shader(Graph::scope(|| {
+            let shader_circle = context.create_shader(Graph::trace(|| {
                 let [x, y] = io::read::<[f32; 2]>();
 
                 let grid = (io::position() / 32.0).floor();
@@ -1100,7 +1100,7 @@ pub mod complex {
                 float4(mask * color)
             }));
 
-            let shader_boxblur = context.create_shader(Graph::scope(|| {
+            let shader_boxblur = context.create_shader(Graph::trace(|| {
                 let buffer = io::read::<TextureId>();
 
                 let mut result = float4(0.0);
