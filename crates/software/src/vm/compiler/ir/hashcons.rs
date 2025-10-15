@@ -3,6 +3,7 @@ use bumpalo::Bump;
 use std::{collections::HashMap, hash::Hash, mem::discriminant};
 
 /// common subexpression elimination
+///
 /// this is a simple hashconsing pass that will eliminate duplicate IR nodes
 pub fn optimize_hashcons<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> IRProgram<'a> {
     let mut forward = HashMap::new();

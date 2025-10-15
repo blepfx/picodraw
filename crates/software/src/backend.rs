@@ -26,12 +26,21 @@ pub struct SoftwareContext<'a> {
 }
 
 impl SoftwareBackend {
-    pub fn new() -> Self {
+    pub fn single_threaded() -> Self {
         Self {
             arena: Bump::new(),
-            thread_pool: ThreadPool::new(),
             simd_dispatch: SimdDispatcher::new(),
+            thread_pool: ThreadPool::with_threads(1),
+            shaders: SlotMap::new(),
+            buffers: SlotMap::new(),
+        }
+    }
 
+    pub fn multi_threaded() -> Self {
+        Self {
+            arena: Bump::new(),
+            simd_dispatch: SimdDispatcher::new(),
+            thread_pool: ThreadPool::new(),
             shaders: SlotMap::new(),
             buffers: SlotMap::new(),
         }

@@ -508,7 +508,7 @@ pub mod software {
     use picodraw::software::{BufferMut, SoftwareBackend};
 
     pub fn render(width: u32, height: u32, render: RenderJob) -> DynamicImage {
-        let mut backend = SoftwareBackend::new();
+        let mut backend = SoftwareBackend::multi_threaded();
         let mut buffer = vec![0u32; (width * height) as usize];
         let mut context = backend.open(BufferMut::from_slice(&mut buffer, width as usize, height as usize));
 

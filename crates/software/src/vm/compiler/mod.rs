@@ -1,5 +1,8 @@
 mod ir;
 
+#[cfg(test)]
+mod test;
+
 use super::{VMOp, VMOpcode};
 use bumpalo::Bump;
 use picodraw_core::{Graph, graph::OpInput};
@@ -43,10 +46,12 @@ impl CompiledShader {
         });
 
         let program = builder.extract_program(graph.output(), 4);
-        let program = ir::optimize_peephole(&program, arena, ir::peeper_generic);
+        let program = ir::optimize_peephole(&program, arena, ir::peeper_split);
         let program = ir::optimize_hashcons(&program, arena);
 
         let (program_static, program_dynamic) = ir::split_static_dynamic(&program, arena);
+        let program_static = ir::optimize_peephole(&program_static, arena, ir::peeper_join);
+        let program_dynamic = ir::optimize_peephole(&program_dynamic, arena, ir::peeper_join);
 
         let program_static = ir::lower_to_opcodes(&program_static, arena);
         let program_dynamic = ir::lower_to_opcodes(&program_dynamic, arena);

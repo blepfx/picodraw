@@ -17,7 +17,7 @@ fn shader_circles() -> float4 {
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("circles (compile)", |b| {
-        let mut backend = SoftwareBackend::new();
+        let mut backend = SoftwareBackend::single_threaded();
 
         b.iter(|| {
             let mut cx = backend.open(BufferMut::default());
@@ -28,19 +28,43 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 
     c.bench_function("circles (draw)", |b| {
-        let mut buffer = vec![0u32; 512 * 512];
-        let mut backend = SoftwareBackend::new();
+        let mut buffer = vec![0u32; 256 * 256];
+        let mut backend = SoftwareBackend::single_threaded();
         let shader = backend
             .open(BufferMut::default())
             .create_shader(Graph::trace(shader_circles));
 
         b.iter(|| {
-            let mut cx = backend.open(BufferMut::from_slice(&mut buffer, 512, 512));
+            let mut cx = backend.open(BufferMut::from_slice(&mut buffer, 256, 256));
             let mut commands = vec![];
 
-            for i in 0..10 {
-                commands.push(Command::ObjectBegin([0, 0, 512, 512].into(), shader));
-                commands.push(Command::ObjectData(QuadData::Float(2.0 - i as f32 * 0.15)));
+            for i in 0..1000 {
+                commands.push(Command::ObjectBegin(shader));
+                commands.push(Command::ObjectRect([0, 0, 256, 256].into()));
+                commands.push(Command::ObjectData(ObjectData::Float(2.0 - i as f32 * 0.15)));
+                commands.push(Command::ObjectEnd);
+            }
+
+            cx.draw_screen(&commands).unwrap();
+            black_box(&buffer);
+        })
+    });
+
+    c.bench_function("circles (draw threaded)", |b| {
+        let mut buffer = vec![0u32; 256 * 256];
+        let mut backend = SoftwareBackend::multi_threaded();
+        let shader = backend
+            .open(BufferMut::default())
+            .create_shader(Graph::trace(shader_circles));
+
+        b.iter(|| {
+            let mut cx = backend.open(BufferMut::from_slice(&mut buffer, 256, 256));
+            let mut commands = vec![];
+
+            for i in 0..1000 {
+                commands.push(Command::ObjectBegin(shader));
+                commands.push(Command::ObjectRect([0, 0, 256, 256].into()));
+                commands.push(Command::ObjectData(ObjectData::Float(2.0 - i as f32 * 0.15)));
                 commands.push(Command::ObjectEnd);
             }
 

@@ -420,7 +420,7 @@ impl<'a> DispatchWorker<'a> {
                         }
                     }
 
-                    let a1 = a1[src].clamp(0.0, 1.0);
+                    let a1 = a1[src].min(1.0).max(0.0);
                     a0[dst] = (1.0 - a0[dst]) * a1 + a0[dst];
                     r0[dst] = (r1[src] - r0[dst]) * a1 + r0[dst];
                     g0[dst] = (g1[src] - g0[dst]) * a1 + g0[dst];

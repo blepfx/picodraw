@@ -22,8 +22,12 @@ pub fn optimize_peephole<'a>(
     }
 }
 
+pub fn peeper_split<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
+    ir
+}
+
 // whos peeping they hole rn
-pub fn peeper_generic<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
+pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
     use VMOp::*;
     match *ir.0 {
         AddF(a, b, _) => match (a.0, b.0) {
@@ -75,6 +79,7 @@ pub fn peeper_generic<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             (a, LitF(y, _)) => IR::new(arena, MulCF(*y, IR(a), ())),
             (MulF(x, y, _), z) => IR::new(arena, Mul3F(*x, *y, IR(z), ())),
             (x, MulF(y, z, _)) => IR::new(arena, Mul3F(IR(x), *y, *z, ())),
+
             _ => ir,
         },
 

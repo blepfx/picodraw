@@ -39,15 +39,20 @@ pub enum Command {
     /// Reset a region of the target to the initial color (#0000)
     Clear(Bounds),
 
-    /// Begin rendering a single quad.
+    /// Begin rendering a single render object.
+    ///
+    /// A render object has a stream of arbitrary data associated with it that could be read by the shader,
+    /// and a list of axis-aligned rectangles that define the shape of the object on screen.
+    /// Data is shared between individual rectangles within a single object.
     ObjectBegin(ShaderId),
 
+    /// Add a rectangle to the current object. Should be sandwiched between [`Command::ObjectBegin`] and [`Command::ObjectEnd`] commands.
     ObjectRect(Bounds),
 
-    /// Add data to the current quad. Should be sandwiched between [`Command::ObjectBegin`] and [`Command::ObjectEnd`] commands.
+    /// Add data to the current object. Should be sandwiched between [`Command::ObjectBegin`] and [`Command::ObjectEnd`] commands.
     ObjectData(ObjectData),
 
-    /// Close the scope of a single quad.
+    /// Close the scope of a single object.
     /// Must be preceded by a [`Command::ObjectBegin`] command.
     ObjectEnd,
 }
@@ -105,7 +110,7 @@ impl Display for DrawError {
             DrawError::InvalidTexture => write!(f, "command stream contains an invalid source texture"),
             DrawError::InvalidTarget => write!(f, "passed render target is not valid"),
             DrawError::InvalidObjectData => {
-                write!(f, "passed quad data does not correspond to the used shader's schema")
+                write!(f, "passed object data does not correspond to the current shader schema")
             }
             DrawError::TargetInUse => write!(f, "attempt to use the destination render target as a texture"),
             DrawError::MalformedStream => write!(f, "command stream is malformed"),
