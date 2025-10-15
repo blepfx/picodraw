@@ -33,11 +33,8 @@ impl<'a, T> SparseMap<'a, T> {
         let mapping = &mut self.mapping[(x + y * self.width) as usize];
         if *mapping == u32::MAX {
             *mapping = self.buckets.len() as u32;
-            self.buckets.push((x, y, {
-                let mut bucket = Vec::new_in(self.buckets.bump());
-                bucket.push(value);
-                bucket
-            }));
+            self.buckets
+                .push((x, y, Vec::from_iter_in([value], self.buckets.bump())));
         } else {
             self.buckets[*mapping as usize].2.push(value);
         }

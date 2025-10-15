@@ -13,7 +13,7 @@ const TILE_SIZE: usize = 16;
 enum DispatchObject<'a> {
     Draw {
         shader: &'a CompiledShader,
-        data: Range<usize>,
+        inputs: Range<usize>,
         textures: Range<usize>,
         bounds: Bounds,
     },
@@ -65,8 +65,8 @@ impl<'a> Dispatcher<'a> {
         self.current_bounds.push(bounds);
     }
 
-    pub fn object_data(&mut self, data: &[VMSlot]) {
-        self.inputs.extend_from_slice(data);
+    pub fn object_inputs(&mut self, inputs: &[VMSlot]) {
+        self.inputs.extend_from_slice(inputs);
     }
 
     pub fn object_texture(&mut self, texture: BufferRef<'a>) {
@@ -75,11 +75,19 @@ impl<'a> Dispatcher<'a> {
 
     pub fn object_end(&mut self) -> Result<(), DrawError> {
         let shader = self.current_shader.take().ok_or(DrawError::MalformedStream)?;
+
+        let inputs = self.current_inputs..self.inputs.len();
+        let textures = self.current_textures..self.textures.len();
+
+        if inputs.len() != shader.input_slots() || textures.len() != shader.texture_slots() {
+            return Err(DrawError::InvalidObjectData);
+        }
+
         for bounds in self.current_bounds.drain(..) {
             self.objects.push(DispatchObject::Draw {
                 shader,
-                data: self.current_inputs..self.inputs.len(),
-                textures: self.current_textures..self.textures.len(),
+                inputs: inputs.clone(),
+                textures: textures.clone(),
                 bounds,
             });
         }
@@ -100,11 +108,11 @@ impl<'a> Dispatcher<'a> {
             match object {
                 DispatchObject::Draw {
                     shader,
-                    data,
+                    inputs,
                     textures,
                     bounds,
                 } => {
-                    let inputs = &input_buffer[data.clone()];
+                    let inputs = &input_buffer[inputs.clone()];
                     let textures = &texture_buffer[textures.clone()];
 
                     // SAFETY: the program is guaranteed to be valid

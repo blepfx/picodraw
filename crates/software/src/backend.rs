@@ -9,6 +9,7 @@ use picodraw_core::{
     Command, Context, DrawError, Graph, ObjectData, ShaderId, Size, TextureData, TextureFormat, TextureId,
 };
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
+use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 pub struct SoftwareBackend {
     shaders: SlotMap<DefaultKey, CompiledShader>,
@@ -73,10 +74,10 @@ impl<'a> SoftwareContext<'a> {
                     dispatch.object_end()?;
                 }
                 Command::ObjectData(ObjectData::Float(float)) => {
-                    dispatch.object_data(&[VMSlot { float }]);
+                    dispatch.object_inputs(&[VMSlot { float }]);
                 }
                 Command::ObjectData(ObjectData::Int(int)) => {
-                    dispatch.object_data(&[VMSlot { int }]);
+                    dispatch.object_inputs(&[VMSlot { int }]);
                 }
                 Command::ObjectData(ObjectData::Texture(tex)) => {
                     let tex = self
@@ -170,11 +171,16 @@ impl<'a> Context for SoftwareContext<'a> {
             .take()
             .ok_or_else(|| DrawError::TargetInUse)?;
 
-        self.draw_to_buffer(commands, Some(buffer.as_mut()))?;
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            self.draw_to_buffer(commands, Some(buffer.as_mut()))
+        }));
 
-        // FIXME: put back even if we panic
+        // put the buffer back
         *self.owner.buffers.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
 
-        Ok(())
+        match result {
+            Ok(result) => result,
+            Err(panic) => resume_unwind(panic),
+        }
     }
 }

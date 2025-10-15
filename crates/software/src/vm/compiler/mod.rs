@@ -78,12 +78,12 @@ impl CompiledShader {
         unsafe { CompiledProgram::new_unchecked(&self.dynamic_opcodes, &self.dynamic_outputs, self.dynamic_registers) }
     }
 
-    pub fn input_slots(&self) -> u32 {
-        self.slots_input
+    pub fn input_slots(&self) -> usize {
+        self.slots_input as usize
     }
 
-    pub fn texture_slots(&self) -> u8 {
-        self.slots_texture
+    pub fn texture_slots(&self) -> usize {
+        self.slots_texture as usize
     }
 }
 
