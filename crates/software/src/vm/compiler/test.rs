@@ -13,7 +13,7 @@ pub fn test_circles() {
         let r = io::resolution().x().max(io::resolution().y());
 
         let sdf = (x - r * 0.5).len() - r * z * 0.25;
-        let alpha = 1.0 - sdf.smoothstep(-0.6, 0.6);
+        let alpha = (0.5 - 0.9 * sdf).clamp(0.0, 1.0);
 
         float4((x.x() / r, x.y() / r, 1.0, alpha * 0.5))
     }

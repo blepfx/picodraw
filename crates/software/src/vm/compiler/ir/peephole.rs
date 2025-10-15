@@ -2,7 +2,6 @@ use super::{IR, IRProgram, IRVisit, VMOp};
 use bumpalo::Bump;
 use std::collections::HashMap;
 
-/// do peephole optimizations and constant folding on the IR graph
 pub fn optimize_peephole<'a>(
     program: &IRProgram<'a>,
     arena: &'a Bump,
@@ -22,11 +21,23 @@ pub fn optimize_peephole<'a>(
     }
 }
 
+/// pre-chew some ops for future optimization passes
+///
+/// namely, division is getting split into multiplication by a reciprocal, which helps with dynamic splitting and hoisting the division op into the static path
 pub fn peeper_split<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
-    ir
+    use VMOp::*;
+    match *ir.0 {
+        DivF(a, b, _) => IR::new(
+            arena,
+            VMOp::MulF(a, IR::new(arena, DivF(IR::new(arena, LitF(1.0, ())), b, ())), ()),
+        ),
+
+        _ => ir,
+    }
 }
 
 // whos peeping they hole rn
+/// merge ops if possible, do constant folding and other misc optimizations
 pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
     use VMOp::*;
     match *ir.0 {
@@ -75,10 +86,14 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             (LitF(0.0, _), _) | (_, LitF(0.0, _)) => IR::new(arena, LitF(0.0, ())),
             (LitF(1.0, _), _) => b,
             (_, LitF(1.0, _)) => a,
-            (LitF(x, _), b) => IR::new(arena, MulCF(*x, IR(b), ())),
-            (a, LitF(y, _)) => IR::new(arena, MulCF(*y, IR(a), ())),
-            (MulF(x, y, _), z) => IR::new(arena, Mul3F(*x, *y, IR(z), ())),
-            (x, MulF(y, z, _)) => IR::new(arena, Mul3F(IR(x), *y, *z, ())),
+            (LitF(x, _), _) => IR::new(arena, MulCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MulCF(*y, a, ())),
+
+            (_, DivF(IR(LitF(1.0, _)), z, _)) => IR::new(arena, DivF(a, *z, ())),
+            (DivF(IR(LitF(1.0, _)), z, _), _) => IR::new(arena, DivF(b, *z, ())),
+
+            (MulF(x, y, _), _) => IR::new(arena, Mul3F(*x, *y, b, ())),
+            (_, MulF(y, z, _)) => IR::new(arena, Mul3F(a, *y, *z, ())),
 
             _ => ir,
         },
@@ -88,10 +103,10 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             (LitI(0, _), _) | (_, LitI(0, _)) => IR::new(arena, LitI(0, ())),
             (LitI(1, _), _) => b,
             (_, LitI(1, _)) => a,
-            (LitI(x, _), b) => IR::new(arena, MulCI(*x, IR(b), ())),
-            (a, LitI(y, _)) => IR::new(arena, MulCI(*y, IR(a), ())),
-            (MulI(x, y, _), z) => IR::new(arena, Mul3I(*x, *y, IR(z), ())),
-            (x, MulI(y, z, _)) => IR::new(arena, Mul3I(IR(x), *y, *z, ())),
+            (LitI(x, _), _) => IR::new(arena, MulCI(*x, b, ())),
+            (_, LitI(y, _)) => IR::new(arena, MulCI(*y, a, ())),
+            (MulI(x, y, _), _) => IR::new(arena, Mul3I(*x, *y, b, ())),
+            (_, MulI(y, z, _)) => IR::new(arena, Mul3I(a, *y, *z, ())),
             _ => ir,
         },
 
@@ -126,29 +141,29 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
 
         MinF(a, b, _) => match (a.0, b.0) {
             (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.min(*y), ())),
-            (LitF(x, _), b) => IR::new(arena, MinCF(*x, IR(b), ())),
-            (a, LitF(y, _)) => IR::new(arena, MinCF(*y, IR(a), ())),
+            (LitF(x, _), _) => IR::new(arena, MinCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MinCF(*y, a, ())),
             _ => ir,
         },
 
         MinI(a, b, _) => match (a.0, b.0) {
             (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI((*x).min(*y), ())),
-            (LitI(x, _), b) => IR::new(arena, MinCI(*x, IR(b), ())),
-            (a, LitI(y, _)) => IR::new(arena, MinCI(*y, IR(a), ())),
+            (LitI(x, _), _) => IR::new(arena, MinCI(*x, b, ())),
+            (_, LitI(y, _)) => IR::new(arena, MinCI(*y, a, ())),
             _ => ir,
         },
 
         MaxF(a, b, _) => match (a.0, b.0) {
             (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.max(*y), ())),
-            (LitF(x, _), b) => IR::new(arena, MaxCF(*x, IR(b), ())),
-            (a, LitF(y, _)) => IR::new(arena, MaxCF(*y, IR(a), ())),
+            (LitF(x, _), _) => IR::new(arena, MaxCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MaxCF(*y, a, ())),
             _ => ir,
         },
 
         MaxI(a, b, _) => match (a.0, b.0) {
             (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI((*x).max(*y), ())),
-            (LitI(x, _), b) => IR::new(arena, MaxCI(*x, IR(b), ())),
-            (a, LitI(y, _)) => IR::new(arena, MaxCI(*y, IR(a), ())),
+            (LitI(x, _), _) => IR::new(arena, MaxCI(*x, b, ())),
+            (_, LitI(y, _)) => IR::new(arena, MaxCI(*y, a, ())),
             _ => ir,
         },
 
@@ -157,18 +172,8 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             (LitF(0.0, _), _) => IR::new(arena, LitF(0.0, ())),
             (_, LitF(0.0, _)) => IR::new(arena, LitF(1.0, ())),
             (_, LitF(1.0, _)) => a,
-
-            (x, LitF(0.5, _)) => IR::new(arena, SqrtF(IR(x), ())),
-            (x, LitF(2.0, _)) => IR::new(arena, MulF(IR(x), IR(x), ())),
-            (x, LitF(3.0, _)) => {
-                let x2 = IR::new(arena, MulF(IR(x), IR(x), ()));
-                IR::new(arena, MulF(IR(x), x2, ()))
-            }
-            (x, LitF(4.0, _)) => {
-                let x2 = IR::new(arena, MulF(IR(x), IR(x), ()));
-                IR::new(arena, MulF(x2, x2, ()))
-            }
-
+            (_, LitF(0.5, _)) => IR::new(arena, SqrtF(a, ())),
+            (_, LitF(2.0, _)) => IR::new(arena, MulF(a, a, ())),
             _ => ir,
         },
 
