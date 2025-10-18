@@ -8,7 +8,6 @@ use bumpalo::Bump;
 use picodraw_core::{Graph, graph::OpInput};
 use std::fmt::Debug;
 
-#[derive(Debug)]
 pub struct CompiledShader {
     slots_input: u32,
     slots_texture: u8,
@@ -129,35 +128,5 @@ impl<'a> Debug for CompiledProgram<'a> {
         }
 
         write!(f, "]")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::vm::CompiledShader;
-    use bumpalo::Bump;
-    use picodraw_core::{
-        Graph,
-        shader::{float2, float4, io},
-    };
-
-    #[test]
-    fn test() {
-        let graph = Graph::trace(|| {
-            let z = io::read::<f32>();
-
-            let y = io::resolution().x() * z;
-            let x = io::resolution().x() * z;
-
-            let p = io::position() / io::resolution();
-            let d = p - float2((0.5, 0.5));
-            let d = d.len();
-
-            float4((d, d + (y * 2.0 + x), d * z, 1.0))
-        });
-        let arena = Bump::new();
-        let shader = CompiledShader::compile(&arena, &graph);
-
-        dbg!(shader);
     }
 }

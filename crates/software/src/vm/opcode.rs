@@ -190,5 +190,4 @@ impl<I, O> VMOp<I, O> {
     }
 }
 
-pub type VMReg = u8;
-pub type VMOpcode = VMOp<VMReg, VMReg>;
+pub type VMOpcode = VMOp<u8, u8>;
