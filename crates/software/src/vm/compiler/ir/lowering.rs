@@ -1,9 +1,10 @@
-use super::{IRProgram, IRVisit, VMProgram};
+use super::{IRProgram, IRVisit};
+use crate::vm::CompiledProgram;
 use bumpalo::{Bump, collections::Vec};
 use std::collections::HashMap;
 
 /// register allocation and lowering to executable vm ops
-pub fn lower_to_opcodes<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> VMProgram<'a> {
+pub fn lower_to_opcodes<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> CompiledProgram<'a> {
     // collect ops in dfs post order and collected output edge counts
     let mut ops = Vec::new_in(arena);
     let mut edges = HashMap::new();
@@ -67,9 +68,9 @@ pub fn lower_to_opcodes<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> VMProgr
         panic!("too many registers used");
     }
 
-    VMProgram {
-        opcodes,
-        outputs,
+    CompiledProgram {
+        opcodes: opcodes.into_bump_slice(),
+        outputs: outputs.into_bump_slice(),
         registers: state.len() as u8,
     }
 }

@@ -6,6 +6,7 @@ mod test;
 use super::{VMOp, VMOpcode};
 use bumpalo::Bump;
 use picodraw_core::{Graph, graph::OpInput};
+use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct CompiledShader {
@@ -21,7 +22,7 @@ pub struct CompiledShader {
     dynamic_registers: u8,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct CompiledProgram<'a> {
     opcodes: &'a [VMOpcode],
     outputs: &'a [u8],
@@ -112,6 +113,22 @@ impl<'a> CompiledProgram<'a> {
     #[allow(unused)]
     pub fn used_registers(&self) -> usize {
         self.registers as usize
+    }
+}
+
+impl<'a> Debug for CompiledProgram<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "[")?;
+
+        for op in self.opcodes {
+            writeln!(f, "   {:?}", op)?;
+        }
+
+        for output in self.outputs {
+            writeln!(f, "   Output({})", output)?;
+        }
+
+        write!(f, "]")
     }
 }
 

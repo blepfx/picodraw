@@ -1,4 +1,4 @@
-use crate::vm::{VMOp, VMOpcode};
+use crate::vm::VMOp;
 use bumpalo::{Bump, collections::Vec};
 use std::{fmt::Debug, hash::Hash};
 
@@ -13,13 +13,6 @@ pub use graph2ir::IRBuilder;
 pub use hashcons::*;
 pub use lowering::*;
 pub use peephole::*;
-
-#[derive(Debug)]
-pub struct VMProgram<'a> {
-    pub opcodes: Vec<'a, VMOpcode>,
-    pub outputs: Vec<'a, u8>,
-    pub registers: u8,
-}
 
 pub enum IRVisit<'a> {
     Enter(IR<'a>, Option<IR<'a>>),
