@@ -894,7 +894,6 @@ pub mod tiling {
     }
 }
 
-#[cfg(not(miri))]
 pub mod stress {
     use super::*;
 
@@ -932,6 +931,7 @@ pub mod stress {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn stress_fill_rate() {
         run("stress_fill_rate", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
             let shader = context.create_shader(Graph::trace(|| {
@@ -954,6 +954,7 @@ pub mod stress {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn stress_quad_count() {
         run("stress_quad_count", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
             let shader = context.create_shader(Graph::trace(|| {
@@ -986,7 +987,8 @@ pub mod stress {
         });
     }
 
-    #[test] //TODO: Fix
+    #[test]
+    #[cfg(not(miri))] //TODO: Fix
     fn stress_shader_complexity() {
         run("stress_shader_complexity", 4, 4, move |context| {
             let shader = context.create_shader(Graph::trace(|| {
@@ -1004,11 +1006,76 @@ pub mod stress {
     }
 }
 
-#[cfg(not(miri))]
 pub mod complex {
     use super::*;
 
     #[test]
+    fn complex_sdf_round_rect() {
+        run("complex_sdf_round_rect", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
+            // https://iquilezles.org/articles/distfunctions2d/
+            fn shader_rect() -> float4 {
+                let center = float2((io::read::<f32>(), io::read::<f32>()));
+                let angle = io::read::<f32>();
+                let extents = float2((io::read::<f32>(), io::read::<f32>()));
+                let radius = float4((
+                    io::read::<f32>(),
+                    io::read::<f32>(),
+                    io::read::<f32>(),
+                    io::read::<f32>(),
+                ));
+                let color = float4((
+                    io::read::<f32>(),
+                    io::read::<f32>(),
+                    io::read::<f32>(),
+                    io::read::<f32>(),
+                ));
+
+                let p = io::position() - center;
+                let p = float2((
+                    p.x() * angle.cos() - p.y() * angle.sin(),
+                    p.x() * angle.sin() + p.y() * angle.cos(),
+                ));
+
+                let r = p.x().gt(0.0).select(
+                    p.y().gt(0.0).select(radius.x(), radius.y()),
+                    p.y().gt(0.0).select(radius.z(), radius.w()),
+                );
+
+                let q = p.abs() - extents + r;
+                let d = q.x().max(q.y()).min(0.0) + q.max(0.0).len() - r;
+
+                let mask = (0.5 - d * 0.707).clamp(0.0, 1.0);
+                float4((color.x(), color.y(), color.z(), color.w() * mask))
+            }
+
+            let shader_rect = context.create_shader(Graph::trace(shader_rect));
+
+            let mut commands = vec![];
+
+            add_quad(
+                &mut commands,
+                shader_rect,
+                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
+                [
+                    256.0, 256.0, 0.5, 100.0, 50.0, 0.0, 10.0, 20.0, 30.0, 1.0, 0.0, 1.0, 0.5,
+                ],
+            );
+
+            add_quad(
+                &mut commands,
+                shader_rect,
+                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
+                [
+                    300.0, 200.0, -0.1, 60.0, 90.0, 10.0, 10.0, 20.0, 20.0, 0.0, 1.0, 1.0, 0.5,
+                ],
+            );
+
+            context.draw_screen(&commands).unwrap();
+        });
+    }
+
+    #[test]
+    #[cfg(not(miri))]
     fn complex_msdf() {
         let (width, height, data) = {
             let msdf = open("./tests/drawtest/msdf.webp").unwrap();
@@ -1082,6 +1149,7 @@ pub mod complex {
     }
 
     #[test]
+    #[cfg(not(miri))]
     fn complex_boxblur() {
         run("complex_boxblur", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
             fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {

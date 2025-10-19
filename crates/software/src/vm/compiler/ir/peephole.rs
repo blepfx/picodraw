@@ -27,122 +27,223 @@ pub fn optimize_peephole<'a>(
 pub fn peeper_split<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
     use VMOp::*;
     match *ir.0 {
-        DivF(a, b, _) => IR::new(
-            arena,
-            VMOp::MulF(a, IR::new(arena, DivF(IR::new(arena, LitF(1.0, ())), b, ())), ()),
-        ),
+        // x/y = x*(1/y)
+        DivF(a, b, _) => IR::new(arena, MulF(a, IR::new(arena, RecipF(b, ())), ())),
 
+        // x-y = x+(-y)
+        SubF(a, b, _) => IR::new(arena, AddF(a, IR::new(arena, NegF(b, ())), ())),
+
+        // x-y = x+(-y)
+        SubI(a, b, _) => IR::new(arena, AddI(a, IR::new(arena, NegI(b, ())), ())),
         _ => ir,
     }
 }
 
 // whos peeping they hole rn
 /// merge ops if possible, do constant folding and other misc optimizations
+/// expects split ops (MulF(_, RecipF) instead of DivF)
 pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
     use VMOp::*;
     match *ir.0 {
         AddF(a, b, _) => match (a.0, b.0) {
-            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x + y, ())),
+            // zero identity
             (LitF(0.0, _), _) => b,
             (_, LitF(0.0, _)) => a,
-            (LitF(x, _), b) => IR::new(arena, AddCF(*x, IR(b), ())),
-            (a, LitF(y, _)) => IR::new(arena, AddCF(*y, IR(a), ())),
-            (AddF(x, y, _), z) => IR::new(arena, Add3F(*x, *y, IR(z), ())),
-            (x, AddF(y, z, _)) => IR::new(arena, Add3F(IR(x), *y, *z, ())),
+
+            // constant
+            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x + y, ())),
+
+            // constant-add
+            (LitF(x, _), NegF(y, _)) => IR::new(arena, SubCF(*x, *y, ())),
+            (LitF(x, _), _) => IR::new(arena, AddCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, AddCF(*y, a, ())),
+
+            // read-add
+            (Read(x, _), _) => IR::new(arena, AddRF(*x, b, ())),
+            (_, Read(y, _)) => IR::new(arena, AddRF(*y, a, ())),
+
+            // mul-add
+            (MulF(x, y, _), NegF(z, _)) => IR::new(arena, MulSubF(*x, *y, *z, ())),
+            (MulF(x, y, _), _) => IR::new(arena, MulAddF(*x, *y, b, ())),
+
+            // subtraction
+            (_, NegF(y, _)) => IR::new(arena, SubF(a, *y, ())),
+            (NegF(y, _), _) => IR::new(arena, SubF(b, *y, ())),
+
             _ => ir,
         },
 
-        AddI(a, b, _) => match (a.0, b.0) {
-            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_add(*y), ())),
-            (LitI(0, _), _) => b,
-            (_, LitI(0, _)) => a,
-            (LitI(x, _), b) => IR::new(arena, AddCI(*x, IR(b), ())),
-            (a, LitI(y, _)) => IR::new(arena, AddCI(*y, IR(a), ())),
-            (AddI(x, y, _), z) => IR::new(arena, Add3I(*x, *y, IR(z), ())),
-            (x, AddI(y, z, _)) => IR::new(arena, Add3I(IR(x), *y, *z, ())),
-            _ => ir,
-        },
+        NegF(a, _) => match a.0 {
+            // constant
+            LitF(x, _) => IR::new(arena, LitF(-x, ())),
 
-        SubF(a, b, _) => match (a.0, b.0) {
-            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x - y, ())),
-            (LitF(0.0, _), _) => IR::new(arena, NegF(b, ())),
-            (_, LitF(0.0, _)) => a,
-            (LitF(x, _), b) => IR::new(arena, SubCF(*x, IR(b), ())),
-            (a, LitF(y, _)) => IR::new(arena, AddCF(-y, IR(a), ())),
-            _ => ir,
-        },
+            // -(-x) = x
+            NegF(x, _) => *x,
 
-        SubI(a, b, _) => match (a.0, b.0) {
-            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_sub(*y), ())),
-            (LitI(0, _), _) => IR::new(arena, NegI(b, ())),
-            (_, LitI(0, _)) => a,
-            (LitI(x, _), b) => IR::new(arena, SubCI(*x, IR(b), ())),
-            (a, LitI(y, _)) => IR::new(arena, AddCI(-y, IR(a), ())),
+            // -(a-b) = (b-a)
+            SubF(a, b, _) => IR::new(arena, SubF(*b, *a, ())),
+
             _ => ir,
         },
 
         MulF(a, b, _) => match (a.0, b.0) {
-            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x * y, ())),
+            // zero identity
             (LitF(0.0, _), _) | (_, LitF(0.0, _)) => IR::new(arena, LitF(0.0, ())),
+
+            // mult identity
             (LitF(1.0, _), _) => b,
             (_, LitF(1.0, _)) => a,
+
+            // constant
+            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x * y, ())),
+
+            // constant-mul
             (LitF(x, _), _) => IR::new(arena, MulCF(*x, b, ())),
             (_, LitF(y, _)) => IR::new(arena, MulCF(*y, a, ())),
 
-            (_, DivF(IR(LitF(1.0, _)), z, _)) => IR::new(arena, DivF(a, *z, ())),
-            (DivF(IR(LitF(1.0, _)), z, _), _) => IR::new(arena, DivF(b, *z, ())),
+            // read-mul
+            (Read(x, _), _) => IR::new(arena, MulRF(*x, b, ())),
+            (_, Read(y, _)) => IR::new(arena, MulRF(*y, a, ())),
 
-            (MulF(x, y, _), _) => IR::new(arena, Mul3F(*x, *y, b, ())),
-            (_, MulF(y, z, _)) => IR::new(arena, Mul3F(a, *y, *z, ())),
+            // division
+            (_, RecipF(z, _)) => IR::new(arena, DivF(a, *z, ())),
+            (RecipF(z, _), _) => IR::new(arena, DivF(b, *z, ())),
+
+            // sqrt(x)*sqrt(y) = sqrt(xy)
+            (SqrtF(x, _), SqrtF(y, _)) => IR::new(arena, SqrtF(IR::new(arena, MulF(*x, *y, ())), ())),
+
+            _ => ir,
+        },
+
+        RecipF(a, _) => match a.0 {
+            // constant
+            LitF(x, _) => IR::new(arena, LitF(x.recip(), ())),
+
+            // 1/(1/x) = x
+            RecipF(x, _) => *x,
+
+            // 1/(sqrt(x)) = rsqrt(x)
+            SqrtF(x, _) => IR::new(arena, RecipSqrtF(*x, ())),
+
+            // 1/(a/b) = b/a
+            DivF(a, b, _) => IR::new(arena, DivF(*b, *a, ())),
+
+            _ => ir,
+        },
+
+        SqrtF(a, _) => match a.0 {
+            // constant
+            LitF(x, _) => IR::new(arena, LitF(x.sqrt(), ())),
+
+            // sqrt(x^2) = x
+            MulF(x, y, _) if x == y => *x,
+
+            // sqrt(1/x) = rsqrt(x)
+            RecipF(x, _) => IR::new(arena, RecipSqrtF(*x, ())),
+
+            _ => ir,
+        },
+
+        PowF(a, b, _) => match (a.0, b.0) {
+            // x^1 = x
+            (_, LitF(1.0, _)) => a,
+
+            // constant
+            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.powf(*y), ())),
+
+            // x^0.5 = sqrt(x)
+            (_, LitF(0.5, _)) => IR::new(arena, SqrtF(a, ())),
+
+            // x^-0.5 = sqrt(x)
+            (_, LitF(-0.5, _)) => IR::new(arena, RecipSqrtF(a, ())),
+
+            // x^-1 = sqrt(x)
+            (_, LitF(-1.0, _)) => IR::new(arena, RecipF(a, ())),
+
+            // x^2 = x*x
+            (_, LitF(2.0, _)) => IR::new(arena, MulF(a, a, ())),
+            _ => ir,
+        },
+
+        MinF(a, b, _) => match (a.0, b.0) {
+            // constant
+            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.min(*y), ())),
+
+            // constant-min
+            (LitF(x, _), _) => IR::new(arena, MinCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MinCF(*y, a, ())),
+
+            _ => ir,
+        },
+
+        MaxF(a, b, _) => match (a.0, b.0) {
+            // constant
+            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.max(*y), ())),
+
+            // constant-max
+            (LitF(x, _), _) => IR::new(arena, MaxCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MaxCF(*y, a, ())),
+
+            _ => ir,
+        },
+
+        AddI(a, b, _) => match (a.0, b.0) {
+            // zero identity
+            (LitI(0, _), _) => b,
+            (_, LitI(0, _)) => a,
+
+            // constant
+            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_add(*y), ())),
+
+            // constant-add
+            (LitI(x, _), NegI(y, _)) => IR::new(arena, SubCI(*x, *y, ())),
+            (LitI(x, _), _) => IR::new(arena, AddCI(*x, b, ())),
+            (_, LitI(y, _)) => IR::new(arena, AddCI(*y, a, ())),
+
+            _ => ir,
+        },
+
+        NegI(a, _) => match a.0 {
+            // constant
+            LitI(x, _) => IR::new(arena, LitI(x.wrapping_neg(), ())),
+
+            // -(-x) = x
+            NegI(b, _) => *b,
+
+            // -(a-b) = b-a
+            SubI(a, b, _) => IR::new(arena, SubI(*b, *a, ())),
 
             _ => ir,
         },
 
         MulI(a, b, _) => match (a.0, b.0) {
-            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_mul(*y), ())),
+            // zero identity
             (LitI(0, _), _) | (_, LitI(0, _)) => IR::new(arena, LitI(0, ())),
+
+            // mult identity
             (LitI(1, _), _) => b,
             (_, LitI(1, _)) => a,
+
+            // constant
+            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_mul(*y), ())),
+
+            // constant-mul
             (LitI(x, _), _) => IR::new(arena, MulCI(*x, b, ())),
             (_, LitI(y, _)) => IR::new(arena, MulCI(*y, a, ())),
-            (MulI(x, y, _), _) => IR::new(arena, Mul3I(*x, *y, b, ())),
-            (_, MulI(y, z, _)) => IR::new(arena, Mul3I(a, *y, *z, ())),
-            _ => ir,
-        },
 
-        DivF(a, b, _) => match (a.0, b.0) {
-            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x / y, ())),
-            (LitF(0.0, _), _) => IR::new(arena, LitF(0.0, ())),
-            (_, LitF(1.0, _)) => a,
-            (_, LitF(x, _)) => IR::new(arena, MulCF(x.recip(), a, ())),
             _ => ir,
         },
 
         DivI(a, b, _) => match (a.0, b.0) {
-            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_div(*y), ())),
+            // 0/x = 0
             (LitI(0, _), _) => IR::new(arena, LitI(0, ())),
+
+            // x/1 = x
             (_, LitI(1, _)) => a,
-            _ => ir,
-        },
 
-        NegF(a, _) => match a.0 {
-            LitF(x, _) => IR::new(arena, LitF(-x, ())),
-            NegF(b, _) => *b,
-            SubF(a, b, _) => IR::new(arena, SubF(*b, *a, ())),
-            _ => ir,
-        },
+            // constant
+            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_div(*y), ())),
 
-        NegI(a, _) => match a.0 {
-            LitI(x, _) => IR::new(arena, LitI(x.wrapping_neg(), ())),
-            NegI(b, _) => *b,
-            SubI(a, b, _) => IR::new(arena, SubI(*b, *a, ())),
-            _ => ir,
-        },
-
-        MinF(a, b, _) => match (a.0, b.0) {
-            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.min(*y), ())),
-            (LitF(x, _), _) => IR::new(arena, MinCF(*x, b, ())),
-            (_, LitF(y, _)) => IR::new(arena, MinCF(*y, a, ())),
             _ => ir,
         },
 
@@ -153,27 +254,10 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             _ => ir,
         },
 
-        MaxF(a, b, _) => match (a.0, b.0) {
-            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.max(*y), ())),
-            (LitF(x, _), _) => IR::new(arena, MaxCF(*x, b, ())),
-            (_, LitF(y, _)) => IR::new(arena, MaxCF(*y, a, ())),
-            _ => ir,
-        },
-
         MaxI(a, b, _) => match (a.0, b.0) {
             (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI((*x).max(*y), ())),
             (LitI(x, _), _) => IR::new(arena, MaxCI(*x, b, ())),
             (_, LitI(y, _)) => IR::new(arena, MaxCI(*y, a, ())),
-            _ => ir,
-        },
-
-        PowF(a, b, _) => match (a.0, b.0) {
-            (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.powf(*y), ())),
-            (LitF(0.0, _), _) => IR::new(arena, LitF(0.0, ())),
-            (_, LitF(0.0, _)) => IR::new(arena, LitF(1.0, ())),
-            (_, LitF(1.0, _)) => a,
-            (_, LitF(0.5, _)) => IR::new(arena, SqrtF(a, ())),
-            (_, LitF(2.0, _)) => IR::new(arena, MulF(a, a, ())),
             _ => ir,
         },
 

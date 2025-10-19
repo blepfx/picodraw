@@ -41,17 +41,22 @@ pub enum VMOp<I, O> {
     MaxCI(i32, I, O),
     MaxCF(f32, I, O),
 
-    Add3F(I, I, I, O),
-    Add3I(I, I, I, O),
-    Mul3F(I, I, I, O),
-    Mul3I(I, I, I, O),
+    AddRF(u32, I, O),
+    MulRF(u32, I, O),
+
+    MulAddF(I, I, I, O),
+    MulSubF(I, I, I, O),
 
     NegF(I, O),
     NegI(I, O),
 
     AbsF(I, O),
     AbsI(I, O),
+
     FloorF(I, O),
+
+    RecipF(I, O),
+    RecipSqrtF(I, O),
 
     SinF(I, O),
     CosF(I, O),
@@ -132,13 +137,15 @@ impl<I, O> VMOp<I, O> {
             MaxCI(a, b, o) => MaxCI(a, inp(b), out(o)),
             MaxCF(a, b, o) => MaxCF(a, inp(b), out(o)),
 
-            Add3F(a, b, c, o) => Add3F(inp(a), inp(b), inp(c), out(o)),
-            Add3I(a, b, c, o) => Add3I(inp(a), inp(b), inp(c), out(o)),
-            Mul3F(a, b, c, o) => Mul3F(inp(a), inp(b), inp(c), out(o)),
-            Mul3I(a, b, c, o) => Mul3I(inp(a), inp(b), inp(c), out(o)),
+            AddRF(a, b, o) => AddRF(a, inp(b), out(o)),
+            MulRF(a, b, o) => MulRF(a, inp(b), out(o)),
 
             NegF(a, o) => NegF(inp(a), out(o)),
             NegI(a, o) => NegI(inp(a), out(o)),
+
+            MulAddF(a, b, c, o) => MulAddF(inp(a), inp(b), inp(c), out(o)),
+            MulSubF(a, b, c, o) => MulSubF(inp(a), inp(b), inp(c), out(o)),
+
             MinF(a, b, o) => MinF(inp(a), inp(b), out(o)),
             MinI(a, b, o) => MinI(inp(a), inp(b), out(o)),
             MaxF(a, b, o) => MaxF(inp(a), inp(b), out(o)),
@@ -146,6 +153,10 @@ impl<I, O> VMOp<I, O> {
             AbsF(a, o) => AbsF(inp(a), out(o)),
             AbsI(a, o) => AbsI(inp(a), out(o)),
             FloorF(a, o) => FloorF(inp(a), out(o)),
+
+            RecipF(a, o) => RecipF(inp(a), out(o)),
+            RecipSqrtF(a, o) => RecipSqrtF(inp(a), out(o)),
+
             SinF(a, o) => SinF(inp(a), out(o)),
             CosF(a, o) => CosF(inp(a), out(o)),
             TanF(a, o) => TanF(inp(a), out(o)),

@@ -232,17 +232,20 @@ impl<'a> VMContext<'a> {
                 MaxCI(a, b, c) => {
                     op!(|b: i32, c: mut i32| a.max(b));
                 }
-                Add3F(a, b, c, d) => {
-                    op!(|a: f32, b: f32, c: f32, d: mut f32| a + b + c);
+                AddRF(a, b, c) => {
+                    let a = unsafe { self.inputs.get_unchecked(a as usize).float };
+                    op!(|b: f32, c: mut f32| a + b);
                 }
-                Add3I(a, b, c, d) => {
-                    op!(|a: i32, b: i32, c: i32, d: mut i32| a.wrapping_add(b).wrapping_add(c));
+                MulRF(a, b, c) => {
+                    let a = unsafe { self.inputs.get_unchecked(a as usize).float };
+                    op!(|b: f32, c: mut f32| a * b);
                 }
-                Mul3F(a, b, c, d) => {
-                    op!(|a: f32, b: f32, c: f32, d: mut f32| a * b * c);
+
+                MulAddF(a, b, c, d) => {
+                    op!(|a: f32, b: f32, c: f32, d: mut f32| a * b + c);
                 }
-                Mul3I(a, b, c, d) => {
-                    op!(|a: i32, b: i32, c: i32, d: mut i32| a.wrapping_mul(b).wrapping_mul(c));
+                MulSubF(a, b, c, d) => {
+                    op!(|a: f32, b: f32, c: f32, d: mut f32| a * b - c);
                 }
                 NegF(a, b) => {
                     op!(|a: f32, b: mut f32| -a);
@@ -255,6 +258,12 @@ impl<'a> VMContext<'a> {
                 }
                 AbsI(a, b) => {
                     op!(|a: i32, b: mut i32| a.abs());
+                }
+                RecipF(a, b) => {
+                    op!(|a: f32, b: mut f32| a.recip());
+                }
+                RecipSqrtF(a, b) => {
+                    op!(|a: f32, b: mut f32| a.sqrt().recip());
                 }
                 FloorF(a, b) => {
                     op!(|a: f32, b: mut f32| a.floor());
