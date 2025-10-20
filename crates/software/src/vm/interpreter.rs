@@ -326,23 +326,23 @@ impl<'a> VMContext<'a> {
                     op!(|a: f32, b: mut i32| a as i32);
                 }
 
-                EqF(a, b, c) => {
-                    op!(|a: f32, b: f32, c: mut i32| if a == b { -1 } else { 0 });
+                EqF(a, b) => {
+                    op!(|a: f32, b: mut i32| if a == 0.0 { -1 } else { 0 });
                 }
-                EqI(a, b, c) => {
-                    op!(|a: i32, b: i32, c: mut i32| if a == b { -1 } else { 0 });
+                EqI(a, b) => {
+                    op!(|a: i32, b: mut i32| if a == 0 { -1 } else { 0 });
                 }
-                LtF(a, b, c) => {
-                    op!(|a: f32, b: f32, c: mut i32| if a < b { -1 } else { 0 });
+                LtF(a, b) => {
+                    op!(|a: f32, b: mut i32| if a < 0.0 { -1 } else { 0 });
                 }
-                LtI(a, b, c) => {
-                    op!(|a: i32, b: i32, c: mut i32| if a < b { -1 } else { 0 });
+                LtI(a, b) => {
+                    op!(|a: i32, b: mut i32| if a < 0 { -1 } else { 0 });
                 }
-                GtF(a, b, c) => {
-                    op!(|a: f32, b: f32, c: mut i32| if a > b { -1 } else { 0 });
+                GtF(a, b) => {
+                    op!(|a: f32, b: mut i32| if a > 0.0 { -1 } else { 0 });
                 }
-                GtI(a, b, c) => {
-                    op!(|a: i32, b: i32, c: mut i32| if a > b { -1 } else { 0 });
+                GtI(a, b) => {
+                    op!(|a: i32,  b: mut i32| if a > 0 { -1 } else { 0 });
                 }
 
                 Select(a, b, c, d) => {

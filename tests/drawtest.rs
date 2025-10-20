@@ -367,11 +367,6 @@ pub mod ops {
         float3((x.sign(), x.norm(), 0.0))
     });
 
-    gen_simple!(op_step, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
-        float3((x.step(0.0), x.step(1.0), x.step(-1.0)))
-    });
-
     gen_simple!(op_smoothstep, 128, 8, {
         let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
         float3((x.smoothstep(0.0, 1.0), x.smoothstep(1.0, -1.0), x.smoothstep(-1.0, 0.0)))

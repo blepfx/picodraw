@@ -145,8 +145,6 @@ impl<'a> IRBuilder<'a> {
                 }
             }
 
-            Step(a, b) if ty.is_float() => out!(Select(LtF(a, b), LitF(0.0), LitF(1.0))),
-            Step(a, b) => out!(Select(LtI(a, b), LitI(0), LitI(1))),
             Neg(a) if ty.is_float() => out!(NegF(a)),
             Neg(a) => out!(NegI(a)),
             Sin(a) => out!(SinF(a)),
@@ -166,26 +164,26 @@ impl<'a> IRBuilder<'a> {
             Shl(a, b) => out!(ShlI(a, b)),
             Shr(a, b) => out!(ShrI(a, b)),
             Not(a) => out!(NotI(a)),
-            Eq(a, b) if graph.type_of(a).is_float() => out!(EqF(a, b)),
-            Eq(a, b) => out!(EqI(a, b)),
-            Ne(a, b) if graph.type_of(a).is_float() => out!(NotI(EqF(a, b))),
-            Ne(a, b) => out!(NotI(EqI(a, b))),
-            Lt(a, b) if graph.type_of(a).is_float() => out!(LtF(a, b)),
-            Lt(a, b) => out!(LtI(a, b)),
-            Le(a, b) if graph.type_of(a).is_float() => out!(NotI(GtF(a, b))),
-            Le(a, b) => out!(NotI(GtI(a, b))),
-            Gt(a, b) if graph.type_of(a).is_float() => out!(GtF(a, b)),
-            Gt(a, b) => out!(GtI(a, b)),
-            Ge(a, b) if graph.type_of(a).is_float() => out!(NotI(LtF(a, b))),
-            Ge(a, b) => out!(NotI(LtI(a, b))),
+            Eq(a, b) if graph.type_of(a).is_float() => out!(EqF(SubF(a, b))),
+            Eq(a, b) => out!(EqI(SubI(a, b))),
+            Ne(a, b) if graph.type_of(a).is_float() => out!(NotI(EqF(SubF(a, b)))),
+            Ne(a, b) => out!(NotI(EqI(SubI(a, b)))),
+            Lt(a, b) if graph.type_of(a).is_float() => out!(LtF(SubF(a, b))),
+            Lt(a, b) => out!(LtI(SubI(a, b))),
+            Le(a, b) if graph.type_of(a).is_float() => out!(NotI(GtF(SubF(a, b)))),
+            Le(a, b) => out!(NotI(GtI(SubI(a, b)))),
+            Gt(a, b) if graph.type_of(a).is_float() => out!(GtF(SubF(a, b))),
+            Gt(a, b) => out!(GtI(SubI(a, b))),
+            Ge(a, b) if graph.type_of(a).is_float() => out!(NotI(LtF(SubF(a, b)))),
+            Ge(a, b) => out!(NotI(LtI(SubI(a, b)))),
             CastFloat(a) => out!(CastF(a)),
             CastInt(a) => out!(CastI(a)),
 
             Sign(a) => {
-                out!(Select(LtF(a, LitF(0.0)), LitF(-1.0), LitF(1.0)));
+                out!(Select(LtF(a), LitF(-1.0), LitF(1.0)));
             }
             Normalize(a) if ty.size() == 1 => {
-                out!(Select(LtF(a, LitF(0.0)), LitF(-1.0), LitF(1.0)));
+                out!(Select(LtF(a), LitF(-1.0), LitF(1.0)));
             }
 
             Length(a) if graph.type_of(a).size() == 1 => {

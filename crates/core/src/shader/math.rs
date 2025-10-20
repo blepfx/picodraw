@@ -200,10 +200,6 @@ pub mod types {
                     Self(Graph::push_trace(OpValue::Pow(self.0, rhs.into().0)).unwrap())
                 }
 
-                pub fn step(self, min: impl Into<Self>) -> Self {
-                    Self(Graph::push_trace(OpValue::Step(self.0, min.into().0)).unwrap())
-                }
-
                 pub fn len(self) -> float1 {
                     float1(Graph::push_trace(OpValue::Length(self.0)).unwrap())
                 }

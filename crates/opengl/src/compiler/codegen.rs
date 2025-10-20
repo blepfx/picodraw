@@ -290,7 +290,6 @@ impl FragmentCodegen {
             Sign(x) => emit!("sign({})", x),
             Floor(x) => emit!("floor({})", x),
             Lerp(x, y, z) => emit!("mix({},{},{})", y, z, x),
-            Step(x, y) => emit!("step({},{})", y, x),
             Clamp(x, y, z) => emit!("clamp({},{},{})", x, y, z),
             Smoothstep(x, y, z) => emit!("smoothstep({},{},{})", y, z, x),
 

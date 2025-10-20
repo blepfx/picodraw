@@ -21,28 +21,10 @@ pub fn optimize_peephole<'a>(
     }
 }
 
-/// pre-chew some ops for future optimization passes
+/// constant folding and arithmetic reduction (pre static-dynamic split)
 ///
-/// namely, division is getting split into multiplication by a reciprocal, which helps with dynamic splitting and hoisting the division op into the static path
-pub fn peeper_split<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
-    use VMOp::*;
-    match *ir.0 {
-        // x/y = x*(1/y)
-        DivF(a, b, _) => IR::new(arena, MulF(a, IR::new(arena, RecipF(b, ())), ())),
-
-        // x-y = x+(-y)
-        SubF(a, b, _) => IR::new(arena, AddF(a, IR::new(arena, NegF(b, ())), ())),
-
-        // x-y = x+(-y)
-        SubI(a, b, _) => IR::new(arena, AddI(a, IR::new(arena, NegI(b, ())), ())),
-        _ => ir,
-    }
-}
-
-// whos peeping they hole rn
-/// merge ops if possible, do constant folding and other misc optimizations
 /// expects split ops (MulF(_, RecipF) instead of DivF)
-pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
+pub fn peeper_const<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
     use VMOp::*;
     match *ir.0 {
         AddF(a, b, _) => match (a.0, b.0) {
@@ -52,23 +34,6 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
 
             // constant
             (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x + y, ())),
-
-            // constant-add
-            (LitF(x, _), NegF(y, _)) => IR::new(arena, SubCF(*x, *y, ())),
-            (LitF(x, _), _) => IR::new(arena, AddCF(*x, b, ())),
-            (_, LitF(y, _)) => IR::new(arena, AddCF(*y, a, ())),
-
-            // read-add
-            (Read(x, _), _) => IR::new(arena, AddRF(*x, b, ())),
-            (_, Read(y, _)) => IR::new(arena, AddRF(*y, a, ())),
-
-            // mul-add
-            (MulF(x, y, _), NegF(z, _)) => IR::new(arena, MulSubF(*x, *y, *z, ())),
-            (MulF(x, y, _), _) => IR::new(arena, MulAddF(*x, *y, b, ())),
-
-            // subtraction
-            (_, NegF(y, _)) => IR::new(arena, SubF(a, *y, ())),
-            (NegF(y, _), _) => IR::new(arena, SubF(b, *y, ())),
 
             _ => ir,
         },
@@ -97,18 +62,6 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             // constant
             (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x * y, ())),
 
-            // constant-mul
-            (LitF(x, _), _) => IR::new(arena, MulCF(*x, b, ())),
-            (_, LitF(y, _)) => IR::new(arena, MulCF(*y, a, ())),
-
-            // read-mul
-            (Read(x, _), _) => IR::new(arena, MulRF(*x, b, ())),
-            (_, Read(y, _)) => IR::new(arena, MulRF(*y, a, ())),
-
-            // division
-            (_, RecipF(z, _)) => IR::new(arena, DivF(a, *z, ())),
-            (RecipF(z, _), _) => IR::new(arena, DivF(b, *z, ())),
-
             // sqrt(x)*sqrt(y) = sqrt(xy)
             (SqrtF(x, _), SqrtF(y, _)) => IR::new(arena, SqrtF(IR::new(arena, MulF(*x, *y, ())), ())),
 
@@ -122,12 +75,6 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             // 1/(1/x) = x
             RecipF(x, _) => *x,
 
-            // 1/(sqrt(x)) = rsqrt(x)
-            SqrtF(x, _) => IR::new(arena, RecipSqrtF(*x, ())),
-
-            // 1/(a/b) = b/a
-            DivF(a, b, _) => IR::new(arena, DivF(*b, *a, ())),
-
             _ => ir,
         },
 
@@ -137,9 +84,6 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
 
             // sqrt(x^2) = x
             MulF(x, y, _) if x == y => *x,
-
-            // sqrt(1/x) = rsqrt(x)
-            RecipF(x, _) => IR::new(arena, RecipSqrtF(*x, ())),
 
             _ => ir,
         },
@@ -162,6 +106,7 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
 
             // x^2 = x*x
             (_, LitF(2.0, _)) => IR::new(arena, MulF(a, a, ())),
+
             _ => ir,
         },
 
@@ -169,20 +114,12 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             // constant
             (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.min(*y), ())),
 
-            // constant-min
-            (LitF(x, _), _) => IR::new(arena, MinCF(*x, b, ())),
-            (_, LitF(y, _)) => IR::new(arena, MinCF(*y, a, ())),
-
             _ => ir,
         },
 
         MaxF(a, b, _) => match (a.0, b.0) {
             // constant
             (LitF(x, _), LitF(y, _)) => IR::new(arena, LitF(x.max(*y), ())),
-
-            // constant-max
-            (LitF(x, _), _) => IR::new(arena, MaxCF(*x, b, ())),
-            (_, LitF(y, _)) => IR::new(arena, MaxCF(*y, a, ())),
 
             _ => ir,
         },
@@ -194,11 +131,6 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
 
             // constant
             (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_add(*y), ())),
-
-            // constant-add
-            (LitI(x, _), NegI(y, _)) => IR::new(arena, SubCI(*x, *y, ())),
-            (LitI(x, _), _) => IR::new(arena, AddCI(*x, b, ())),
-            (_, LitI(y, _)) => IR::new(arena, AddCI(*y, a, ())),
 
             _ => ir,
         },
@@ -227,10 +159,6 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             // constant
             (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI(x.wrapping_mul(*y), ())),
 
-            // constant-mul
-            (LitI(x, _), _) => IR::new(arena, MulCI(*x, b, ())),
-            (_, LitI(y, _)) => IR::new(arena, MulCI(*y, a, ())),
-
             _ => ir,
         },
 
@@ -248,23 +176,154 @@ pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
         },
 
         MinI(a, b, _) => match (a.0, b.0) {
+            // constant
             (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI((*x).min(*y), ())),
+
+            _ => ir,
+        },
+
+        MaxI(a, b, _) => match (a.0, b.0) {
+            // constant
+            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI((*x).max(*y), ())),
+
+            _ => ir,
+        },
+
+        Select(cond, a, b, _) => match (cond.0, a.0, b.0) {
+            // constant
+            (LitI(0, _), _, _) => b,
+            (LitI(-1, _), _, _) => a,
+
+            // select(!x, a, b) = select(x, b, a)
+            (NotI(c, _), _, _) => IR::new(arena, Select(*c, b, a, ())),
+            _ => ir,
+        },
+
+        _ => ir,
+    }
+}
+
+/// pre-chew some ops for future optimization passes
+///
+/// namely, division is getting split into multiplication by a reciprocal, which helps with dynamic splitting and hoisting the division op into the static path
+pub fn peeper_split<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
+    use VMOp::*;
+    match *ir.0 {
+        // x/y = x*(1/y)
+        DivF(a, b, _) => IR::new(arena, MulF(a, IR::new(arena, RecipF(b, ())), ())),
+
+        // x-y = x+(-y)
+        SubF(a, b, _) => IR::new(arena, AddF(a, IR::new(arena, NegF(b, ())), ())),
+
+        // x-y = x+(-y)
+        SubI(a, b, _) => IR::new(arena, AddI(a, IR::new(arena, NegI(b, ())), ())),
+        _ => ir,
+    }
+}
+
+/// merge ops into more complex operations (AddF(Read, _) to AddRF, etc)
+/// expects split ops (MulF(_, RecipF) instead of DivF)
+pub fn peeper_join<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
+    use VMOp::*;
+    match *ir.0 {
+        AddF(a, b, _) => match (a.0, b.0) {
+            // constant-add
+            (LitF(x, _), NegF(y, _)) => IR::new(arena, SubCF(*x, *y, ())),
+            (LitF(x, _), _) => IR::new(arena, AddCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, AddCF(*y, a, ())),
+
+            // read-add
+            (Read(x, _), _) => IR::new(arena, AddRF(*x, b, ())),
+            (_, Read(y, _)) => IR::new(arena, AddRF(*y, a, ())),
+
+            // mul-add
+            (MulF(x, y, _), NegF(z, _)) => IR::new(arena, MulSubF(*x, *y, *z, ())),
+            (MulF(x, y, _), _) => IR::new(arena, MulAddF(*x, *y, b, ())),
+
+            // subtraction
+            (_, NegF(y, _)) => IR::new(arena, SubF(a, *y, ())),
+            (NegF(y, _), _) => IR::new(arena, SubF(b, *y, ())),
+
+            _ => ir,
+        },
+
+        MulF(a, b, _) => match (a.0, b.0) {
+            // constant-mul
+            (LitF(x, _), _) => IR::new(arena, MulCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MulCF(*y, a, ())),
+
+            // read-mul
+            (Read(x, _), _) => IR::new(arena, MulRF(*x, b, ())),
+            (_, Read(y, _)) => IR::new(arena, MulRF(*y, a, ())),
+
+            // division
+            (_, RecipF(z, _)) => IR::new(arena, DivF(a, *z, ())),
+            (RecipF(z, _), _) => IR::new(arena, DivF(b, *z, ())),
+
+            _ => ir,
+        },
+
+        RecipF(a, _) => match a.0 {
+            // 1/(sqrt(x)) = rsqrt(x)
+            SqrtF(x, _) => IR::new(arena, RecipSqrtF(*x, ())),
+
+            // 1/(a/b) = b/a
+            DivF(a, b, _) => IR::new(arena, DivF(*b, *a, ())),
+
+            _ => ir,
+        },
+
+        SqrtF(a, _) => match a.0 {
+            // sqrt(1/x) = rsqrt(x)
+            RecipF(x, _) => IR::new(arena, RecipSqrtF(*x, ())),
+
+            _ => ir,
+        },
+
+        MinF(a, b, _) => match (a.0, b.0) {
+            // constant-min
+            (LitF(x, _), _) => IR::new(arena, MinCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MinCF(*y, a, ())),
+
+            _ => ir,
+        },
+
+        MaxF(a, b, _) => match (a.0, b.0) {
+            // constant-max
+            (LitF(x, _), _) => IR::new(arena, MaxCF(*x, b, ())),
+            (_, LitF(y, _)) => IR::new(arena, MaxCF(*y, a, ())),
+
+            _ => ir,
+        },
+
+        AddI(a, b, _) => match (a.0, b.0) {
+            // constant-add
+            (LitI(x, _), NegI(y, _)) => IR::new(arena, SubCI(*x, *y, ())),
+            (LitI(x, _), _) => IR::new(arena, AddCI(*x, b, ())),
+            (_, LitI(y, _)) => IR::new(arena, AddCI(*y, a, ())),
+
+            _ => ir,
+        },
+
+        MulI(a, b, _) => match (a.0, b.0) {
+            // constant-mul
+            (LitI(x, _), _) => IR::new(arena, MulCI(*x, b, ())),
+            (_, LitI(y, _)) => IR::new(arena, MulCI(*y, a, ())),
+
+            _ => ir,
+        },
+
+        MinI(a, b, _) => match (a.0, b.0) {
+            // constant-min
             (LitI(x, _), _) => IR::new(arena, MinCI(*x, b, ())),
             (_, LitI(y, _)) => IR::new(arena, MinCI(*y, a, ())),
             _ => ir,
         },
 
         MaxI(a, b, _) => match (a.0, b.0) {
-            (LitI(x, _), LitI(y, _)) => IR::new(arena, LitI((*x).max(*y), ())),
+            // constant-max
             (LitI(x, _), _) => IR::new(arena, MaxCI(*x, b, ())),
             (_, LitI(y, _)) => IR::new(arena, MaxCI(*y, a, ())),
-            _ => ir,
-        },
-
-        Select(cond, a, b, _) => match (cond.0, a.0, b.0) {
-            (LitI(0, _), _, _) => b,
-            (LitI(-1, _), _, _) => a,
-            (NotI(c, _), _, _) => IR::new(arena, Select(*c, b, a, ())),
             _ => ir,
         },
 

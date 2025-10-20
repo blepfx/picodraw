@@ -50,7 +50,6 @@ pub enum OpValue {
     Lerp(OpAddr, OpAddr, OpAddr),
     Select(OpAddr, OpAddr, OpAddr),
     Smoothstep(OpAddr, OpAddr, OpAddr),
-    Step(OpAddr, OpAddr),
 
     Eq(OpAddr, OpAddr),
     Ne(OpAddr, OpAddr),
@@ -200,7 +199,7 @@ impl OpValue {
             Literal(OpLiteral::Int(_)) => I1,
             Literal(OpLiteral::Bool(_)) => Boolean,
 
-            Add(a, b) | Sub(a, b) | Mul(a, b) | Div(a, b) | Rem(a, b) | Min(a, b) | Max(a, b) | Step(a, b) => {
+            Add(a, b) | Sub(a, b) | Mul(a, b) | Div(a, b) | Rem(a, b) | Min(a, b) | Max(a, b) => {
                 let l = arg(a)?;
                 let r = arg(b)?;
                 if l.is_numeric() && l == r {
@@ -469,7 +468,6 @@ impl OpValue {
             | Rem(a, b)
             | Min(a, b)
             | Max(a, b)
-            | Step(a, b)
             | Dot(a, b)
             | Cross(a, b)
             | Atan2(a, b)

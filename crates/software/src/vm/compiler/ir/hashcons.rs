@@ -40,12 +40,10 @@ impl<'a> PartialEq for IRKey<'a> {
             | (AndI(a, b, _), AndI(x, y, _))
             | (OrI(a, b, _), OrI(x, y, _))
             | (XorI(a, b, _), XorI(x, y, _))
-            | (EqI(a, b, _), EqI(x, y, _))
             | (AddF(a, b, _), AddF(x, y, _))
             | (MulF(a, b, _), MulF(x, y, _))
             | (MaxF(a, b, _), MaxF(x, y, _))
-            | (MinF(a, b, _), MinF(x, y, _))
-            | (EqF(a, b, _), EqF(x, y, _)) => (a == x && b == y) || (a == y && b == x),
+            | (MinF(a, b, _), MinF(x, y, _)) => (a == x && b == y) || (a == y && b == x),
 
             _ => self.0 == other.0,
         }
@@ -64,12 +62,10 @@ impl<'a> Hash for IRKey<'a> {
             | AndI(a, b, _)
             | OrI(a, b, _)
             | XorI(a, b, _)
-            | EqI(a, b, _)
             | AddF(a, b, _)
             | MulF(a, b, _)
             | MaxF(a, b, _)
-            | MinF(a, b, _)
-            | EqF(a, b, _) => {
+            | MinF(a, b, _) => {
                 (a.0 as *const _ as usize ^ b.0 as *const _ as usize).hash(state);
             }
 
