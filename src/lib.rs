@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 
-pub use picodraw_core::*;
+pub use picodraw_core2::*;
 #[cfg(feature = "opengl")]
-pub use picodraw_opengl as opengl;
+pub use picodraw_opengl2 as opengl;
 #[cfg(feature = "software")]
-pub use picodraw_software as software;
+pub use picodraw_software2 as software;

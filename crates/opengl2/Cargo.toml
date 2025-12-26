@@ -1,0 +1,8 @@
+[package]
+name = "picodraw-opengl2"
+version = "1.0.0"
+edition = "2024"
+
+[dependencies]
+picodraw-core2 = { path = "../core2" }
+glow = { workspace = true }

@@ -195,8 +195,8 @@ version = "1.0.0"
 dependencies = [
  "gungraun",
  "image",
- "picodraw-core",
- "picodraw-opengl",
+ "picodraw-core2",
+ "picodraw-opengl2",
  "picodraw-software",
  "pugl-rs",
  "yansi",
@@ -207,12 +207,24 @@ name = "picodraw-core"
 version = "1.0.0"
 
 [[package]]
+name = "picodraw-core2"
+version = "0.1.0"
+
+[[package]]
 name = "picodraw-opengl"
 version = "1.0.0"
 dependencies = [
  "glow",
  "picodraw-core",
  "slotmap",
+]
+
+[[package]]
+name = "picodraw-opengl2"
+version = "1.0.0"
+dependencies = [
+ "glow",
+ "picodraw-core2",
 ]
 
 [[package]]
