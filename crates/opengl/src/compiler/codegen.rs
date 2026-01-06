@@ -1,11 +1,370 @@
-use super::{CompilerBufferMode, CompilerOptions};
-use picodraw_core::{TextureFilter, graph::*};
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Write,
-};
+#![allow(clippy::single_char_add_str)]
 
-const VERTEX_SHADER: &str = r#"
+use super::{
+    CompilerBufferMode, CompilerOptions, CompilerShader,
+    analysis::{GlslExpr, GlslStmt, GlslType},
+};
+use picodraw_core::TextureFilter;
+use std::{collections::HashMap, fmt::Write};
+
+pub struct ShaderContext<'a> {
+    pub metadata: &'a CompilerShader,
+    pub expressions: &'a HashMap<u32, GlslExpr>,
+    pub statements: &'a Vec<GlslStmt>,
+}
+
+pub fn emit_shader_function(buffer: &mut String, shader: &ShaderContext) {
+    write!(buffer, "void s_{:x}(){{", shader.metadata.index).ok();
+
+    for stmt in shader.statements {
+        emit_shader_statement(buffer, shader, stmt);
+    }
+
+    buffer.push_str("}");
+}
+
+pub fn emit_shader_statement(buffer: &mut String, shader: &ShaderContext, statement: &GlslStmt) {
+    match statement {
+        GlslStmt::DeclareVars { type_, count } => {
+            let type_str = match type_ {
+                GlslType::Bool1 => "bool",
+                GlslType::Int1 => "int",
+                GlslType::Int2 => "ivec2",
+                GlslType::Int4 => "ivec4",
+                GlslType::Float1 => "float",
+                GlslType::Float2 => "vec2",
+                GlslType::Float4 => "vec4",
+            };
+
+            write!(buffer, "{} ", type_str).ok();
+            for i in 0..*count {
+                emit_shader_variable(buffer, i, *type_);
+                if i + 1 < *count {
+                    buffer.push_str(",");
+                }
+            }
+            buffer.push_str(";");
+        }
+
+        GlslStmt::AssignExpr { var, expr, type_ } => {
+            emit_shader_variable(buffer, *var, *type_);
+            buffer.push_str("=");
+            emit_shader_expression(buffer, shader, expr);
+            buffer.push_str(";");
+        }
+
+        GlslStmt::ReturnExpr { expr } => {
+            buffer.push_str("outColor=");
+            emit_shader_expression(buffer, shader, expr);
+            buffer.push_str(";");
+        }
+
+        GlslStmt::Branch {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            buffer.push_str("if(");
+            emit_shader_expression(buffer, shader, condition);
+            buffer.push_str("){");
+            for stmt in then_branch {
+                emit_shader_statement(buffer, shader, stmt);
+            }
+            buffer.push_str("}else{");
+            for stmt in else_branch {
+                emit_shader_statement(buffer, shader, stmt);
+            }
+            buffer.push_str("}");
+        }
+    }
+}
+
+// name of var if not inline
+pub fn emit_shader_variable(buffer: &mut String, register: u32, type_: GlslType) {
+    match type_ {
+        GlslType::Bool1 => write!(buffer, "b{:x}", register).ok(),
+        GlslType::Int1 => write!(buffer, "i{:x}", register).ok(),
+        GlslType::Int2 => write!(buffer, "iY{:x}", register).ok(),
+        GlslType::Int4 => write!(buffer, "iW{:x}", register).ok(),
+        GlslType::Float1 => write!(buffer, "f{:x}", register).ok(),
+        GlslType::Float2 => write!(buffer, "fY{:x}", register).ok(),
+        GlslType::Float4 => write!(buffer, "fW{:x}", register).ok(),
+    };
+}
+
+// operation over values, can be inlined or assigned to a var
+pub fn emit_shader_expression(buffer: &mut String, shader: &ShaderContext, expr: &GlslExpr) {
+    match expr {
+        GlslExpr::LitBool(true) => buffer.push_str("true"),
+        GlslExpr::LitBool(false) => buffer.push_str("false"),
+        GlslExpr::LitFloat(x) => match f32::from_bits(*x) {
+            f32::INFINITY => buffer.push_str("4.6e+18"),
+            f32::NEG_INFINITY => buffer.push_str("(-4.6e+18)"),
+            x if x.is_nan() => buffer.push_str("(0.0/0.0)"),
+            x if x.is_sign_positive() => {
+                let _ = write!(buffer, "{:?}", x);
+            }
+            x => {
+                let _ = write!(buffer, "({:?})", x);
+            }
+        },
+
+        GlslExpr::LitInt(x) if !x.is_negative() => {
+            let _ = write!(buffer, "{:?}", x);
+        }
+        GlslExpr::LitInt(x) => {
+            let _ = write!(buffer, "({:?})", x);
+        }
+
+        GlslExpr::Position => buffer.push_str("fragPos"),
+        GlslExpr::Resolution => buffer.push_str("uResolution"),
+        GlslExpr::QuadBounds => buffer.push_str("fragBounds"),
+
+        GlslExpr::Neg(a) | GlslExpr::INot(a) | GlslExpr::BNot(a) => {
+            let op = match expr {
+                GlslExpr::Neg(_) => "-",
+                GlslExpr::INot(_) => "~",
+                GlslExpr::BNot(_) => "!",
+                _ => unreachable!(),
+            };
+
+            buffer.push_str("(");
+            buffer.push_str(op);
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+            buffer.push_str(")");
+        }
+
+        GlslExpr::Add(a, b)
+        | GlslExpr::Sub(a, b)
+        | GlslExpr::Mul(a, b)
+        | GlslExpr::Div(a, b)
+        | GlslExpr::IRem(a, b)
+        | GlslExpr::BAnd(a, b)
+        | GlslExpr::BOr(a, b)
+        | GlslExpr::IXor(a, b)
+        | GlslExpr::IAnd(a, b)
+        | GlslExpr::IOr(a, b)
+        | GlslExpr::IShl(a, b)
+        | GlslExpr::IShr(a, b)
+        | GlslExpr::Eq(a, b)
+        | GlslExpr::Ne(a, b)
+        | GlslExpr::Lt(a, b)
+        | GlslExpr::Gt(a, b)
+        | GlslExpr::Le(a, b)
+        | GlslExpr::Ge(a, b) => {
+            let op = match expr {
+                GlslExpr::Add(_, _) => "+",
+                GlslExpr::Sub(_, _) => "-",
+                GlslExpr::Mul(_, _) => "*",
+                GlslExpr::Div(_, _) => "/",
+                GlslExpr::IRem(_, _) => "%",
+                GlslExpr::BAnd(_, _) => "&&",
+                GlslExpr::BOr(_, _) => "||",
+                GlslExpr::IXor(_, _) => "^",
+                GlslExpr::IAnd(_, _) => "&",
+                GlslExpr::IOr(_, _) => "|",
+                GlslExpr::IShl(_, _) => "<<",
+                GlslExpr::IShr(_, _) => ">>",
+                GlslExpr::Eq(_, _) => "==",
+                GlslExpr::Ne(_, _) => "!=",
+                GlslExpr::Lt(_, _) => "<",
+                GlslExpr::Gt(_, _) => ">",
+                GlslExpr::Le(_, _) => "<=",
+                GlslExpr::Ge(_, _) => ">=",
+                _ => unreachable!(),
+            };
+
+            buffer.push_str("(");
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+            buffer.push_str(op);
+            emit_shader_expression(buffer, shader, &shader.expressions[b]);
+            buffer.push_str(")");
+        }
+
+        GlslExpr::Abs(a)
+        | GlslExpr::Sign(a)
+        | GlslExpr::Sin(a)
+        | GlslExpr::Cos(a)
+        | GlslExpr::Tan(a)
+        | GlslExpr::Asin(a)
+        | GlslExpr::Acos(a)
+        | GlslExpr::Atan(a)
+        | GlslExpr::Sqrt(a)
+        | GlslExpr::Log(a)
+        | GlslExpr::Exp(a)
+        | GlslExpr::Floor(a)
+        | GlslExpr::DerivX(a)
+        | GlslExpr::DerivY(a)
+        | GlslExpr::AsFloat(a)
+        | GlslExpr::AsInt(a) => {
+            let func = match expr {
+                GlslExpr::Abs(_) => "abs",
+                GlslExpr::Sign(_) => "sign",
+                GlslExpr::Sin(_) => "sin",
+                GlslExpr::Cos(_) => "cos",
+                GlslExpr::Tan(_) => "tan",
+                GlslExpr::Asin(_) => "asin",
+                GlslExpr::Acos(_) => "acos",
+                GlslExpr::Atan(_) => "atan",
+                GlslExpr::Sqrt(_) => "sqrt",
+                GlslExpr::Log(_) => "log",
+                GlslExpr::Exp(_) => "exp",
+                GlslExpr::Floor(_) => "floor",
+                GlslExpr::DerivX(_) => "dFdx",
+                GlslExpr::DerivY(_) => "dFdy",
+                GlslExpr::AsFloat(_) => "float",
+                GlslExpr::AsInt(_) => "int",
+                _ => unreachable!(),
+            };
+
+            buffer.push_str(func);
+            buffer.push_str("(");
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+            buffer.push_str(")");
+        }
+
+        GlslExpr::Min(a, b)
+        | GlslExpr::Max(a, b)
+        | GlslExpr::Pow(a, b)
+        | GlslExpr::Atan2(a, b)
+        | GlslExpr::FRem(a, b) => {
+            let func = match expr {
+                GlslExpr::Min(_, _) => "min",
+                GlslExpr::Max(_, _) => "max",
+                GlslExpr::Pow(_, _) => "pow",
+                GlslExpr::Atan2(_, _) => "atan",
+                GlslExpr::FRem(_, _) => "mod",
+                _ => unreachable!(),
+            };
+
+            buffer.push_str(func);
+            buffer.push_str("(");
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+            buffer.push_str(",");
+            emit_shader_expression(buffer, shader, &shader.expressions[b]);
+            buffer.push_str(")");
+        }
+
+        GlslExpr::Mix(a, b, c) => {
+            buffer.push_str("mix(");
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+            buffer.push_str(",");
+            emit_shader_expression(buffer, shader, &shader.expressions[b]);
+            buffer.push_str(",");
+            emit_shader_expression(buffer, shader, &shader.expressions[c]);
+            buffer.push_str(")");
+        }
+
+        GlslExpr::Select(a, b, c) => {
+            buffer.push_str("(");
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+            buffer.push_str("?");
+            emit_shader_expression(buffer, shader, &shader.expressions[b]);
+            buffer.push_str(":");
+            emit_shader_expression(buffer, shader, &shader.expressions[c]);
+            buffer.push_str(")");
+        }
+
+        GlslExpr::Vec4([a, b, c, d]) => {
+            buffer.push_str("vec4(");
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+            buffer.push_str(",");
+            emit_shader_expression(buffer, shader, &shader.expressions[b]);
+            buffer.push_str(",");
+            emit_shader_expression(buffer, shader, &shader.expressions[c]);
+            buffer.push_str(",");
+            emit_shader_expression(buffer, shader, &shader.expressions[d]);
+            buffer.push_str(")");
+        }
+
+        GlslExpr::Swizzle1(a, b) => {
+            emit_shader_expression(buffer, shader, &shader.expressions[a]);
+
+            match b {
+                0 => buffer.push_str(".x"),
+                1 => buffer.push_str(".y"),
+                2 => buffer.push_str(".z"),
+                3 => buffer.push_str(".w"),
+                _ => {}
+            }
+        }
+
+        GlslExpr::DataFloat(offset) => {
+            write!(buffer, "df({})", offset).ok();
+        }
+
+        GlslExpr::DataInt(offset) => {
+            write!(buffer, "di({})", offset).ok();
+        }
+
+        GlslExpr::TextureSize(slot) => {
+            let texture_id = shader.metadata.texture_slots[*slot as usize];
+            write!(buffer, "textureSize(uTextures[{}],0)", texture_id).ok();
+        }
+
+        GlslExpr::TextureSample(slot, filter, x, y) => {
+            let texture_id = shader.metadata.texture_slots[*slot as usize];
+            let filter_str = match filter {
+                TextureFilter::Linear => "sl",
+                TextureFilter::Nearest => "sn",
+            };
+
+            write!(buffer, "{}(uTextures[{}", filter_str, texture_id).ok();
+            buffer.push_str("],vec2(");
+            emit_shader_expression(buffer, shader, &shader.expressions[x]);
+            buffer.push_str(",");
+            emit_shader_expression(buffer, shader, &shader.expressions[y]);
+            buffer.push_str("))");
+        }
+
+        GlslExpr::Variable(var, ty) => {
+            emit_shader_variable(buffer, *var, *ty);
+        }
+
+        GlslExpr::Output(_) => {}
+    }
+}
+
+pub fn emit_fragment_header(buffer: &mut String, options: &CompilerOptions) {
+    emit_header_version_decl(buffer, options.glsl_version, options.buffer_mode);
+    emit_header_buffer_binding(buffer, options.buffer_mode);
+    emit_header_texture_samplers(buffer, options.texture_units);
+    buffer.push_str(
+        r#"precision highp float;
+precision highp int;
+
+uniform vec2 uResolution;
+uniform int uBufferDataOffset;
+
+flat in int fragType;
+flat in int fragData;
+flat in vec4 fragBounds;
+in vec2 fragPos;
+out vec4 outColor;
+
+vec4 sl(in sampler2D s,vec2 i){return textureLod(s,i/textureSize(s,0),0);}
+vec4 sn(in sampler2D s,vec2 i){return texelFetch(s,ivec2(i),0);}
+vec4 df(int i){return readF(uBufferDataOffset+fragData+i);}
+ivec4 di(int i){return ivec4(readU(uBufferDataOffset+fragData+i));}"#,
+    );
+}
+
+pub fn emit_fragment_dispatch(buffer: &mut String, branches: impl Iterator<Item = u32>) {
+    buffer.push_str("void main(){switch(fragType){");
+
+    for index in branches {
+        write!(buffer, "case {index}:s_{index:x}();break;").ok();
+    }
+
+    buffer.push_str("default:outColor=vec4(1.0,0.0,1.0,1.0);break;}}");
+}
+
+pub fn emit_vertex_program(buffer: &mut String, options: &CompilerOptions) {
+    emit_header_version_decl(buffer, options.glsl_version, options.buffer_mode);
+    emit_header_buffer_binding(buffer, options.buffer_mode);
+
+    buffer.push_str(
+        r#"
 precision highp float;
 precision highp int;
 
@@ -16,393 +375,27 @@ uniform int uBufferListOffset;
 flat out int fragType;
 flat out int fragData;
 flat out vec4 fragBounds;
-out vec2 fragPosition;
+out vec2 fragPos;
 
 void main() {
     int triangleId = gl_VertexID / 3;
     int vertexId = gl_VertexID % 3;
     int quadId = triangleId >> 1;
     int cornerId = (triangleId & 1) + vertexId;
-
-    uvec4 packedData = ri(uBufferListOffset + quadId);
+    uvec4 packedData = readU(uBufferListOffset + quadId);
     vec2 topLeft = vec2(float(packedData.x & 65535u), float((packedData.x >> 16) & 65535u));
     vec2 bottomRight = vec2(float(packedData.y & 65535u), float((packedData.y >> 16) & 65535u));
     vec2 pos = vec2(float(cornerId >> 1), float(cornerId & 1)) * (bottomRight - topLeft) + topLeft;
-    
     gl_Position = vec4((2 * pos / uResolution - 1) * vec2(1, uScreenTarget ? -1 : 1), 0, 1);
-    fragPosition = pos;
     fragBounds = vec4(topLeft, bottomRight);
+    fragPos = pos;
     fragType = int(packedData.z);
     fragData = int(packedData.w);    
-}"#;
-
-const FRAGMENT_SHADER_HEADER: &str = r#"
-precision highp float;
-precision highp int;
-
-uniform vec2 uResolution;
-uniform int uBufferDataOffset;
-
-flat in int fragType;
-flat in int fragData;
-flat in vec4 fragBounds;
-in vec2 fragPosition;
-out vec4 outColor;
-
-int u2i(uint x,uint m){return int(x)-int((x&m)<<1);}
-vec4 txl(in sampler2D s,vec2 i){return textureLod(s,i/textureSize(s,0),0);}
-vec4 txn(in sampler2D s,vec2 i){return texelFetch(s,ivec2(i),0);}
-vec4 df(int i){return rf(uBufferDataOffset+fragData+i);}
-uvec4 di(int i){return ri(uBufferDataOffset+fragData+i);}
-void main(){
-"#;
-
-pub fn generate_vertex_shader(options: &CompilerOptions) -> String {
-    let mut buffer = String::new();
-    emit_version_header(&mut buffer, options.glsl_version, options.buffer_mode);
-    emit_buffer_binding(&mut buffer, options.buffer_mode);
-    buffer.push_str(VERTEX_SHADER);
-    buffer
+}"#,
+    );
 }
 
-pub struct FragmentCodegen {
-    buffer: String,
-
-    graph_first: bool,
-    graph_atoms: HashMap<OpAddr, String>,
-    graph_inputs: VecDeque<u32>,
-    graph_textures: VecDeque<u32>,
-}
-
-impl FragmentCodegen {
-    pub fn new(options: &CompilerOptions) -> Self {
-        Self {
-            buffer: {
-                let mut buffer = String::new();
-                emit_version_header(&mut buffer, options.glsl_version, options.buffer_mode);
-                emit_buffer_binding(&mut buffer, options.buffer_mode);
-                emit_texture_samplers(&mut buffer, options.texture_units);
-                buffer.push_str(FRAGMENT_SHADER_HEADER);
-                buffer
-            },
-            graph_first: true,
-            graph_atoms: HashMap::new(),
-            graph_inputs: VecDeque::new(),
-            graph_textures: VecDeque::new(),
-        }
-    }
-
-    pub fn emit_graph_begin(&mut self, branch_id: u32) {
-        if !self.graph_first {
-            write!(&mut self.buffer, "else ").ok();
-        }
-
-        write!(&mut self.buffer, "if(fragType == {}){{\n", branch_id).ok();
-    }
-
-    pub fn emit_graph_input(&mut self, offset: u32) {
-        self.graph_inputs.push_back(offset);
-    }
-
-    pub fn emit_graph_texture(&mut self, index: u32) {
-        self.graph_textures.push_back(index);
-    }
-
-    pub fn emit_graph_end(&mut self, graph: &Graph) {
-        write!(
-            &mut self.buffer,
-            "outColor={};\n}}",
-            self.graph_atoms.get(&graph.output()).expect("codegen error")
-        )
-        .ok();
-
-        self.graph_first = false;
-        self.graph_atoms.clear();
-        self.graph_inputs.clear();
-    }
-
-    pub fn emit_atom(&mut self, graph: &Graph, op: OpAddr) {
-        let inline = match graph.value_of(op) {
-            OpValue::Literal(_) => true,
-            OpValue::Position => true,
-            OpValue::Resolution => true,
-            OpValue::QuadStart => true,
-            OpValue::QuadEnd => true,
-            OpValue::Input(OpInput::Texture) => true,
-            _ => {
-                let dependents = (graph.output() == op) as usize + graph.dependents_of(op).count();
-                dependents < 2
-            }
-        };
-
-        if inline {
-            let result = self.emit_atom_value(graph, op);
-            self.graph_atoms.insert(op, result);
-        } else {
-            let ident = self.emit_ident(op);
-            let result = self.emit_atom_value(graph, op);
-            let typestr = self.emit_type(graph.type_of(op));
-
-            write!(&mut self.buffer, "{} {}={};\n", typestr, ident, result).ok();
-            self.graph_atoms.insert(op, ident);
-        }
-    }
-
-    pub fn finish(mut self) -> String {
-        if self.graph_first {
-            self.buffer.push_str("outColor=vec4(1,1,0,1);\n}");
-        } else {
-            self.buffer.push_str("else{\noutColor=vec4(1,1,0,1);\n}\n}");
-        }
-
-        self.buffer
-    }
-
-    fn emit_ident(&mut self, id: OpAddr) -> String {
-        format!("_{:x}", id)
-    }
-
-    fn emit_type(&mut self, ty: OpType) -> &'static str {
-        match ty {
-            OpType::F1 => "float",
-            OpType::F2 => "vec2",
-            OpType::F3 => "vec3",
-            OpType::F4 => "vec4",
-            OpType::I1 => "int",
-            OpType::I2 => "ivec2",
-            OpType::I3 => "ivec3",
-            OpType::I4 => "ivec4",
-            OpType::Boolean => "bool",
-            _ => unreachable!(),
-        }
-    }
-
-    fn emit_atom_value(&mut self, graph: &Graph, op: OpAddr) -> String {
-        use OpType::*;
-        use OpValue::*;
-
-        macro_rules! emit {
-            ($lit:literal, $x:ident) => {{ format!($lit, self.graph_atoms.get(&$x).expect("codegen error")) }};
-
-            ($lit:literal, $x:ident, $y:ident) => {{
-                format!(
-                    $lit,
-                    self.graph_atoms.get(&$x).expect("codegen error"),
-                    self.graph_atoms.get(&$y).expect("codegen error")
-                )
-            }};
-
-            ($lit:literal, $x:ident, $y:ident, $z:ident) => {{
-                format!(
-                    $lit,
-                    self.graph_atoms.get(&$x).expect("codegen error"),
-                    self.graph_atoms.get(&$y).expect("codegen error"),
-                    self.graph_atoms.get(&$z).expect("codegen error")
-                )
-            }};
-
-            ($lit:literal, $x:ident, $y:ident, $z:ident, $w:ident) => {{
-                format!(
-                    $lit,
-                    self.graph_atoms.get(&$x).expect("codegen error"),
-                    self.graph_atoms.get(&$y).expect("codegen error"),
-                    self.graph_atoms.get(&$z).expect("codegen error"),
-                    self.graph_atoms.get(&$w).expect("codegen error")
-                )
-            }};
-        }
-
-        let ty = graph.type_of(op);
-        match graph.value_of(op) {
-            Position => format!("fragPosition"),
-            Resolution => format!("uResolution"),
-            QuadStart => format!("fragBounds.xy"),
-            QuadEnd => format!("fragBounds.zw"),
-
-            Input(OpInput::F32) => {
-                let offset = self.graph_inputs.pop_front().expect("codegen error");
-                self.emit_input_float(offset)
-            }
-            Input(OpInput::I32) => {
-                let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.emit_input_int(offset, 4))
-            }
-            Input(OpInput::I16) => {
-                let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2i({},32768u)", self.emit_input_int(offset, 2))
-            }
-            Input(OpInput::I8) => {
-                let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("u2i({},128u)", self.emit_input_int(offset, 1))
-            }
-            Input(OpInput::U16) => {
-                let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.emit_input_int(offset, 2))
-            }
-            Input(OpInput::U8) => {
-                let offset = self.graph_inputs.pop_front().expect("codegen error");
-                format!("int({})", self.emit_input_int(offset, 1))
-            }
-            Input(OpInput::Texture) => {
-                let index = self.graph_textures.pop_front().expect("codegen error");
-                format!("{}", index)
-            }
-
-            Literal(x) => match x {
-                OpLiteral::Float(f32::INFINITY) => format!("4.6e+18"), //2^62
-                OpLiteral::Float(f32::NEG_INFINITY) => format!("(-4.6e+18)"),
-                OpLiteral::Float(x) if x.is_nan() => format!("(0.0/0.0)"),
-                OpLiteral::Float(x) if x.is_sign_positive() => format!("{:?}", x),
-                OpLiteral::Float(x) => format!("({:?})", x),
-                OpLiteral::Int(x) if x >= 0 => format!("{:?}", x),
-                OpLiteral::Int(x) => format!("({:?})", x),
-                OpLiteral::Bool(true) => format!("true"),
-                OpLiteral::Bool(false) => format!("false"),
-            },
-
-            Add(x, y) => emit!("({}+{})", x, y),
-            Sub(x, y) => emit!("({}-{})", x, y),
-            Mul(x, y) => emit!("({}*{})", x, y),
-            Div(x, y) => emit!("({}/{})", x, y),
-            Rem(x, y) => emit!("mod({},{})", x, y),
-
-            Dot(x, y) if graph.type_of(x) == F1 => {
-                emit!("({}*{})", x, y)
-            }
-
-            Dot(x, y) => emit!("dot({},{})", x, y),
-            Cross(x, y) => emit!("cross({},{})", x, y),
-            Neg(x) => emit!("(-{})", x),
-            Sin(x) => emit!("sin({})", x),
-            Cos(x) => emit!("cos({})", x),
-            Tan(x) => emit!("tan({})", x),
-            Asin(x) => emit!("asin({})", x),
-            Acos(x) => emit!("acos({})", x),
-            Atan(x) => emit!("atan({})", x),
-            Atan2(x, y) => emit!("atan({},{})", x, y),
-            Sqrt(x) => emit!("sqrt({})", x),
-            Pow(x, y) => emit!("pow({},{})", x, y),
-            Exp(x) => emit!("exp({})", x),
-            Ln(x) => emit!("log({})", x),
-            Min(x, y) => emit!("min({},{})", x, y),
-            Max(x, y) => emit!("max({},{})", x, y),
-            Abs(x) => emit!("abs({})", x),
-            Sign(x) => emit!("sign({})", x),
-            Floor(x) => emit!("floor({})", x),
-            Lerp(x, y, z) => emit!("mix({},{},{})", y, z, x),
-            Clamp(x, y, z) => emit!("clamp({},{},{})", x, y, z),
-            Smoothstep(x, y, z) => emit!("smoothstep({},{},{})", y, z, x),
-
-            Select(x, y, z) => emit!("({}?{}:{})", x, y, z),
-
-            Eq(x, y) => emit!("({}=={})", x, y),
-            Ne(x, y) => emit!("({}!={})", x, y),
-            Lt(x, y) => emit!("({}<{})", x, y),
-            Le(x, y) => emit!("({}<={})", x, y),
-            Gt(x, y) => emit!("({}>{})", x, y),
-            Ge(x, y) => emit!("({}>={})", x, y),
-
-            And(x, y) if ty == Boolean => emit!("({}&&{})", x, y),
-            And(x, y) => emit!("({}&{})", x, y),
-
-            Or(x, y) if ty == Boolean => emit!("({}||{})", x, y),
-            Or(x, y) => emit!("({}|{})", x, y),
-
-            Xor(x, y) if ty == Boolean => emit!("({}!={})", x, y),
-            Xor(x, y) => emit!("({}^{})", x, y),
-
-            Shl(x, y) => emit!("({}<<{})", x, y),
-            Shr(x, y) => emit!("({}>>{})", x, y),
-
-            Not(x) if ty == Boolean => emit!("(!{})", x),
-            Not(x) => emit!("(~{})", x),
-
-            Vec2(x, y) if ty == F2 => emit!("vec2({},{})", x, y),
-            Vec2(x, y) if ty == I2 => emit!("ivec2({},{})", x, y),
-
-            Vec3(x, y, z) if ty == F3 => emit!("vec3({},{},{})", x, y, z),
-            Vec3(x, y, z) if ty == I3 => emit!("ivec3({},{},{})", x, y, z),
-
-            Vec4(x, y, z, w) if ty == F4 => emit!("vec4({},{},{},{})", x, y, z, w),
-            Vec4(x, y, z, w) if ty == I4 => emit!("ivec4({},{},{},{})", x, y, z, w),
-
-            Splat2(x) if ty == F2 => emit!("vec2({})", x),
-            Splat2(x) if ty == I2 => emit!("ivec2({})", x),
-
-            Splat3(x) if ty == F3 => emit!("vec3({})", x),
-            Splat3(x) if ty == I3 => emit!("ivec3({})", x),
-
-            Splat4(x) if ty == F4 => emit!("vec4({})", x),
-            Splat4(x) if ty == I4 => emit!("ivec4({})", x),
-
-            CastFloat(x) if ty == F1 => emit!("float({})", x),
-            CastFloat(x) if ty == F2 => emit!("vec2({})", x),
-            CastFloat(x) if ty == F3 => emit!("vec3({})", x),
-            CastFloat(x) if ty == F4 => emit!("vec4({})", x),
-
-            CastInt(x) if ty == I1 => emit!("int({})", x),
-            CastInt(x) if ty == I2 => emit!("ivec2({})", x),
-            CastInt(x) if ty == I3 => emit!("ivec3({})", x),
-            CastInt(x) if ty == I4 => emit!("ivec4({})", x),
-
-            ExtractX(x) => emit!("{}.x", x),
-            ExtractY(x) => emit!("{}.y", x),
-            ExtractZ(x) => emit!("{}.z", x),
-            ExtractW(x) => emit!("{}.w", x),
-
-            Normalize(x) if ty == F1 => emit!("sign({})", x),
-            Length(x) if graph.type_of(x) == F1 => {
-                emit!("abs({})", x)
-            }
-
-            Normalize(x) => emit!("normalize({})", x),
-            Length(x) => emit!("length({})", x),
-
-            DerivX(x) => emit!("dFdx({})", x),
-            DerivY(x) => emit!("dFdy({})", x),
-            DerivWidth(x) => emit!("fwidth({})", x),
-
-            TextureSample(x, y, TextureFilter::Linear) => emit!("txl(uTextures[{}],{})", x, y),
-            TextureSample(x, y, TextureFilter::Nearest) => emit!("txn(uTextures[{}],{})", x, y),
-            TextureSize(x) => emit!("textureSize(uTextures[{}],0)", x),
-
-            op => panic!("unreachable op: op={:?}; ty={:?}", op, ty),
-        }
-    }
-
-    fn emit_input_int(&mut self, offset: u32, size: u32) -> String {
-        let (b16, b4, b1) = (offset >> 4, (offset >> 2) & 3, (offset & 3) << 3);
-        let b4 = match b4 {
-            0 => "x",
-            1 => "y",
-            2 => "z",
-            _ => "w",
-        };
-
-        match size {
-            1 if b1 == 0 => format!("(di({}).{}&255u)", b16, b4),
-            2 if b1 == 0 => format!("(di({}).{}&65535u)", b16, b4),
-            1 => format!("(di({}).{}>>{}u)&255u", b16, b4, b1),
-            2 => format!("(di({}).{}>>{}u)&65535u", b16, b4, b1),
-            4 => format!("di({}).{}", b16, b4),
-            _ => unreachable!(),
-        }
-    }
-
-    fn emit_input_float(&mut self, offset: u32) -> String {
-        let (b16, b4) = (offset >> 4, (offset >> 2) & 3);
-        let b4 = match b4 {
-            0 => "x",
-            1 => "y",
-            2 => "z",
-            _ => "w",
-        };
-
-        format!("df({}).{}", b16, b4)
-    }
-}
-
-fn emit_buffer_binding(buffer: &mut String, mode: CompilerBufferMode) {
+pub fn emit_header_buffer_binding(buffer: &mut String, mode: CompilerBufferMode) {
     match mode {
         CompilerBufferMode::UniformBlock { size_bytes } => {
             let size = size_bytes / size_of::<[u32; 4]>() as u32;
@@ -412,10 +405,10 @@ fn emit_buffer_binding(buffer: &mut String, mode: CompilerBufferMode) {
                 "
 layout(std140) uniform uBufferU32 {{uvec4 bufferU32[{}];}};
 layout(std140) uniform uBufferF32 {{vec4 bufferF32[{}];}};
-uvec4 ri(int i){{return bufferU32[i];}};
-vec4 rf(int i){{return bufferF32[i];}};
+uvec4 readU(int i){{return bufferU32[i%{}];}};
+vec4 readF(int i){{return bufferF32[i%{}];}};
                 ",
-                size, size
+                size, size, size, size
             )
             .ok();
         }
@@ -424,8 +417,8 @@ vec4 rf(int i){{return bufferF32[i];}};
                 buffer,
                 "
 uniform usamplerBuffer uBuffer;
-uvec4 ri(int i){{return texelFetch(uBuffer,i);}};
-vec4 rf(int i){{return uintBitsToFloat(ri(i));}};
+uvec4 readU(int i){{return texelFetch(uBuffer,i);}};
+vec4 readF(int i){{return uintBitsToFloat(readU(i));}};
                 "
             )
             .ok();
@@ -433,7 +426,7 @@ vec4 rf(int i){{return uintBitsToFloat(ri(i));}};
     }
 }
 
-fn emit_version_header(buffer: &mut String, version: u32, mode: CompilerBufferMode) {
+pub fn emit_header_version_decl(buffer: &mut String, version: u32, mode: CompilerBufferMode) {
     match mode {
         CompilerBufferMode::UniformBlock { .. } => {
             if version >= 140 {
@@ -459,7 +452,7 @@ fn emit_version_header(buffer: &mut String, version: u32, mode: CompilerBufferMo
     }
 }
 
-fn emit_texture_samplers(buffer: &mut String, texture_samplers: u32) {
+pub fn emit_header_texture_samplers(buffer: &mut String, texture_samplers: u32) {
     if texture_samplers > 0 {
         writeln!(buffer, "uniform sampler2D uTextures[{}];", texture_samplers).ok();
     }

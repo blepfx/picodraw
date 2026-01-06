@@ -1,5 +1,7 @@
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
+/// # Safety
+/// The type must be plain old data (it must not contain any padding bytes)
 pub unsafe trait Pod: Sized + Copy + 'static {
     #[inline(always)]
     fn zeroed() -> Self {
@@ -61,4 +63,6 @@ pub unsafe trait Pod: Sized + Copy + 'static {
 
 unsafe impl Pod for i32 {}
 unsafe impl Pod for f32 {}
+unsafe impl Pod for u16 {}
+unsafe impl Pod for u8 {}
 unsafe impl<const N: usize, T: Pod> Pod for [T; N] {}

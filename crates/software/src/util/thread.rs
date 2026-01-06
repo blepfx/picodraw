@@ -6,7 +6,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
     },
-    thread::{Thread, available_parallelism, current, park, spawn},
+    thread::{Thread, current, park, spawn},
 };
 
 pub struct ThreadPool {
@@ -14,13 +14,9 @@ pub struct ThreadPool {
 }
 
 impl ThreadPool {
-    pub fn new() -> Self {
-        Self::with_threads(available_parallelism().map(|x| x.get()).unwrap_or(1))
-    }
-
     pub fn with_threads(workers: usize) -> Self {
         Self {
-            workers: (1..workers).map(|index| Worker::new(index)).collect(),
+            workers: (1..workers).map(Worker::new).collect(),
         }
     }
 
@@ -53,17 +49,21 @@ impl ThreadPool {
         run: impl Fn(&'a mut Worker, &'a Job) + Send + Sync,
     ) {
         #[derive(Clone, Copy)]
-        struct AssertSendSync<T>(T);
-        unsafe impl<T> Send for AssertSendSync<T> {}
-        unsafe impl<T> Sync for AssertSendSync<T> {}
+        struct WorkerList<T>(*mut T);
+        unsafe impl<T> Send for WorkerList<T> {}
+        unsafe impl<T> Sync for WorkerList<T> {}
+        impl<T> WorkerList<T> {
+            #[allow(clippy::mut_from_ref)]
+            unsafe fn get<'a>(&self, index: usize) -> &'a mut T {
+                unsafe { &mut *self.0.add(index) }
+            }
+        }
 
         assert_eq!(workers.len(), self.num_workers());
 
-        let workers = AssertSendSync(workers.as_mut_ptr());
-
-        self.run_indexed(jobs.len(), |worker, job| {
-            let worker = unsafe { &mut *(&workers).0.add(worker) };
-            run(worker, &jobs[job]);
+        let workers = WorkerList(workers.as_mut_ptr());
+        self.run_indexed(jobs.len(), move |worker, job| {
+            run(unsafe { workers.get(worker) }, &jobs[job]);
         });
     }
 }
@@ -73,12 +73,12 @@ struct Scope<'a> {
     coordinator: Thread,
     panic: Mutex<Option<Box<dyn Any + Send>>>,
 
-    job_runner: &'a (dyn Fn(usize, usize) + Send + Sync),
-    job_count: AtomicUsize,
-    job_total: usize,
+    runner: &'a (dyn Fn(usize, usize) + Send + Sync),
+    count: AtomicUsize,
+    total: usize,
 }
 
-#[repr(align(64))]
+#[repr(align(128))]
 struct WorkerData {
     closed: AtomicBool,
     scope: AtomicPtr<()>,
@@ -94,22 +94,22 @@ impl<'a> Scope<'a> {
         Self {
             coordinator: current(),
             panic: Mutex::new(None),
-            job_count: AtomicUsize::new(0),
-            job_total: jobs,
-            job_runner: runner,
+            count: AtomicUsize::new(0),
+            total: jobs,
+            runner,
         }
     }
 
     #[inline]
     unsafe fn run(&self, thread: usize) {
         loop {
-            let task = self.job_count.fetch_add(1, Ordering::Relaxed);
-            if task >= self.job_total {
+            let task = self.count.fetch_add(1, Ordering::Relaxed);
+            if task >= self.total {
                 return;
             }
 
             let result = catch_unwind(AssertUnwindSafe(|| {
-                (self.job_runner)(thread, task);
+                (self.runner)(thread, task);
             }));
 
             if let Err(err) = result {
@@ -143,9 +143,12 @@ impl Worker {
                         unsafe {
                             let scope = &*(scope as *mut Scope);
                             let coordinator = scope.coordinator.clone();
-
                             scope.run(index);
-                            worker.scope.store(null_mut(), Ordering::Release); // scope is dropped past this point, do NOT use. that is the reason we clone `coordinator` instead of using it via the `scope` reference
+
+                            // scope might be dropped after we set scope to null, do NOT use it
+                            // that is the reason we clone `coordinator` instead of using it via the `scope` reference
+
+                            worker.scope.store(null_mut(), Ordering::Release);
                             coordinator.unpark();
                         }
                     }
@@ -194,7 +197,7 @@ mod tests {
     fn run_indexed() {
         const ITERS: usize = if cfg!(miri) { 10 } else { 10000 };
 
-        let mut pool = ThreadPool::new();
+        let mut pool = ThreadPool::with_threads(8);
         for _ in 0..ITERS {
             let counter = AtomicUsize::new(0);
 
@@ -211,7 +214,7 @@ mod tests {
     fn run_arrays() {
         const ITERS: usize = if cfg!(miri) { 10 } else { 10000 };
 
-        let mut pool = ThreadPool::new();
+        let mut pool = ThreadPool::with_threads(8);
         for i in 0..ITERS {
             let data = (1..=10000).collect::<Vec<_>>();
             let mut workers = (0..pool.num_workers()).map(|_| 0usize).collect::<Vec<_>>();

@@ -30,17 +30,22 @@ impl<T: HasContext> GlProfiler<T> {
         self.last.get()
     }
 
-    pub fn wrap<R>(&self, gl: &T, c: impl FnOnce() -> R) -> R {
-        match self.query.as_ref() {
-            Some(query) => unsafe {
-                let result = if self.check.replace(false) {
-                    gl.begin_query(TIME_ELAPSED, *query);
-                    let result = c();
+    pub fn begin(&self, gl: &T) {
+        if let Some(query) = self.query.as_ref()
+            && self.check.get()
+        {
+            unsafe {
+                gl.begin_query(TIME_ELAPSED, *query);
+            }
+        }
+    }
+
+    pub fn end(&self, gl: &T) {
+        if let Some(query) = self.query.as_ref() {
+            unsafe {
+                if self.check.replace(false) {
                     gl.end_query(TIME_ELAPSED);
-                    result
-                } else {
-                    c()
-                };
+                }
 
                 let available = gl.get_query_parameter_u32(*query, QUERY_RESULT_AVAILABLE);
                 if available != 0 {
@@ -48,10 +53,7 @@ impl<T: HasContext> GlProfiler<T> {
                     self.last.set(Some(result));
                     self.check.set(true);
                 }
-
-                result
-            },
-            None => c(),
+            }
         }
     }
 

@@ -1,5 +1,5 @@
 use image::{DynamicImage, GenericImage, GenericImageView, Rgba, open};
-use picodraw::Context;
+use picodraw::{Context, DynContext};
 use std::{
     fs::{create_dir_all, remove_file},
     sync::Arc,
@@ -14,15 +14,23 @@ const MAX_P95_ERROR: f64 = 2.0;
 const MAX_P99_ERROR: f64 = 15.0;
 
 #[cfg(miri)]
-pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
+pub fn run(
+    test: &str,
+    width: u32,
+    height: u32,
+    render: impl for<'a, 'b> Fn(&'a mut (dyn DynContext + 'b)) + Sync + Send + 'static,
+) {
     #[cfg(feature = "software")]
     software::render(width, height, Arc::new(render));
 }
 
 #[cfg(not(miri))]
-pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context) + Sync + Send + 'static) {
+#[track_caller]
+pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynContext) + Sync + Send + 'static) {
     let renderer = Arc::new(render);
     let expected = open(format!("./tests/drawtest/expected/{}.webp", test)).ok();
+
+    #[allow(clippy::type_complexity)]
     let results: Vec<(&'static str, fn(u32, u32, RenderJob) -> DynamicImage)> = vec![
         #[cfg(feature = "software")]
         ("software", software::render),
@@ -33,34 +41,28 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
     let outcomes = results
         .into_iter()
         .map(|(backend, render)| {
-            let start = Instant::now();
-            let rendered = render(width, height, renderer.clone());
-            let time = start.elapsed();
+            let image = render(width, height, renderer.clone());
 
             let expected = match expected.as_ref() {
                 Some(x) => x,
                 None => {
-                    return Outcome::NotFound {
-                        test,
-                        backend,
-                        image: rendered,
-                    };
+                    return Outcome::NotFound { test, backend, image };
                 }
             };
 
-            if expected.width() != rendered.width() || expected.height() != rendered.height() {
+            if expected.width() != image.width() || expected.height() != image.height() {
                 return Outcome::Resolution {
                     test,
                     backend,
                     expected: (expected.width(), expected.height()),
-                    rendered: (rendered.width(), rendered.height()),
-                    image: rendered,
+                    rendered: (image.width(), image.height()),
+                    image,
                 };
             }
 
-            let (p50, p95, p99) = measure_difference(&expected, &rendered);
+            let (p50, p95, p99) = measure_difference(expected, &image);
             if p50 > MAX_P50_ERROR || p95 > MAX_P95_ERROR || p99 > MAX_P99_ERROR {
-                let diff = blend_difference(&expected, &rendered);
+                let diff = blend_difference(expected, &image);
 
                 return Outcome::Difference {
                     test,
@@ -68,42 +70,20 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
                     p50,
                     p95,
                     p99,
-                    image: rendered,
+                    image,
                     diff,
                 };
             }
 
-            Outcome::Passed {
-                test,
-                backend,
-                time,
-                image: rendered,
-            }
+            Outcome::Passed { test, backend, image }
         })
         .collect::<Vec<_>>();
 
-    let mut failure = false;
     let mut messages = vec![];
-
     for outcome in outcomes {
         match outcome {
-            Outcome::Passed {
-                test,
-                time,
-                backend,
-                image,
-            } => {
+            Outcome::Passed { test, backend, image } => {
                 write_image(test, backend, SaveImage::Success(&image));
-
-                messages.push(format!(
-                    "{}{} {} {} - {} {}",
-                    "✅ ".mask(),
-                    "[PASSED]".green().bold(),
-                    backend.cyan(),
-                    test,
-                    "finished in".dim(),
-                    format!("{:?}", time).cyan().bold()
-                ));
             }
             Outcome::NotFound { test, backend, image } => {
                 write_image(test, backend, SaveImage::Failure(&image));
@@ -122,8 +102,6 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
                     "result has been saved as".dim(),
                     format!("./tests/drawtest/failures/{}/{}.webp", backend, test).bold()
                 ));
-
-                failure = true;
             }
             Outcome::Resolution {
                 test,
@@ -160,8 +138,6 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
                     "result has been saved as".dim(),
                     format!("./tests/drawtest/failures/{}/{}.webp", backend, test).bold()
                 ));
-
-                failure = true;
             }
             Outcome::Difference {
                 test,
@@ -213,34 +189,27 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn Context
                     "delta has been saved as".dim(),
                     format!("./tests/drawtest/failures/{}/{}@diff.webp", backend, test).bold()
                 ));
-
-                failure = true;
             }
         }
     }
 
-    if failure {
+    if !messages.is_empty() {
         panic!("\n{}", messages.join("\n"))
-    } else {
-        println!("\n{}", messages.join("\n"));
     }
 }
 
-type RenderJob = Arc<dyn Fn(&mut dyn Context) + Send + Sync>;
+type RenderJob = Arc<dyn Fn(&mut dyn DynContext) + Send + Sync>;
 
 enum Outcome<'a> {
     Passed {
         test: &'a str,
         backend: &'a str,
-
-        time: Duration,
         image: DynamicImage,
     },
 
     NotFound {
         test: &'a str,
         backend: &'a str,
-
         image: DynamicImage,
     },
 
@@ -355,11 +324,11 @@ fn blend_difference(a: &DynamicImage, b: &DynamicImage) -> DynamicImage {
 pub mod opengl {
     use super::{MAX_CANVAS_SIZE, RenderJob};
     use image::{DynamicImage, Rgba, RgbaImage};
-    use picodraw::Command;
-    use picodraw::{Context, opengl::OpenGlBackend};
-    use pugl_rs::{Event, OpenGl, OpenGlVersion, World};
+    use picodraw::{Color, Context, DrawTarget, DynContext, opengl};
+    use picoview::{Event, GlConfig, GlVersion, WindowBuilder};
     use std::any::Any;
     use std::panic::{AssertUnwindSafe, resume_unwind};
+    use std::sync::mpsc::{Sender, SyncSender};
     use std::time::Duration;
     use std::{
         panic::catch_unwind,
@@ -369,110 +338,118 @@ pub mod opengl {
         },
     };
 
+    static USE_TBO: AtomicBool = AtomicBool::new(true);
     static JOB_QUEUE: Mutex<Vec<Arc<Job>>> = Mutex::new(Vec::new());
+
     struct Job {
         width: u32,
         height: u32,
-        render: Arc<dyn Fn(&mut dyn Context) + Send + Sync>,
-        result: Mutex<Option<Result<DynamicImage, Box<dyn Any + Send>>>>,
-        condvar: Condvar,
+        render: RenderJob,
+        sender: SyncSender<Result<DynamicImage, Box<dyn Any + Send>>>,
     }
 
     fn runner_thread() {
-        let close = Arc::new(AtomicBool::new(false));
-        let mut gl_backend = None;
-        let mut world = World::new_program().unwrap();
-        let close_send = close.clone();
-        let view = world
-            .new_view(OpenGl {
-                bits_alpha: 8,
-                bits_depth: 0,
-                bits_stencil: 0,
-                version: OpenGlVersion::Core(3, 3),
-                debug: true,
-                ..Default::default()
-            })
-            .with_size(MAX_CANVAS_SIZE, MAX_CANVAS_SIZE)
-            .with_event_handler(move |view, event| match event {
-                Event::Expose { backend, .. } => {
+        WindowBuilder::new(|window| {
+            let mut gl_backend: Option<opengl::Backend<opengl::Native>> = None;
+            Box::new(move |event| {
+                if let Event::WindowFrame { gl: Some(gl) } = event {
                     let job = match JOB_QUEUE.lock().unwrap().pop() {
                         Some(job) => job,
                         None => {
-                            close_send.store(true, Ordering::SeqCst);
+                            if gl.make_current(true)
+                                && let Some(gl_backend) = gl_backend.take()
+                            {
+                                unsafe {
+                                    gl_backend.delete();
+                                }
+                            }
+
+                            window.close();
                             return;
                         }
                     };
 
                     let result = catch_unwind(AssertUnwindSafe(|| {
+                        if !gl.make_current(true) {
+                            panic!("failed to make opengl context current");
+                        }
+
                         let mut gl_backend = unsafe {
                             gl_backend
                                 .get_or_insert_with(|| {
-                                    OpenGlBackend::new(|c| backend.get_proc_address(c) as *const _).unwrap()
+                                    opengl::Backend::new(
+                                        opengl::Config {
+                                            enable_gpu_time_queries: true,
+                                            prefer_ubo_over_tbo: USE_TBO.fetch_not(Ordering::SeqCst),
+                                            debug_logger: Some(Box::new(|type_, msg| {
+                                                if type_ == opengl::DebugMessage::Error
+                                                    || type_ == opengl::DebugMessage::UndefinedBehavior
+                                                {
+                                                    panic!("opengl error: {}", msg);
+                                                } else {
+                                                    eprintln!("opengl debug: {}", msg);
+                                                }
+                                            })),
+                                        },
+                                        |c| gl.get_proc_address(c) as *const _,
+                                    )
+                                    .unwrap()
                                 })
                                 .open()
                         };
 
                         {
                             gl_backend.set_viewport([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
-                            gl_backend
-                                .draw_screen(&[Command::Clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into())])
-                                .unwrap();
+                            gl_backend.draw(DrawTarget::Screen, |encoder| {
+                                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                            });
+
+                            gl_backend.set_viewport([job.width, job.height]);
+                            (job.render)(&mut gl_backend);
                         }
 
-                        gl_backend.set_viewport([job.width, job.height]);
-                        (job.render)(&mut gl_backend);
-
-                        {
+                        let image = {
                             let screenshot = gl_backend.screenshot(None, [0, 0, job.width, job.height]);
                             let mut image = RgbaImage::new(job.width, job.height);
                             for i in 0..job.width {
                                 for j in 0..job.height {
-                                    let r = screenshot[0 + 4 * (i + j * job.width) as usize];
-                                    let g = screenshot[1 + 4 * (i + j * job.width) as usize];
-                                    let b = screenshot[2 + 4 * (i + j * job.width) as usize];
-                                    let a = screenshot[3 + 4 * (i + j * job.width) as usize];
+                                    let r = screenshot[4 * (i + j * job.width) as usize];
+                                    let g = screenshot[4 * (i + j * job.width) as usize + 1];
+                                    let b = screenshot[4 * (i + j * job.width) as usize + 2];
+                                    let a = screenshot[4 * (i + j * job.width) as usize + 3];
                                     image.put_pixel(i, job.height - 1 - j, Rgba([r, g, b, a]));
                                 }
                             }
 
                             image.into()
-                        }
+                        };
+
+                        gl.swap_buffers();
+                        image
                     }));
 
-                    job.result.lock().unwrap().replace(result);
-                    job.condvar.notify_one();
+                    job.sender.send(result).ok();
                 }
-                Event::Update => {
-                    view.obscure_view();
-                }
-
-                Event::Unrealize { .. } => {
-                    if let Some(gl_backend) = gl_backend.take() {
-                        unsafe {
-                            gl_backend.delete();
-                        }
-                    }
-                }
-
-                _ => {}
             })
-            .realize()
-            .unwrap();
-
-        view.show_passive();
-
-        while !close.load(Ordering::SeqCst) {
-            world.update(Some(Duration::ZERO)).unwrap();
-        }
+        })
+        .with_size((MAX_CANVAS_SIZE, MAX_CANVAS_SIZE))
+        .with_title("picodraw drawtest runner")
+        .with_opengl(GlConfig {
+            version: GlVersion::Core(4, 6),
+            debug: true,
+            ..Default::default()
+        })
+        .open_blocking()
+        .unwrap();
     }
 
     pub fn render(width: u32, height: u32, render: RenderJob) -> DynamicImage {
+        let (sender, receiver) = std::sync::mpsc::sync_channel(0);
         let job = Arc::new(Job {
             width,
             height,
             render,
-            result: Mutex::new(None),
-            condvar: Condvar::new(),
+            sender,
         });
 
         {
@@ -484,19 +461,9 @@ pub mod opengl {
             queue.push(job.clone());
         }
 
-        let mut result = job.result.lock().unwrap();
-        loop {
-            match result.take() {
-                Some(Ok(image)) => {
-                    return image;
-                }
-                Some(Err(err)) => {
-                    resume_unwind(err);
-                }
-                None => {}
-            }
-
-            result = job.condvar.wait(result).unwrap();
+        match receiver.recv().unwrap() {
+            Ok(image) => image,
+            Err(err) => resume_unwind(err),
         }
     }
 }
@@ -505,11 +472,14 @@ pub mod opengl {
 pub mod software {
     use super::RenderJob;
     use image::{DynamicImage, Rgba, RgbaImage};
-    use picodraw::software::{BufferMut, SoftwareBackend};
+    use picodraw::{
+        Color,
+        software::{BufferMut, SoftwareBackend},
+    };
 
     pub fn render(width: u32, height: u32, render: RenderJob) -> DynamicImage {
         let mut backend = SoftwareBackend::multi_threaded();
-        let mut buffer = vec![0u32; (width * height) as usize];
+        let mut buffer = vec![Color::default(); (width * height) as usize];
         let mut context = backend.open(BufferMut::from_slice(&mut buffer, width as usize, height as usize));
 
         render(&mut context);
@@ -518,8 +488,7 @@ pub mod software {
         for i in 0..width {
             for j in 0..height {
                 let data = buffer[(i + j * width) as usize];
-                let (r, g, b, a) = picodraw::software::unpack_rgba(data);
-                image.put_pixel(i, j, Rgba([r, g, b, a]));
+                image.put_pixel(i, j, Rgba([data.r, data.g, data.b, data.a]));
             }
         }
 

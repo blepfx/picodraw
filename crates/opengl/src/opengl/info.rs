@@ -1,6 +1,11 @@
 use super::BUFFER_ALIGNMENT;
-use glow::{HasContext, MAX_TEXTURE_BUFFER_SIZE, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_SIZE, MAX_UNIFORM_BLOCK_SIZE};
-use std::collections::HashSet;
+use glow::{
+    HasContext, MAX_TEXTURE_BUFFER_SIZE, MAX_TEXTURE_IMAGE_UNITS, MAX_TEXTURE_SIZE, MAX_UNIFORM_BLOCK_SIZE, VERSION,
+};
+use std::{
+    collections::HashSet,
+    ffi::{CStr, c_void},
+};
 
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -49,7 +54,7 @@ impl GlInfo {
         } else if self.is_gles {
             100
         } else if self.version >= (3, 3) {
-            (self.version.0 * 100 + self.version.1 * 10) as u32
+            self.version.0 * 100 + self.version.1 * 10
         } else if self.version >= (3, 2) {
             150
         } else if self.version >= (3, 1) {
@@ -98,6 +103,10 @@ impl GlInfo {
         self.extensions.contains("GL_ARB_timer_query") || (self.version >= (3, 3) && !self.is_gles)
     }
 
+    pub(crate) fn is_debug_callback_supported(&self) -> bool {
+        self.extensions.contains("GL_KHR_debug") || (self.version >= (4, 3) && !self.is_gles)
+    }
+
     pub(crate) fn prefer_tbo_over_ubo(&self) -> bool {
         if !self.is_uniform_buffer_supported() {
             return true;
@@ -114,7 +123,26 @@ impl GlInfo {
     }
 
     pub(crate) fn target_tbo_size(&self) -> u32 {
-        let target = (self.max_texture_buffer_size_texels * BUFFER_ALIGNMENT).min(2097152);
+        let target = self
+            .max_texture_buffer_size_texels
+            .saturating_mul(BUFFER_ALIGNMENT)
+            .min(2097152);
         target - target % BUFFER_ALIGNMENT // align to 16 bytes
+    }
+}
+
+pub unsafe fn is_context_valid(loader: &mut dyn FnMut(&CStr) -> *const c_void) -> bool {
+    unsafe {
+        let gl_get_string = loader(c"glGetString");
+        if gl_get_string.addr() < 8 || gl_get_string.addr() == usize::MAX {
+            return false;
+        }
+
+        let gl_get_string: extern "system" fn(u32) -> *const i8 = std::mem::transmute(gl_get_string.addr());
+        if gl_get_string(VERSION).is_null() {
+            return false;
+        }
+
+        true
     }
 }

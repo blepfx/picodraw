@@ -1,67 +1,56 @@
 use crate::{
-    compiler,
+    DebugCallback, InitError, OpenGlInfo, Stats,
+    compiler::{self, CompilerShader, GlslCompiler},
     dispatch::{Dispatcher, DispatcherScratch},
     opengl::{
         GlFramebufferBinding, GlProfiler, GlProgram, GlStreamBuffer, GlTexture, GlVertexArray, enable_blend_normal,
-        enable_debug,
+        enable_debug, is_context_valid,
     },
 };
 use glow::HasContext;
-use picodraw_core::*;
-use slotmap::{DefaultKey, Key, KeyData, SecondaryMap, SlotMap};
-use std::{ffi::CStr, time::Duration};
+use picodraw_core::{
+    Bounds, Color, DrawTarget, FrameEncoder, ShaderData, ShaderError, Size, TextureData, TextureError, TextureFormat,
+};
+use std::{collections::HashMap, ffi::CStr, time::Duration};
 
-pub use crate::opengl::GlInfo as OpenGlInfo;
-pub struct OpenGlContext<'a, T: HasContext>(&'a mut OpenGlBackend<T>);
-
-#[cfg(any(not(target_arch = "wasm32"), target_os = "emscripten"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub type Native = glow::Context;
 
-#[derive(Debug, Clone, Default)]
-pub struct OpenGlStats {
-    /// Total GPU render time of one of the previous draw calls.
-    /// Does not necessarily correspond to the time of the last draw call (there is a small delay due to the asynchronous nature of GPUs).
-    pub gpu_time: Option<Duration>,
-
-    /// Number of GPU draw calls/context switches
-    pub draw_calls: u32,
-
-    /// Total number of bytes sent to the GPU, including quad lists and quad data
-    pub bytes_sent: u64,
-
-    /// Number of quads sent to the GPU
-    pub total_quads: u32,
-
-    /// Number of objects sent to the GPU
-    pub total_objects: u32,
-}
-
 /// A `picodraw` backend that uses OpenGL.
-pub struct OpenGlBackend<T: HasContext> {
-    shaders: SlotMap<DefaultKey, Graph>,
-    textures: SlotMap<DefaultKey, Option<GlTexture<T>>>,
-    program: Option<CompiledProgram<T>>,
+pub struct Backend<T: HasContext> {
+    shader_compiler: GlslCompiler,
+    viewport_size: Size,
+    tbo_over_ubo: bool,
+    scratch: DispatcherScratch<T>,
+    stats: Stats,
 
-    gl_context: T,
-    gl_info: OpenGlInfo,
+    gl_context: Box<T>,
     gl_profiler: GlProfiler<T>,
     gl_vertex: GlVertexArray<T>,
     gl_buffer: GlStreamBuffer<T>,
-
-    scratch: DispatcherScratch<T>,
-    stats: OpenGlStats,
-
-    viewport_size: Size,
+    gl_program: Option<GlProgram<T>>,
+    gl_textures: HashMap<T::Texture, GlTexture<T>>,
 }
 
-#[derive(Debug, Clone)]
-pub enum OpenGlError {
-    UnsupportedVersion { info: OpenGlInfo },
+pub struct Context<'a, T: HasContext>(&'a mut Backend<T>);
+
+pub struct Texture<T: HasContext> {
+    texture: T::Texture,
+    owner: usize,
 }
 
-unsafe impl<T: HasContext> Send for OpenGlBackend<T> {}
+pub struct Shader {
+    shader: CompilerShader,
+    owner: usize,
+}
 
-impl OpenGlBackend<Native> {
+pub struct Config {
+    pub debug_logger: Option<DebugCallback>,
+    pub enable_gpu_time_queries: bool,
+    pub prefer_ubo_over_tbo: bool,
+}
+
+impl Backend<Native> {
     /// Creates a new OpenGL backend from a given loader function
     /// (a function that takes a GL function name and returns a pointer to that function).
     ///
@@ -69,7 +58,7 @@ impl OpenGlBackend<Native> {
     ///
     /// #### Requirements
     /// `picodraw` requires at least OpenGL v3.3.
-    /// It is possible that the backend can be created with an OpenGL v3.0 if the following extensions are present:
+    /// It is possible that the backend can be created with OpenGL v3.0 if the following extensions are present:
     /// - `ARB_texture_buffer_object` or `EXT_texture_buffer`
     /// - `ARB_shader_bit_encoding`
     /// - `ARB_timer_query`
@@ -78,59 +67,87 @@ impl OpenGlBackend<Native> {
     /// - If the version is not supported [`OpenGlError::UnsupportedVersion`] is returned.
     ///
     /// #### Safety
-    /// This function should be called only if the OpenGL context is currently active for the current thread.
-    pub unsafe fn new<F>(loader: F) -> Result<Self, OpenGlError>
+    /// This function should be called only if an OpenGL context is currently active for the current thread.
+    pub unsafe fn new<F>(config: Config, mut loader: F) -> Result<Self, InitError>
     where
         F: FnMut(&CStr) -> *const std::os::raw::c_void,
     {
-        unsafe { Self::from_glow(glow::Context::from_loader_function_cstr(loader)) }
+        unsafe {
+            if !is_context_valid(&mut loader) {
+                return Err(InitError::InvalidContext);
+            }
+
+            Self::from_glow(config, glow::Context::from_loader_function_cstr(loader))
+        }
     }
 }
 
-impl<T: HasContext> OpenGlBackend<T> {
+impl<T: HasContext> Backend<T> {
     /// Creates a new OpenGL backend from a given `glow` context.
     ///
     /// See [`OpenGlBackend::new`] for more details.
-    pub unsafe fn from_glow(mut gl_context: T) -> Result<Self, OpenGlError> {
+    ///
+    /// # Safety
+    /// This function should be called only if an OpenGL context is currently active for the current thread.
+    pub unsafe fn from_glow(config: Config, mut gl_context: T) -> Result<Self, InitError> {
         let gl_info = OpenGlInfo::query(&gl_context);
-
         if !gl_info.is_baseline_supported() {
-            return Err(OpenGlError::UnsupportedVersion { info: gl_info });
+            return Err(InitError::UnsupportedVersion { info: gl_info });
         }
 
         let gl_vertex = GlVertexArray::new(&gl_context);
-
-        let gl_profiler = if gl_info.is_timer_query_supported() {
+        let gl_profiler = if config.enable_gpu_time_queries && gl_info.is_timer_query_supported() {
             GlProfiler::new(&gl_context)
         } else {
             GlProfiler::dummy()
         };
 
-        let gl_buffer = if gl_info.prefer_tbo_over_ubo() {
+        let tbo_over_ubo = match gl_info.is_uniform_buffer_supported() {
+            true => !config.prefer_ubo_over_tbo && gl_info.prefer_tbo_over_ubo(),
+            false => true,
+        };
+
+        let gl_buffer = if tbo_over_ubo {
             GlStreamBuffer::new_tbo(&gl_context, gl_info.target_tbo_size())
         } else {
             GlStreamBuffer::new_ubo(&gl_context, gl_info.target_ubo_size())
         };
 
-        if cfg!(debug_assertions) {
-            enable_debug(&mut gl_context);
+        let compiler_opts = if tbo_over_ubo {
+            compiler::CompilerOptions {
+                glsl_version: gl_info.glsl_version(),
+                texture_units: gl_info.max_texture_units - 1,
+                buffer_mode: compiler::CompilerBufferMode::TextureBuffer,
+            }
+        } else {
+            compiler::CompilerOptions {
+                glsl_version: gl_info.glsl_version(),
+                texture_units: gl_info.max_texture_units,
+                buffer_mode: compiler::CompilerBufferMode::UniformBlock {
+                    size_bytes: gl_info.target_ubo_size(),
+                },
+            }
+        };
+
+        if let Some(logger) = config.debug_logger
+            && gl_info.is_debug_callback_supported()
+        {
+            enable_debug(&mut gl_context, logger);
         }
 
         Ok(Self {
+            shader_compiler: GlslCompiler::new(compiler_opts),
+            viewport_size: Size { width: 1, height: 1 },
             scratch: DispatcherScratch::default(),
-            stats: OpenGlStats::default(),
+            stats: Stats::default(),
+            tbo_over_ubo,
 
-            shaders: SlotMap::with_key(),
-            textures: SlotMap::with_key(),
-            program: None,
-
-            gl_context,
-            gl_info,
+            gl_program: None,
+            gl_context: Box::new(gl_context),
+            gl_textures: HashMap::new(),
             gl_profiler,
             gl_vertex,
             gl_buffer,
-
-            viewport_size: Size { width: 1, height: 1 },
         })
     }
 
@@ -138,8 +155,8 @@ impl<T: HasContext> OpenGlBackend<T> {
     ///
     /// #### Safety
     /// This function should be called only if the OpenGL context is currently active for the current thread.
-    pub unsafe fn open(&mut self) -> OpenGlContext<'_, T> {
-        OpenGlContext(self)
+    pub unsafe fn open(&mut self) -> Context<'_, T> {
+        Context(self)
     }
 
     /// Delete all the resources associated with the OpenGL backend.
@@ -151,43 +168,46 @@ impl<T: HasContext> OpenGlBackend<T> {
         self.gl_vertex.delete(&self.gl_context);
         self.gl_profiler.delete(&self.gl_context);
 
-        for (_, texture) in self.textures.into_iter() {
-            if let Some(texture) = texture {
-                texture.delete(&self.gl_context);
-            }
+        if let Some(program) = self.gl_program {
+            program.delete(&self.gl_context);
         }
 
-        if let Some(program) = self.program {
-            program.program.delete(&self.gl_context);
+        for (_, texture) in self.gl_textures {
+            texture.delete(&self.gl_context);
         }
     }
 }
 
-impl<'a, T: HasContext> OpenGlContext<'a, T> {
-    pub fn reborrow(&'_ mut self) -> OpenGlContext<'_, T> {
-        OpenGlContext(self.0)
+impl<'a, T: HasContext> Context<'a, T> {
+    pub fn reborrow(&'_ mut self) -> Context<'_, T> {
+        Context(self.0)
+    }
+
+    /// Returns the statistics information for the last frame
+    pub fn stats(&self) -> Stats {
+        self.0.stats.clone()
+    }
+
+    /// Set the target screen size in physical pixel.
+    pub fn set_viewport(&mut self, size: impl Into<Size>) {
+        self.0.viewport_size = size.into();
     }
 
     /// Take a screenshot of a region of a buffer.
     /// Useful for debugging and testing.
-    pub fn screenshot(&self, buffer: Option<TextureId>, bounds: impl Into<Bounds>) -> Vec<u8> {
+    pub fn screenshot(&self, buffer: Option<&Texture<T>>, bounds: impl Into<Bounds>) -> Vec<u8> {
         let bounds = bounds.into();
 
         let buffer = match buffer {
             Some(buffer) => {
-                let framebuffer = self
-                    .0
-                    .textures
-                    .get(KeyData::from_ffi(buffer.0).into())
-                    .expect("invalid render texture id");
+                let texture = match self.0.gl_textures.get(&buffer.texture) {
+                    Some(tex) if buffer.owner != self.unique_id() => tex,
+                    _ => panic!("resource does not belong to this context"),
+                };
 
-                if let Some(framebuffer) = framebuffer {
-                    framebuffer.bind_framebuffer(&self.0.gl_context)
-                } else {
-                    panic!("render texture is in use");
-                }
+                texture.bind_framebuffer(&self.0.gl_context)
             }
-            None => GlFramebufferBinding::default(&self.0.gl_context),
+            None => GlFramebufferBinding::default(&*self.0.gl_context),
         };
 
         buffer.screenshot(
@@ -198,53 +218,90 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
         )
     }
 
-    /// Returns the statistics information for the last frame
-    pub fn stats(&self) -> OpenGlStats {
-        self.0.stats.clone()
+    pub fn unique_id(&self) -> usize {
+        &*self.0.gl_context as *const _ as usize
+    }
+}
+
+impl<'a, T: HasContext + 'static> picodraw_core::Context for Context<'a, T> {
+    type Shader = Shader;
+    type Texture = Texture<T>;
+
+    fn create_texture(&mut self, size: Size, format: TextureFormat) -> Result<Self::Texture, TextureError> {
+        let texture = GlTexture::new(&*self.0.gl_context, size.width, size.height, format);
+        let texture_id = texture.texture();
+
+        self.0.gl_textures.insert(texture_id, texture);
+
+        Ok(Texture {
+            texture: texture_id,
+            owner: self.unique_id(),
+        })
     }
 
-    /// Set the target screen size in physical pixel.
-    pub fn set_viewport(&mut self, size: impl Into<Size>) {
-        self.0.viewport_size = size.into();
+    fn upload_texture(&mut self, texture: &mut Self::Texture, data: TextureData) -> Result<(), TextureError> {
+        let texture = match self.0.gl_textures.get(&texture.texture) {
+            Some(tex) if texture.owner == self.unique_id() => tex,
+            _ => panic!("resource does not belong to this context"),
+        };
+
+        texture.upload_subregion(&self.0.gl_context, data)
     }
 
-    fn draw_to_target(&mut self, commands: &[Command], target: Option<&GlTexture<T>>) -> Result<(), DrawError> {
-        let gl = &self.0.gl_context;
+    fn delete_texture(&mut self, texture: Self::Texture) {
+        assert!(
+            self.unique_id() == texture.owner,
+            "resource does not belong to this context"
+        );
 
-        let program = self.0.program.get_or_insert_with(|| {
-            let gl = &self.0.gl_context;
+        if let Some(texture) = self.0.gl_textures.remove(&texture.texture) {
+            texture.delete(&self.0.gl_context);
+        }
+    }
 
-            let options = if self.0.gl_info.prefer_tbo_over_ubo() {
-                compiler::CompilerOptions {
-                    glsl_version: self.0.gl_info.glsl_version(),
-                    texture_units: self.0.gl_info.max_texture_units - 1,
-                    buffer_mode: compiler::CompilerBufferMode::TextureBuffer,
-                }
-            } else {
-                compiler::CompilerOptions {
-                    glsl_version: self.0.gl_info.glsl_version(),
-                    texture_units: self.0.gl_info.max_texture_units,
-                    buffer_mode: compiler::CompilerBufferMode::UniformBlock {
-                        size_bytes: self.0.gl_info.target_ubo_size(),
-                    },
-                }
-            };
+    fn create_shader(&mut self, shader: &ShaderData) -> Result<Self::Shader, ShaderError> {
+        if let Some(program) = self.0.gl_program.take() {
+            program.delete(&self.0.gl_context);
+        }
 
-            let result = compiler::compile_glsl(
-                options,
-                self.0
-                    .shaders
-                    .iter()
-                    .map(|(id, shader)| (ShaderId(id.data().as_ffi()), shader)),
-            );
+        Ok(Shader {
+            shader: self.0.shader_compiler.add_shader(shader)?,
+            owner: self.unique_id(),
+        })
+    }
+
+    fn delete_shader(&mut self, shader: Self::Shader) {
+        assert!(
+            self.unique_id() == shader.owner,
+            "resource does not belong to this context"
+        );
+
+        self.0.shader_compiler.remove_shader(shader.shader.index);
+    }
+
+    fn draw<'s>(
+        &'s mut self,
+        target: DrawTarget<'s, Self::Texture>,
+        f: impl FnOnce(&mut dyn FrameEncoder<'s, Shader = Self::Shader, Texture = Self::Texture>),
+    ) {
+        let gl = &*self.0.gl_context;
+
+        self.0.gl_profiler.begin(gl);
+
+        let unique_id = self.unique_id();
+        let gl_program = self.0.gl_program.get_or_insert_with(|| {
+            let gl = &*self.0.gl_context;
+
+            let result = self.0.shader_compiler.compile();
+            let texture_units = self.0.shader_compiler.options().texture_units;
 
             let program = GlProgram::compile(gl, &result.vertex, &result.fragment);
             let bind_program = program.bind(gl);
 
-            if self.0.gl_info.prefer_tbo_over_ubo() {
+            if self.0.tbo_over_ubo {
                 bind_program.set_texture_sampler_binding(gl, compiler::UNIFORM_BUFFER_TEXTURE, 0);
 
-                for i in 0..options.texture_units {
+                for i in 0..texture_units {
                     bind_program.set_texture_sampler_binding(
                         gl,
                         &format!("{}[{}]", compiler::UNIFORM_TEXTURE_SAMPLERS, i),
@@ -255,7 +312,7 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
                 bind_program.set_uniform_block_binding(gl, compiler::UNIFORM_BUFFER_UNIFORM_F32, 0);
                 bind_program.set_uniform_block_binding(gl, compiler::UNIFORM_BUFFER_UNIFORM_U32, 0); //funny aliasing trick
 
-                for i in 0..options.texture_units {
+                for i in 0..texture_units {
                     bind_program.set_texture_sampler_binding(
                         gl,
                         &format!("{}[{}]", compiler::UNIFORM_TEXTURE_SAMPLERS, i),
@@ -269,173 +326,81 @@ impl<'a, T: HasContext> OpenGlContext<'a, T> {
             bind_program.set_uniform_binding(gl, compiler::UNIFORM_BUFFER_DATA_OFFSET, 2);
             bind_program.set_uniform_binding(gl, compiler::UNIFORM_BUFFER_LIST_OFFSET, 3);
 
-            CompiledProgram {
-                program,
-                layouts: result
-                    .layout
-                    .into_iter()
-                    .map(|(shader, layout)| (DefaultKey::from(KeyData::from_ffi(shader.0)), layout))
-                    .collect(),
-            }
+            program
         });
 
-        self.0.gl_profiler.wrap(gl, || {
-            enable_blend_normal(gl);
+        let bind_program = gl_program.bind(gl);
+        let bind_vertex_array = self.0.gl_vertex.bind(gl);
 
-            let bind_program = program.program.bind(gl);
-            let bind_vertex_array = self.0.gl_vertex.bind(gl);
-
-            let mut dispatcher = Dispatcher::new(
-                &mut self.0.scratch,
-                &self.0.gl_context,
-                &bind_program,
-                &bind_vertex_array,
-                &self.0.gl_buffer,
-            );
-
-            match target {
-                Some(texture) => dispatcher.set_target_texture(texture),
-                None => dispatcher.set_target_backbuffer(self.0.viewport_size),
-            }
-
-            for command in commands {
-                match *command {
-                    Command::Clear(bounds) => {
-                        dispatcher.clear_rect(bounds);
-                    }
-
-                    Command::ObjectBegin(shader) => {
-                        let layout = program
-                            .layouts
-                            .get(KeyData::from_ffi(shader.0).into())
-                            .ok_or_else(|| DrawError::InvalidShader)?;
-
-                        dispatcher.object_start(layout);
-                    }
-
-                    Command::ObjectEnd => {
-                        dispatcher.object_end()?;
-                    }
-
-                    Command::ObjectRect(bounds) => {
-                        dispatcher.object_rect(bounds);
-                    }
-
-                    Command::ObjectData(ObjectData::Float(x)) => {
-                        dispatcher.object_data(x.to_bits());
-                    }
-
-                    Command::ObjectData(ObjectData::Int(x)) => {
-                        dispatcher.object_data(x as u32);
-                    }
-
-                    Command::ObjectData(ObjectData::Texture(x)) => {
-                        let texture = self
-                            .0
-                            .textures
-                            .get(KeyData::from_ffi(x.0).into())
-                            .ok_or_else(|| DrawError::InvalidTexture)?
-                            .as_ref()
-                            .ok_or_else(|| DrawError::TargetInUse)?;
-
-                        dispatcher.object_texture(texture.texture())?;
-                    }
-                }
-            }
-
-            dispatcher.flush();
-
-            self.0.stats.draw_calls = dispatcher.total_drawcalls_issued;
-            self.0.stats.bytes_sent = dispatcher.total_bytes_written;
-            self.0.stats.total_quads = dispatcher.total_quads_written;
-            self.0.stats.total_objects = dispatcher.total_objects_written;
-
-            Ok(())
-        })?;
-
-        self.0.stats.gpu_time = self.0.gl_profiler.query().map(|x| Duration::from_nanos(x as u64));
-
-        Ok(())
-    }
-}
-
-impl<'a, T: HasContext> Context for OpenGlContext<'a, T> {
-    fn create_texture(&mut self, size: Size, format: TextureFormat) -> TextureId {
-        let id = self.0.textures.insert(Some(GlTexture::new(
+        let mut dispatcher = Dispatcher::new(
+            &mut self.0.scratch,
             &self.0.gl_context,
-            size.width,
-            size.height,
-            format,
-        )));
+            bind_program,
+            bind_vertex_array,
+            &self.0.gl_buffer,
+        );
 
-        TextureId(id.data().as_ffi())
-    }
+        match target {
+            DrawTarget::Screen => dispatcher.set_target_backbuffer(self.0.viewport_size),
+            DrawTarget::Texture(texture) => {
+                let texture = match self.0.gl_textures.get(&texture.texture) {
+                    Some(tex) if texture.owner == unique_id => tex,
+                    _ => panic!("resource does not belong to this context"),
+                };
 
-    fn create_shader(&mut self, graph: Graph) -> ShaderId {
-        if let Some(program) = self.0.program.take() {
-            program.program.delete(&self.0.gl_context);
-        }
-
-        let id = self.0.shaders.insert(graph);
-        ShaderId(id.data().as_ffi())
-    }
-
-    fn delete_texture(&mut self, id: TextureId) -> bool {
-        match self.0.textures.remove(KeyData::from_ffi(id.0).into()) {
-            Some(texture) => {
-                if let Some(texture) = texture {
-                    texture.delete(&self.0.gl_context);
-                }
-
-                true
+                dispatcher.set_target_texture(texture);
             }
-            _ => false,
-        }
-    }
-
-    fn delete_shader(&mut self, id: ShaderId) -> bool {
-        match self.0.shaders.remove(KeyData::from_ffi(id.0).into()) {
-            Some(_) => true,
-            _ => false,
-        }
-    }
-
-    fn upload_texture(&mut self, id: TextureId, data: TextureData) -> bool {
-        let buffer = self
-            .0
-            .textures
-            .get_mut(KeyData::from_ffi(id.0).into())
-            .map(|x| x.as_mut().expect("texture is invalid state"));
-
-        if let Some(buffer) = buffer {
-            return buffer.upload_subregion(&self.0.gl_context, data);
         }
 
-        false
-    }
+        enable_blend_normal(gl);
 
-    fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError> {
-        self.draw_to_target(commands, None)
-    }
+        f(&mut dispatcher);
 
-    fn draw_texture(&mut self, target: TextureId, commands: &[Command]) -> Result<(), DrawError> {
-        let mut buffer = self
-            .0
-            .textures
-            .get_mut(KeyData::from_ffi(target.0).into())
-            .ok_or_else(|| DrawError::InvalidTarget)?
-            .take()
-            .ok_or_else(|| DrawError::TargetInUse)?;
+        dispatcher.flush();
 
-        self.draw_to_target(commands, Some(&mut buffer))?;
+        self.0.gl_profiler.end(gl);
 
-        *self.0.textures.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
-
-        Ok(())
+        self.0.stats.draw_calls = dispatcher.total_drawcalls_issued;
+        self.0.stats.bytes_sent = dispatcher.total_bytes_written;
+        self.0.stats.total_quads = dispatcher.total_quads_written;
+        self.0.stats.total_objects = dispatcher.total_objects_written;
+        self.0.stats.total_pixels = dispatcher.total_pixels_written;
+        self.0.stats.gpu_time = self.0.gl_profiler.query().map(|x| Duration::from_nanos(x as u64));
+        self.0.stats.cpu_time = Some(dispatcher.build_time_begin.elapsed());
     }
 }
 
-struct CompiledProgram<T: HasContext> {
-    program: GlProgram<T>,
-    layouts: SecondaryMap<DefaultKey, compiler::serialize::ShaderDataLayout>,
+impl<'a, T: HasContext + 'static> FrameEncoder<'a> for Dispatcher<'a, T> {
+    type Shader = Shader;
+    type Texture = Texture<T>;
+
+    fn clear(&mut self, bounds: Bounds, color: Color) {
+        self.push_clear(bounds, color);
+    }
+
+    fn draw(&mut self, shader: &Shader) {
+        self.push_object(&shader.shader);
+    }
+
+    fn add_rect(&mut self, quad: Bounds) {
+        self.push_object_rect(quad);
+    }
+
+    fn add_data(&mut self, buffer: &[u8]) {
+        self.push_object_data(buffer);
+    }
+
+    fn add_texture(&mut self, texture: &Texture<T>) {
+        self.push_object_texture(texture.texture);
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            debug_logger: None,
+            enable_gpu_time_queries: true,
+            prefer_ubo_over_tbo: false,
+        }
+    }
 }

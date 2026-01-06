@@ -199,6 +199,16 @@ pub fn peeper_const<'a>(arena: &'a Bump, ir: IR<'a>) -> IR<'a> {
             _ => ir,
         },
 
+        CastAsI(a, _) => match a.0 {
+            // constant
+            LitF(x, _) => IR::new(arena, LitI((*x) as i32, ())),
+
+            // int(float(x)) = x
+            CastAsF(x, _) => *x,
+
+            _ => ir,
+        },
+
         _ => ir,
     }
 }

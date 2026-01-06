@@ -1,17 +1,11 @@
 mod ir;
 
-#[cfg(test)]
-mod test;
-
-use super::{VMOp, VMOpcode};
+use super::VMOpcode;
 use bumpalo::Bump;
-use picodraw_core::{Graph, graph::OpInput};
+use picodraw_core::{ShaderData, ShaderError};
 use std::fmt::Debug;
 
 pub struct CompiledShader {
-    slots_input: u32,
-    slots_texture: u8,
-
     static_opcodes: Vec<VMOpcode>,
     static_outputs: Vec<u8>,
     static_registers: u8,
@@ -29,23 +23,8 @@ pub struct CompiledProgram<'a> {
 }
 
 impl CompiledShader {
-    pub fn compile(arena: &Bump, graph: &Graph) -> Self {
-        let mut slots_input = 0;
-        let mut slots_texture = 0;
-
-        let builder = ir::IRBuilder::from_graph(arena, graph, |builder, addr, input| match input {
-            OpInput::Texture => {
-                builder.set_texture(addr, slots_texture);
-                slots_texture += 1;
-            }
-
-            _ => {
-                builder.set_graph(addr, 0, ir::IR::new(arena, VMOp::Read(slots_input, ())));
-                slots_input += 1;
-            }
-        });
-
-        let program = builder.extract_program(graph.output(), 4);
+    pub fn compile(arena: &Bump, data: &ShaderData) -> Result<Self, ShaderError> {
+        let program = ir::lower_to_ir(arena, data)?;
         let program = ir::optimize_peephole(&program, arena, ir::peeper_split);
         let program = ir::optimize_peephole(&program, arena, ir::peeper_const);
         let program = ir::optimize_hashcons(&program, arena);
@@ -54,13 +33,10 @@ impl CompiledShader {
         let program_static = ir::optimize_peephole(&program_static, arena, ir::peeper_join);
         let program_dynamic = ir::optimize_peephole(&program_dynamic, arena, ir::peeper_join);
 
-        let program_static = ir::lower_to_opcodes(&program_static, arena);
-        let program_dynamic = ir::lower_to_opcodes(&program_dynamic, arena);
+        let program_static = ir::lower_to_opcodes(&program_static, arena)?;
+        let program_dynamic = ir::lower_to_opcodes(&program_dynamic, arena)?;
 
-        Self {
-            slots_input,
-            slots_texture,
-
+        Ok(Self {
             static_opcodes: program_static.opcodes.to_vec(),
             static_registers: program_static.registers,
             static_outputs: program_static.outputs.to_vec(),
@@ -73,7 +49,7 @@ impl CompiledShader {
                 program_dynamic.outputs[2],
                 program_dynamic.outputs[3],
             ],
-        }
+        })
     }
 
     pub fn static_program(&self) -> CompiledProgram<'_> {
@@ -82,14 +58,6 @@ impl CompiledShader {
 
     pub fn dynamic_program(&self) -> CompiledProgram<'_> {
         unsafe { CompiledProgram::new_unchecked(&self.dynamic_opcodes, &self.dynamic_outputs, self.dynamic_registers) }
-    }
-
-    pub fn input_slots(&self) -> usize {
-        self.slots_input as usize
-    }
-
-    pub fn texture_slots(&self) -> usize {
-        self.slots_texture as usize
     }
 }
 
@@ -129,5 +97,42 @@ impl<'a> Debug for CompiledProgram<'a> {
         }
 
         write!(f, "]")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use picodraw_core::{
+        ShaderData,
+        trace::{float1, float4},
+    };
+
+    #[test]
+    fn test() {
+        let graph = ShaderData::trace(|| {
+            let p = float1::read_f32(0);
+
+            let z0 = p.sin();
+            let z1 = p.cos();
+            let z2 = p.tan();
+            let z3 = p.asin();
+            let z4 = p.acos();
+
+            let z0 = z0.abs();
+            let z1 = z1.abs();
+            let z2 = z2.abs();
+            let z3 = z3.abs();
+            let z4 = z4.abs();
+
+            let u = ((z4 + z3) + z2) + z1 + z0;
+
+            float4(u)
+        });
+
+        let arena = bumpalo::Bump::new();
+        let compiled = super::CompiledShader::compile(&arena, &graph).unwrap();
+
+        dbg!(&compiled.static_program());
+        dbg!(&compiled.dynamic_program());
     }
 }

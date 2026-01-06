@@ -5,5 +5,4 @@ edition = "2024"
 
 [dependencies]
 picodraw-core = { path = "../core" }
-slotmap = { workspace = true }
 glow = { workspace = true }

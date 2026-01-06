@@ -1,4 +1,4 @@
-use picodraw_core::{TextureFilter, TextureFormat};
+use picodraw_core::{Color, TextureError, TextureFilter, TextureFormat};
 use std::{
     marker::PhantomData,
     ops::{Deref, Index, IndexMut},
@@ -6,20 +6,21 @@ use std::{
 
 #[derive(Clone)]
 pub struct Buffer {
-    data: Box<[u32]>,
+    data: Box<[Color]>,
     width: usize,
     height: usize,
 }
 
 #[derive(Clone, Copy)]
 pub struct BufferRef<'a> {
-    data: *const u32,
+    data: *const Color,
     width: usize,
     height: usize,
     stride: usize,
-    phantom: PhantomData<&'a [u32]>,
+    phantom: PhantomData<&'a [Color]>,
 }
 
+#[derive(Default)]
 pub struct BufferMut<'a>(BufferRef<'a>);
 
 unsafe impl Send for BufferRef<'_> {}
@@ -28,7 +29,7 @@ unsafe impl Sync for BufferRef<'_> {}
 impl Buffer {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
-            data: vec![0; width * height].into_boxed_slice(),
+            data: vec![Color::default(); width * height].into_boxed_slice(),
             width,
             height,
         }
@@ -36,7 +37,7 @@ impl Buffer {
 
     pub fn resize(&mut self, width: usize, height: usize) {
         let mut data = std::mem::replace(&mut self.data, Box::new([])).into_vec();
-        data.resize(width * height, 0);
+        data.resize(width * height, Color::default());
         self.data = data.into_boxed_slice();
         self.width = width;
         self.height = height;
@@ -60,7 +61,7 @@ impl Buffer {
 }
 
 impl<'a> BufferRef<'a> {
-    pub fn from_slice(data: &'a [u32], width: usize, height: usize) -> Self {
+    pub fn from_slice(data: &'a [Color], width: usize, height: usize) -> Self {
         Self {
             data: data.as_ptr(),
             width,
@@ -70,7 +71,10 @@ impl<'a> BufferRef<'a> {
         }
     }
 
-    pub unsafe fn from_raw_parts(data: *mut u32, width: usize, height: usize, stride: usize) -> Self {
+    /// # Safety
+    /// The caller must ensure that the provided data pointer is valid for
+    /// the given width, height, and stride.
+    pub unsafe fn from_raw_parts(data: *const Color, width: usize, height: usize, stride: usize) -> Self {
         Self {
             data,
             width,
@@ -80,8 +84,8 @@ impl<'a> BufferRef<'a> {
         }
     }
 
-    pub fn into_raw_parts(self) -> (*const u32, usize, usize, usize) {
-        (self.data as *const u32, self.width, self.height, self.stride)
+    pub fn into_raw_parts(self) -> (*const Color, usize, usize, usize) {
+        (self.data, self.width, self.height, self.stride)
     }
 
     pub fn width(&self) -> usize {
@@ -111,11 +115,11 @@ impl<'a> BufferRef<'a> {
     }
 
     #[inline]
-    pub fn sample(&self, x: f32, y: f32, filter: TextureFilter) -> u32 {
+    pub fn sample(&self, x: f32, y: f32, filter: TextureFilter) -> Color {
         #[inline]
-        fn sample_neasert(buffer: BufferRef, x: usize, y: usize) -> u32 {
+        fn sample_nearest(buffer: BufferRef, x: usize, y: usize) -> Color {
             if buffer.width == 0 || buffer.height == 0 {
-                return 0;
+                return Color::default();
             }
 
             let x = x.min(buffer.width - 1);
@@ -124,54 +128,29 @@ impl<'a> BufferRef<'a> {
         }
 
         match filter {
-            TextureFilter::Nearest => sample_neasert(*self, x as usize, y as usize),
+            TextureFilter::Nearest => sample_nearest(*self, x as usize, y as usize),
             TextureFilter::Linear => {
                 let (x, y) = (x - 0.5, y - 0.5);
 
-                let lerp = |a: u8, b: u8, x: u8| {
-                    let a = a as u16;
-                    let b = b as u16;
-                    let x = x as u16;
-                    ((a * (256 - x) + b * x) / 256) as u8
-                };
-
-                let p00 = sample_neasert(*self, x as usize, y as usize).to_ne_bytes();
-                let p10 = sample_neasert(*self, x as usize + 1, y as usize).to_ne_bytes();
-                let p01 = sample_neasert(*self, x as usize, y as usize + 1).to_ne_bytes();
-                let p11 = sample_neasert(*self, x as usize + 1, y as usize + 1).to_ne_bytes();
+                let p00 = sample_nearest(*self, x as usize, y as usize);
+                let p10 = sample_nearest(*self, x as usize + 1, y as usize);
+                let p01 = sample_nearest(*self, x as usize, y as usize + 1);
+                let p11 = sample_nearest(*self, x as usize + 1, y as usize + 1);
 
                 let x0 = (x.fract() * 256.0) as u8;
                 let y0 = (y.fract() * 256.0) as u8;
 
-                let a = [
-                    lerp(p00[0], p10[0], x0),
-                    lerp(p00[1], p10[1], x0),
-                    lerp(p00[2], p10[2], x0),
-                    lerp(p00[3], p10[3], x0),
-                ];
+                let a = p00.lerp(p10, x0);
+                let b = p01.lerp(p11, x0);
 
-                let b = [
-                    lerp(p01[0], p11[0], x0),
-                    lerp(p01[1], p11[1], x0),
-                    lerp(p01[2], p11[2], x0),
-                    lerp(p01[3], p11[3], x0),
-                ];
-
-                let c = [
-                    lerp(a[0], b[0], y0),
-                    lerp(a[1], b[1], y0),
-                    lerp(a[2], b[2], y0),
-                    lerp(a[3], b[3], y0),
-                ];
-
-                u32::from_ne_bytes(c)
+                a.lerp(b, y0)
             }
         }
     }
 }
 
 impl<'a> BufferMut<'a> {
-    pub fn from_slice(data: &'a mut [u32], width: usize, height: usize) -> Self {
+    pub fn from_slice(data: &'a mut [Color], width: usize, height: usize) -> Self {
         Self(BufferRef {
             data: data.as_mut_ptr(),
             width,
@@ -181,7 +160,10 @@ impl<'a> BufferMut<'a> {
         })
     }
 
-    pub unsafe fn from_raw_parts(data: *mut u32, width: usize, height: usize, stride: usize) -> Self {
+    /// # Safety
+    /// The caller must ensure that the provided data pointer is valid for
+    /// the given width, height, and stride.
+    pub unsafe fn from_raw_parts(data: *mut Color, width: usize, height: usize, stride: usize) -> Self {
         Self(BufferRef {
             data,
             width,
@@ -191,8 +173,8 @@ impl<'a> BufferMut<'a> {
         })
     }
 
-    pub fn into_raw_parts(self) -> (*mut u32, usize, usize, usize) {
-        (self.0.data as *mut u32, self.0.width, self.0.height, self.0.stride)
+    pub fn into_raw_parts(self) -> (*mut Color, usize, usize, usize) {
+        (self.0.data as *mut Color, self.0.width, self.0.height, self.0.stride)
     }
 
     pub fn reborrow(&mut self) -> Self {
@@ -206,21 +188,31 @@ impl<'a> BufferMut<'a> {
     }
 
     pub fn subregion_mut(&mut self, x: usize, y: usize, width: usize, height: usize) -> Self {
-        Self {
-            0: self.subregion(x, y, width, height),
-        }
+        Self(self.subregion(x, y, width, height))
     }
 
-    pub fn unpack_data(&mut self, width: usize, height: usize, format: TextureFormat, data: &[u8]) {
-        assert!(width * height * format.bytes_per_pixel() == data.len());
+    pub fn unpack_data(
+        &mut self,
+        width: usize,
+        height: usize,
+        format: TextureFormat,
+        data: &[u8],
+    ) -> Result<(), TextureError> {
+        if width * height * format.bytes_per_pixel() != data.len() {
+            return Err(TextureError::MalformedData);
+        }
 
         match format {
             TextureFormat::RGBA8 => {
                 for y in 0..self.height.min(height) {
                     for x in 0..self.width.min(width) {
                         let offset = (y * width + x) * 4;
-                        self[(x, y)] =
-                            pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], data[offset + 3]);
+                        self[(x, y)] = Color {
+                            r: data[offset],
+                            g: data[offset + 1],
+                            b: data[offset + 2],
+                            a: data[offset + 3],
+                        };
                     }
                 }
             }
@@ -229,7 +221,12 @@ impl<'a> BufferMut<'a> {
                 for y in 0..self.height.min(height) {
                     for x in 0..self.width.min(width) {
                         let offset = (y * width + x) * 3;
-                        self[(x, y)] = pack_rgba(data[offset + 0], data[offset + 1], data[offset + 2], 0xFF);
+                        self[(x, y)] = Color {
+                            r: data[offset],
+                            g: data[offset + 1],
+                            b: data[offset + 2],
+                            a: 0xFF,
+                        };
                     }
                 }
             }
@@ -238,16 +235,23 @@ impl<'a> BufferMut<'a> {
                 for y in 0..self.height.min(height) {
                     for x in 0..self.width.min(width) {
                         let offset = y * width + x;
-                        self[(x, y)] = pack_rgba(data[offset + 0], 0, 0, 0xFF);
+                        self[(x, y)] = Color {
+                            r: data[offset],
+                            g: 0,
+                            b: 0,
+                            a: 0xFF,
+                        };
                     }
                 }
             }
         }
+
+        Ok(())
     }
 }
 
 impl<'a> Index<(usize, usize)> for BufferRef<'a> {
-    type Output = u32;
+    type Output = Color;
 
     #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
@@ -259,7 +263,7 @@ impl<'a> Index<(usize, usize)> for BufferRef<'a> {
 }
 
 impl<'a> Index<(usize, usize)> for BufferMut<'a> {
-    type Output = u32;
+    type Output = Color;
 
     #[inline(always)]
     fn index(&self, (x, y): (usize, usize)) -> &Self::Output {
@@ -273,7 +277,7 @@ impl<'a> IndexMut<(usize, usize)> for BufferMut<'a> {
         assert!(x < self.0.width);
         assert!(y < self.0.height);
 
-        unsafe { &mut *(self.0.data as *mut u32).add(y * self.0.stride + x) }
+        unsafe { &mut *(self.0.data as *mut Color).add(y * self.0.stride + x) }
     }
 }
 
@@ -289,25 +293,4 @@ impl<'a> Default for BufferRef<'a> {
     fn default() -> Self {
         Self::from_slice(&[], 0, 0)
     }
-}
-
-impl<'a> Default for BufferMut<'a> {
-    fn default() -> Self {
-        Self(BufferRef::default())
-    }
-}
-
-#[inline(always)]
-pub fn pack_rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
-    (r as u32) << 16 | (g as u32) << 8 | (b as u32) | ((a as u32) << 24)
-}
-
-#[inline(always)]
-pub fn unpack_rgba(color: u32) -> (u8, u8, u8, u8) {
-    (
-        ((color >> 16) & 0xFF) as u8,
-        ((color >> 8) & 0xFF) as u8,
-        (color & 0xFF) as u8,
-        ((color >> 24) & 0xFF) as u8,
-    )
 }

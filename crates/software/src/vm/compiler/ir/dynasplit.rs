@@ -60,17 +60,5 @@ pub fn split_static_dynamic<'a>(program: &IRProgram<'a>, arena: &'a Bump) -> (IR
 }
 
 fn can_be_a_boundary(ir: &IR) -> bool {
-    match ir.0 {
-        VMOp::LitF(_, _) => false,
-        VMOp::LitI(_, _) => false,
-        VMOp::QuadB(_) => false,
-        VMOp::QuadT(_) => false,
-        VMOp::QuadL(_) => false,
-        VMOp::QuadR(_) => false,
-        VMOp::ResX(_) => false,
-        VMOp::ResY(_) => false,
-        VMOp::TexH(_, _) => false,
-        VMOp::TexW(_, _) => false,
-        _ => true,
-    }
+    !matches!(ir.0, VMOp::LitF(_, _) | VMOp::LitI(_, _))
 }

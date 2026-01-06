@@ -5,13 +5,13 @@ use std::{fmt::Debug, hash::Hash};
 mod dynasplit;
 mod graph2ir;
 mod hashcons;
-mod lowering;
+mod ir2opcode;
 mod peephole;
 
 pub use dynasplit::*;
-pub use graph2ir::IRBuilder;
+pub use graph2ir::*;
 pub use hashcons::*;
-pub use lowering::*;
+pub use ir2opcode::*;
 pub use peephole::*;
 
 pub enum IRVisit<'a> {

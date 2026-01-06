@@ -3,7 +3,7 @@ use glow::{
     PixelPackData, PixelUnpackData, R8, RED, RGB, RGB8, RGBA, RGBA8, SCISSOR_TEST, TEXTURE_2D, TEXTURE_MAG_FILTER,
     TEXTURE_MIN_FILTER, TEXTURE_WRAP_S, TEXTURE_WRAP_T, UNSIGNED_BYTE,
 };
-use picodraw_core::{TextureData, TextureFormat};
+use picodraw_core::{Color, TextureData, TextureError, TextureFormat};
 use std::cell::Cell;
 
 pub struct GlTexture<T: HasContext> {
@@ -66,24 +66,19 @@ impl<T: HasContext> GlTexture<T> {
         self.texture
     }
 
-    pub fn upload_subregion(&self, gl: &T, data: TextureData) -> bool {
-        assert!(
-            data.data.len()
-                == data.bounds.width() as usize * data.bounds.height() as usize * data.format.bytes_per_pixel(),
-            "invalid {:?} data length: {} != {} (width x height x {})",
-            data.format,
-            data.data.len(),
-            data.bounds.width() as usize * data.bounds.height() as usize * data.format.bytes_per_pixel(),
-            data.format.bytes_per_pixel()
-        );
+    pub fn upload_subregion(&self, gl: &T, data: TextureData) -> Result<(), TextureError> {
+        if data.data.len()
+            != data.bounds.width() as usize * data.bounds.height() as usize * data.format.bytes_per_pixel()
+        {
+            return Err(TextureError::MalformedData);
+        }
 
-        assert!(
-            data.bounds.right <= self.width && data.bounds.bottom <= self.height,
-            "subregion is out of bounds"
-        );
+        if data.bounds.right > self.width || data.bounds.bottom > self.height {
+            return Err(TextureError::MalformedData);
+        }
 
         if data.bounds.is_empty() {
-            return false;
+            return Ok(());
         }
 
         unsafe {
@@ -105,7 +100,7 @@ impl<T: HasContext> GlTexture<T> {
             );
         }
 
-        true
+        Ok(())
     }
 
     pub fn bind_framebuffer<'a>(&'a self, gl: &'a T) -> GlFramebufferBinding<'a, T> {
@@ -167,11 +162,16 @@ impl<'a, T: HasContext> GlFramebufferBinding<'a, T> {
         data
     }
 
-    pub fn clear(&self, x: u32, y: u32, width: u32, height: u32) {
+    pub fn clear(&self, x: u32, y: u32, width: u32, height: u32, color: Color) {
         unsafe {
             self.gl.enable(SCISSOR_TEST);
             self.gl.scissor(x as _, y as _, width as _, height as _);
-            self.gl.clear_color(0.0, 0.0, 0.0, 0.0);
+            self.gl.clear_color(
+                color.r as f32 / 255.0,
+                color.g as f32 / 255.0,
+                color.b as f32 / 255.0,
+                color.a as f32 / 255.0,
+            );
             self.gl.clear(COLOR_BUFFER_BIT);
             self.gl.disable(SCISSOR_TEST);
         }

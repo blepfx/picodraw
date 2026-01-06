@@ -1,3 +1,4 @@
+use crate::{DebugCallback, DebugMessage};
 use glow::{BLEND, DEBUG_OUTPUT, DEBUG_OUTPUT_SYNCHRONOUS, HasContext, ONE, ONE_MINUS_SRC_ALPHA, SRC_ALPHA};
 
 pub fn viewport(gl: &impl HasContext, x: i32, y: i32, w: u32, h: u32) {
@@ -14,16 +15,22 @@ pub fn enable_blend_normal(gl: &impl HasContext) {
     }
 }
 
-pub fn enable_debug(gl: &mut impl HasContext) {
-    if !cfg!(debug_assertions) {
-        return;
-    }
-
+pub fn enable_debug(gl: &mut impl HasContext, logger: DebugCallback) {
     unsafe {
         gl.enable(DEBUG_OUTPUT);
         gl.enable(DEBUG_OUTPUT_SYNCHRONOUS);
-        gl.debug_message_callback(|_, _, _, _, message| {
-            eprintln!("{}", message);
+        gl.debug_message_callback(move |_, type_, _, _, message| {
+            let type_ = match type_ {
+                glow::DEBUG_TYPE_ERROR => DebugMessage::Error,
+                glow::DEBUG_TYPE_DEPRECATED_BEHAVIOR => DebugMessage::Deprecated,
+                glow::DEBUG_TYPE_UNDEFINED_BEHAVIOR => DebugMessage::UndefinedBehavior,
+                glow::DEBUG_TYPE_PORTABILITY => DebugMessage::Portability,
+                glow::DEBUG_TYPE_PERFORMANCE => DebugMessage::Performance,
+                glow::DEBUG_TYPE_MARKER => DebugMessage::Marker,
+                _ => DebugMessage::Other,
+            };
+
+            logger(type_, message);
         });
     }
 }

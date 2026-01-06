@@ -1,37 +1,42 @@
 use crate::{
     buffer::{BufferMut, BufferRef},
-    pack_rgba,
     util::{Pod, SimdDispatcher, SparseMap, ThreadPool},
     vm::{CompiledShader, VMContext, VMMemory, VMSlot, VMTile, VMTile4, VMTile8, VMTile16},
 };
 use bumpalo::{Bump, collections::Vec};
-use picodraw_core::{Bounds, DrawError};
-use std::{hint::unreachable_unchecked, ops::Range};
+use picodraw_core::{Bounds, Color};
+use std::hint::unreachable_unchecked;
 
 const TILE_SIZE: usize = 16;
 
 enum DispatchObject<'a> {
     Draw {
         shader: &'a CompiledShader,
-        inputs: Range<usize>,
-        textures: Range<usize>,
+        inputs: &'a [VMSlot],
+        textures: &'a [BufferRef<'a>],
         bounds: Bounds,
     },
 
     Clear {
         bounds: Bounds,
+        color: Color,
     },
+}
+
+impl DispatchObject<'_> {
+    fn bounds(&self) -> &Bounds {
+        match self {
+            DispatchObject::Draw { bounds, .. } => bounds,
+            DispatchObject::Clear { bounds, .. } => bounds,
+        }
+    }
 }
 
 pub struct Dispatcher<'a> {
     arena: &'a Bump,
     objects: Vec<'a, DispatchObject<'a>>,
-    inputs: Vec<'a, VMSlot>,
-    textures: Vec<'a, BufferRef<'a>>,
-
-    current_inputs: usize,
-    current_textures: usize,
-    current_shader: Option<&'a CompiledShader>,
+    current_data: Vec<'a, u8>,
+    current_textures: Vec<'a, BufferRef<'a>>,
     current_bounds: Vec<'a, Bounds>,
 }
 
@@ -40,66 +45,64 @@ impl<'a> Dispatcher<'a> {
         Self {
             arena,
             objects: Vec::new_in(arena),
-            inputs: Vec::new_in(arena),
-            textures: Vec::new_in(arena),
-
-            current_inputs: 0,
-            current_textures: 0,
+            current_data: Vec::new_in(arena),
+            current_textures: Vec::new_in(arena),
             current_bounds: Vec::new_in(arena),
-            current_shader: None,
         }
     }
 
-    pub fn clear(&mut self, bounds: impl Into<Bounds>) {
-        self.objects.push(DispatchObject::Clear { bounds: bounds.into() });
+    pub fn push_clear(&mut self, bounds: impl Into<Bounds>, color: Color) {
+        self.objects.push(DispatchObject::Clear {
+            bounds: bounds.into(),
+            color,
+        });
     }
 
-    pub fn object_start(&mut self, shader: &'a CompiledShader) {
-        self.current_bounds.clear();
-        self.current_inputs = self.inputs.len();
-        self.current_textures = self.textures.len();
-        self.current_shader = Some(shader);
-    }
+    pub fn push_object(&mut self, shader: &'a CompiledShader) {
+        // TODO: optimize
+        let inputs = {
+            let mut inputs = Vec::new_in(self.arena);
+            for chunk in self.current_data.chunks(4) {
+                inputs.push(VMSlot::from(i32::from_ne_bytes([
+                    *chunk.get(0).unwrap_or(&0),
+                    *chunk.get(1).unwrap_or(&0),
+                    *chunk.get(2).unwrap_or(&0),
+                    *chunk.get(3).unwrap_or(&0),
+                ])));
+            }
 
-    pub fn object_rect(&mut self, bounds: Bounds) {
-        self.current_bounds.push(bounds);
-    }
+            inputs
+        };
 
-    pub fn object_inputs(&mut self, inputs: &[VMSlot]) {
-        self.inputs.extend_from_slice(inputs);
-    }
-
-    pub fn object_texture(&mut self, texture: BufferRef<'a>) {
-        self.textures.push(texture);
-    }
-
-    pub fn object_end(&mut self) -> Result<(), DrawError> {
-        let shader = self.current_shader.take().ok_or(DrawError::MalformedStream)?;
-
-        let inputs = self.current_inputs..self.inputs.len();
-        let textures = self.current_textures..self.textures.len();
-
-        if inputs.len() != shader.input_slots() || textures.len() != shader.texture_slots() {
-            return Err(DrawError::InvalidObjectData);
-        }
-
+        let inputs = inputs.into_bump_slice();
+        let textures = self.current_textures.clone().into_bump_slice();
         for bounds in self.current_bounds.drain(..) {
             self.objects.push(DispatchObject::Draw {
                 shader,
-                inputs: inputs.clone(),
-                textures: textures.clone(),
+                inputs,
+                textures,
                 bounds,
             });
         }
 
-        Ok(())
+        self.current_bounds.clear();
+        self.current_data.clear();
+        self.current_textures.clear();
     }
 
-    pub fn dispatch(self, pool: &mut ThreadPool, simd: SimdDispatcher, buffer: BufferMut<'a>) {
-        // prepare data
-        let input_buffer = self.inputs.into_bump_slice();
-        let texture_buffer = self.textures.into_bump_slice();
+    pub fn push_object_rect(&mut self, bounds: Bounds) {
+        self.current_bounds.push(bounds);
+    }
 
+    pub fn push_object_data(&mut self, data: &[u8]) {
+        self.current_data.extend_from_slice(data);
+    }
+
+    pub fn push_object_texture(&mut self, texture: BufferRef<'a>) {
+        self.current_textures.push(texture);
+    }
+
+    pub fn rasterize(self, pool: &mut ThreadPool, simd: SimdDispatcher, buffer: BufferMut<'a>) {
         // run the "static" parts of the object shaders
         // (i.e. the parts that don't depend on the current pixel)
         // and tile them into buckets
@@ -112,17 +115,13 @@ impl<'a> Dispatcher<'a> {
                     textures,
                     bounds,
                 } => {
-                    let inputs = &input_buffer[inputs.clone()];
-                    let textures = &texture_buffer[textures.clone()];
-
                     // SAFETY: the program is guaranteed to be valid
                     // because [`CompiledShader::compile`] is expected to return a valid program
-                    // data is guaranteed to be valid because we checked it in [`write_end`]
                     let result = unsafe {
                         VMContext {
                             program: shader.static_program(),
-                            inputs: &inputs,
-                            textures: &textures,
+                            inputs,
+                            textures,
                             pos_x: 0.0,
                             pos_y: 0.0,
                             res_x: buffer.width() as f32,
@@ -136,7 +135,7 @@ impl<'a> Dispatcher<'a> {
                     };
 
                     let inputs = &*self.arena.alloc_slice_fill_iter(result.iter().copied());
-                    DispatchOperation::Draw {
+                    DispatchObject::Draw {
                         shader,
                         inputs,
                         textures,
@@ -144,7 +143,10 @@ impl<'a> Dispatcher<'a> {
                     }
                 }
 
-                DispatchObject::Clear { bounds } => DispatchOperation::Clear { bounds: *bounds },
+                DispatchObject::Clear { bounds, color } => DispatchObject::Clear {
+                    bounds: *bounds,
+                    color: *color,
+                },
             }
         });
 
@@ -157,11 +159,7 @@ impl<'a> Dispatcher<'a> {
             );
 
             for job in jobs {
-                let bounds = match job {
-                    DispatchOperation::Draw { bounds, .. } => bounds,
-                    DispatchOperation::Clear { bounds } => bounds,
-                };
-
+                let bounds = job.bounds();
                 let x0 = bounds.left / TILE_SIZE as u32;
                 let y0 = bounds.top / TILE_SIZE as u32;
                 let x1 = bounds.right.div_ceil(TILE_SIZE as u32).min(tiles.width());
@@ -210,12 +208,7 @@ impl<'a> Dispatcher<'a> {
                         let mut buffer = std::ptr::read::<BufferMut<'_>>(&buffer as *const _);
 
                         (
-                            buffer.subregion_mut(
-                                group.x as usize,
-                                group.y as usize,
-                                TILE_SIZE as usize,
-                                TILE_SIZE as usize,
-                            ),
+                            buffer.subregion_mut(group.x as usize, group.y as usize, TILE_SIZE, TILE_SIZE),
                             buffer.width(),
                             buffer.height(),
                         )
@@ -236,16 +229,17 @@ impl<'a> Dispatcher<'a> {
                             });
 
                         match job {
-                            DispatchOperation::Clear { .. } => {
+                            DispatchObject::Clear { color, .. } => {
                                 worker.clear_region(
                                     bounds.left as usize,
                                     bounds.top as usize,
                                     bounds.right as usize,
                                     bounds.bottom as usize,
+                                    *color,
                                 );
                             }
 
-                            DispatchOperation::Draw {
+                            DispatchObject::Draw {
                                 shader,
                                 inputs,
                                 textures,
@@ -278,32 +272,10 @@ impl<'a> Dispatcher<'a> {
     }
 }
 
-enum DispatchOperation<'a> {
-    Draw {
-        shader: &'a CompiledShader,
-        textures: &'a [BufferRef<'a>],
-        inputs: &'a [VMSlot],
-        bounds: Bounds,
-    },
-
-    Clear {
-        bounds: Bounds,
-    },
-}
-
-impl<'a> DispatchOperation<'a> {
-    fn bounds(&self) -> Bounds {
-        match self {
-            Self::Draw { bounds, .. } => *bounds,
-            Self::Clear { bounds } => *bounds,
-        }
-    }
-}
-
 struct DispatchGroup<'a> {
     x: u32,
     y: u32,
-    ops: &'a [&'a DispatchOperation<'a>],
+    ops: &'a [&'a DispatchObject<'a>],
 }
 
 struct DispatchWorker<'a> {
@@ -326,16 +298,28 @@ impl<'a> DispatchWorker<'a> {
     }
 
     #[inline(always)]
-    fn clear_region(&mut self, x0: usize, y0: usize, x1: usize, y1: usize) {
-        for j in y0..y1 {
-            self.a.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE][x0..x1].fill(0.0);
+    fn clear_region(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, color: Color) {
+        if color.a == 0 {
+            for j in y0..y1 {
+                self.a.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE][x0..x1].fill(0.0);
+            }
+        } else {
+            let r = color.r as f32 / 255.0;
+            let g = color.g as f32 / 255.0;
+            let b = color.b as f32 / 255.0;
+            let a = color.a as f32 / 255.0;
+
+            for j in y0..y1 {
+                self.r.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE][x0..x1].fill(r);
+                self.g.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE][x0..x1].fill(g);
+                self.b.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE][x0..x1].fill(b);
+                self.a.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE][x0..x1].fill(a);
+            }
         }
     }
 
     #[inline(always)]
     unsafe fn draw_region(&mut self, context: VMContext, bounds: Bounds) {
-        debug_assert!(self.memory.slots::<VMTile4>() >= context.program.used_registers());
-
         if bounds.contains([0, 0, 16, 16]) && self.memory.slots::<VMTile16>() >= context.program.used_registers() {
             unsafe {
                 self.draw_region_subtile::<VMTile16>(context, 0, 0, 0, 0, 16, 16);
@@ -373,6 +357,7 @@ impl<'a> DispatchWorker<'a> {
     }
 
     #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
     unsafe fn draw_region_subtile<T: VMTile>(
         &mut self,
         mut context: VMContext,
@@ -409,6 +394,9 @@ impl<'a> DispatchWorker<'a> {
             );
             let (a1, r1, g1, b1) = (a.as_f32(), r.as_f32(), g.as_f32(), b.as_f32());
 
+            assert!(mask_x + mask_w <= T::WIDTH);
+            assert!(mask_y + mask_h <= T::HEIGHT);
+
             for j in 0..mask_h {
                 for i in 0..mask_w {
                     let src = (j + mask_y) * T::WIDTH + (i + mask_x);
@@ -420,7 +408,7 @@ impl<'a> DispatchWorker<'a> {
                         }
                     }
 
-                    let a1 = a1[src].min(1.0).max(0.0);
+                    let a1 = a1[src].clamp(0.0, 1.0);
                     a0[dst] = (1.0 - a0[dst]) * a1 + a0[dst];
                     r0[dst] = (r1[src] - r0[dst]) * a1 + r0[dst];
                     g0[dst] = (g1[src] - g0[dst]) * a1 + g0[dst];
@@ -446,12 +434,12 @@ impl<'a> DispatchWorker<'a> {
             fn cold() {}
 
             let x = x.as_f32_mut();
-            for i in 0..x.len() {
-                if x[i] == x[i] {
-                    x[i] = (x[i] * 255.0 + 0.5).clamp(0.0, 255.0);
+            for x in x.iter_mut() {
+                if !x.is_nan() {
+                    *x = (*x * 255.0 + 0.5).clamp(0.0, 255.0);
                 } else {
                     cold();
-                    x[i] = 0.0;
+                    *x = 0.0;
                 }
             }
         }
@@ -467,14 +455,16 @@ impl<'a> DispatchWorker<'a> {
             self.g.as_f32_mut(),
             self.b.as_f32_mut(),
         );
+
         for j in 0..TILE_SIZE.min(buffer.height()) {
             for i in 0..TILE_SIZE.min(buffer.width()) {
                 unsafe {
-                    let r = r[j * TILE_SIZE + i].to_int_unchecked::<u8>();
-                    let g = g[j * TILE_SIZE + i].to_int_unchecked::<u8>();
-                    let b = b[j * TILE_SIZE + i].to_int_unchecked::<u8>();
-                    let a = a[j * TILE_SIZE + i].to_int_unchecked::<u8>();
-                    buffer[(i, j)] = pack_rgba(r, g, b, a);
+                    buffer[(i, j)] = Color {
+                        r: r[j * TILE_SIZE + i].to_int_unchecked::<u8>(),
+                        g: g[j * TILE_SIZE + i].to_int_unchecked::<u8>(),
+                        b: b[j * TILE_SIZE + i].to_int_unchecked::<u8>(),
+                        a: a[j * TILE_SIZE + i].to_int_unchecked::<u8>(),
+                    };
                 }
             }
         }

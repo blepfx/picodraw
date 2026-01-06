@@ -38,7 +38,12 @@ impl<T: HasContext> GlProgram<T> {
                 gl.compile_shader(shader);
 
                 if !gl.get_shader_compile_status(shader) {
-                    panic!("{} {}", shader_type_str, gl.get_shader_info_log(shader));
+                    panic!(
+                        "{} {} {}",
+                        shader_type_str,
+                        gl.get_shader_info_log(shader),
+                        shader_source
+                    );
                 }
 
                 gl.attach_shader(program, shader);

@@ -9,8 +9,8 @@ use bumpalo::{Bump, boxed::Box};
 #[derive(Clone, Copy)]
 pub struct VMContext<'a> {
     pub program: CompiledProgram<'a>,
-    pub inputs: &'a [VMSlot],
     pub textures: &'a [BufferRef<'a>],
+    pub inputs: &'a [VMSlot],
 
     pub pos_x: f32,
     pub pos_y: f32,
@@ -45,9 +45,8 @@ impl<'a> VMMemory<'a> {
 
 impl<'a> VMContext<'a> {
     /// SAFETY: caller must ensure that the program context is valid:
-    /// - the `inputs` array have at least the amount of elements that the `Read` opcode references
     /// - the `textures` array have at least the amount of elements that `Tex*` opcodes reference
-    /// - every operation references a register that is less than the size of the `registers` argument
+    /// - every operation references a register that is less than the size of the `memory` argument
     /// - every operation writes to a register it doesn't read from (`AddF(0, 1, 1)` is NOT valid)
     /// - every operation reads only from those registers that were written to by preceding operations
     #[allow(unused_unsafe)]
@@ -233,14 +232,13 @@ impl<'a> VMContext<'a> {
                     op!(|b: i32, c: mut i32| a.max(b));
                 }
                 AddRF(a, b, c) => {
-                    let a = unsafe { self.inputs.get_unchecked(a as usize).float };
+                    let a: f32 = self.inputs.get(a as usize).copied().unwrap_or_default().into();
                     op!(|b: f32, c: mut f32| a + b);
                 }
                 MulRF(a, b, c) => {
-                    let a = unsafe { self.inputs.get_unchecked(a as usize).float };
+                    let a: f32 = self.inputs.get(a as usize).copied().unwrap_or_default().into();
                     op!(|b: f32, c: mut f32| a * b);
                 }
-
                 MulAddF(a, b, c, d) => {
                     op!(|a: f32, b: f32, c: f32, d: mut f32| a * b + c);
                 }
@@ -319,10 +317,10 @@ impl<'a> VMContext<'a> {
                 ShrI(a, b, c) => {
                     op!(|a: i32, b: i32, c: mut i32| a >> b);
                 }
-                CastF(a, b) => {
+                CastAsF(a, b) => {
                     op!(|a: i32, b: mut f32| a as f32);
                 }
-                CastI(a, b) => {
+                CastAsI(a, b) => {
                     op!(|a: f32, b: mut i32| a as i32);
                 }
 
@@ -349,10 +347,31 @@ impl<'a> VMContext<'a> {
                     op!(|a: i32, b: i32, c: i32, d: mut i32| c ^ ((c ^ b) & a));
                 }
 
-                Read(idx, reg) => unsafe {
+                Read(idx, reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut().fill(self.inputs.get_unchecked(idx as usize).int);
-                },
+                    let value = self.inputs.get(idx as usize).copied().unwrap_or_default();
+                    reg.as_slice_mut().fill(value);
+                }
+
+                ReadU16(idx, reg) => {
+                    let (reg,) = registers!(mut reg);
+                    let value = VMSlot::cast_slice::<u16>(self.inputs)
+                        .get(idx as usize)
+                        .copied()
+                        .unwrap_or_default();
+
+                    reg.as_slice_mut().fill(VMSlot::from(value as i32));
+                }
+
+                ReadU8(idx, reg) => {
+                    let (reg,) = registers!(mut reg);
+                    let value = VMSlot::cast_slice::<u8>(self.inputs)
+                        .get(idx as usize)
+                        .copied()
+                        .unwrap_or_default();
+
+                    reg.as_slice_mut().fill(VMSlot::from(value as i32));
+                }
 
                 LitF(val, reg) => {
                     let (reg,) = registers!(mut reg);
@@ -443,42 +462,47 @@ impl<'a> VMContext<'a> {
                     }
                 }
 
-                TexW(tex, reg) => unsafe {
+                TexW(tex, reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut()
-                        .fill(self.textures.get_unchecked(tex as usize).width() as i32);
-                },
+                    let texture = self.textures.get(tex as usize).copied().unwrap_or_default();
+                    reg.as_i32_mut().fill(texture.width() as i32);
+                }
 
-                TexH(tex, reg) => unsafe {
+                TexH(tex, reg) => {
                     let (reg,) = registers!(mut reg);
-                    reg.as_i32_mut()
-                        .fill(self.textures.get_unchecked(tex as usize).height() as i32);
-                },
+                    let texture = self.textures.get(tex as usize).copied().unwrap_or_default();
+                    reg.as_i32_mut().fill(texture.height() as i32);
+                }
 
-                Tex(tex, chan, filt, x, y, reg) => unsafe {
+                // TODO: optimize
+                Tex(tex, chan, filt, x, y, reg) => {
                     let (x, y, out) = registers!(x, y, mut reg);
-                    let tex = self.textures.get_unchecked(tex as usize);
-                    let out = out.as_f32_mut();
+                    let texture = self.textures.get(tex as usize).copied().unwrap_or_default();
+                    let output = out.as_f32_mut();
                     let x = x.as_f32();
                     let y = y.as_f32();
 
                     for i in 0..T::HEIGHT {
                         for j in 0..T::WIDTH {
-                            let value = *tex
-                                .sample(x[i * T::WIDTH + j], y[i * T::WIDTH + j], filt)
-                                .to_le_bytes()
-                                .get_unchecked(chan as usize);
+                            let color = texture.sample(x[i * T::WIDTH + j], y[i * T::WIDTH + j], filt);
+                            let value = match chan {
+                                0 => color.r,
+                                1 => color.g,
+                                2 => color.b,
+                                3 => color.a,
+                                _ => 0,
+                            };
 
-                            out[i * T::WIDTH + j] = value as f32 / 255.0;
+                            output[i * T::WIDTH + j] = value as f32 / 255.0;
                         }
                     }
-                },
+                }
             }
         }
 
         VMResult {
             registers,
-            outputs: &self.program.output_registers(),
+            outputs: self.program.output_registers(),
         }
     }
 }
@@ -495,7 +519,7 @@ impl<'a, T: VMTile> VMResult<'a, T> {
     }
 
     #[inline(always)]
-    pub fn iter(&self) -> impl Iterator<Item = &'a T> + ExactSizeIterator + DoubleEndedIterator {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &'a T> + DoubleEndedIterator {
         (0..self.len()).map(|i| self.get(i))
     }
 }
@@ -513,7 +537,7 @@ mod test {
             program: unsafe {
                 CompiledProgram::new_unchecked(&[VMOp::LitF(1.0, 0), VMOp::Read(0, 1), VMOp::AddF(0, 1, 2)], &[2], 3)
             },
-            inputs: &[VMSlot { float: -1.5 }],
+            inputs: &[VMSlot::from(-1.5)],
             textures: &[],
             pos_x: 0.0,
             pos_y: 0.0,
@@ -526,7 +550,7 @@ mod test {
         };
 
         let result = unsafe { context.run::<VMSlot>(&mut memory) };
-        let result = result.get(0).as_f32();
-        assert_eq!(result[0], -0.5);
+        let result: f32 = (*result.get(0)).into();
+        assert_eq!(result, -0.5);
     }
 }

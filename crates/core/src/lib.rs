@@ -1,9 +1,15 @@
-mod command;
-mod data;
-pub mod graph;
-pub mod shader;
+#![doc = include_str!("../README.md")]
+#![forbid(unsafe_code, missing_docs, clippy::missing_panics_doc)]
 
-pub use command::{Command, Context, DrawError, ObjectData, ShaderId, TextureId};
-pub use data::*;
-pub use graph::Graph;
-pub use shader::io::{ShaderData, ShaderDataWriter};
+mod context;
+mod dynamic;
+mod shader;
+mod texture;
+
+#[cfg(feature = "trace")]
+pub mod trace;
+
+pub use context::*;
+pub use dynamic::*;
+pub use shader::*;
+pub use texture::*;

@@ -2,17 +2,14 @@
 members = [
     ".",
     "crates/core",
-    "crates/opengl", 
+    "crates/opengl",
     "crates/software",
-
-    "crates/core2",
-    "crates/opengl2",  
 ]
 
 [workspace.dependencies]
 # tests & benchmarks
 gungraun = "0.17.0"
-pugl-rs = { git = "https://github.com/blepfx/pugl-rs", features = ["opengl"] }
+picoview = { git = "https://github.com/blepfx/picoview", rev = "5657ae49f15e8d76fb696995f235e5a99d1e2100" }
 image = { version = "0.25.5", default-features = false, features = ["webp"] }
 yansi = "1.0"
 
@@ -20,15 +17,7 @@ yansi = "1.0"
 bumpalo = { version = "3.17", features = ["boxed", "collections"] }
 
 # feature(opengl)
-glow = { git = "https://github.com/Quant1um/glow", branch = "main" }
-
-# feature(software) & feature(opengl)
-slotmap = "1.0.7"
-
-# feature(derive)
-proc-macro2 = "1"
-quote = "1"
-syn = "2"
+glow = { git = "https://github.com/grovesNL/glow/", branch = "main" }
 
 [profile.bench]
 debug = true
@@ -45,19 +34,19 @@ exclude = [
 ]
 
 [dependencies]
-picodraw-core2 = { path = "crates/core2", default-features = false }
-picodraw-opengl2 = { path = "crates/opengl2", optional = true }
+picodraw-core = { path = "crates/core", default-features = false }
+picodraw-opengl = { path = "crates/opengl", optional = true }
 picodraw-software = { path = "crates/software", optional = true }
 
 [dev-dependencies]
 gungraun = { workspace = true }
-pugl-rs = { workspace = true }
+picoview = { workspace = true }
 image = { workspace = true }
 yansi = { workspace = true }
 
 [features]
-default = ["opengl"]
-opengl = ["dep:picodraw-opengl2"]
+default = ["opengl", "software"]
+opengl = ["dep:picodraw-opengl"]
 software = ["dep:picodraw-software"]
 
 [[example]]

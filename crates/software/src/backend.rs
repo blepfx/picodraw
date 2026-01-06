@@ -2,19 +2,15 @@ use crate::{
     buffer::{Buffer, BufferMut},
     dispatch::Dispatcher,
     util::{SimdDispatcher, ThreadPool},
-    vm::{CompiledShader, VMSlot},
+    vm::CompiledShader,
 };
 use bumpalo::Bump;
 use picodraw_core::{
-    Command, Context, DrawError, Graph, ObjectData, ShaderId, Size, TextureData, TextureFormat, TextureId,
+    Bounds, Color, Context, DrawTarget, FrameEncoder, ShaderData, ShaderError, Size, TextureData, TextureError,
+    TextureFormat,
 };
-use slotmap::{DefaultKey, Key, KeyData, SlotMap};
-use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
 pub struct SoftwareBackend {
-    shaders: SlotMap<DefaultKey, CompiledShader>,
-    buffers: SlotMap<DefaultKey, Option<Buffer>>,
-
     arena: Bump,
     thread_pool: ThreadPool,
     simd_dispatch: SimdDispatcher,
@@ -31,8 +27,6 @@ impl SoftwareBackend {
             arena: Bump::new(),
             simd_dispatch: SimdDispatcher::new(),
             thread_pool: ThreadPool::with_threads(1),
-            shaders: SlotMap::new(),
-            buffers: SlotMap::new(),
         }
     }
 
@@ -40,9 +34,7 @@ impl SoftwareBackend {
         Self {
             arena: Bump::new(),
             simd_dispatch: SimdDispatcher::new(),
-            thread_pool: ThreadPool::new(),
-            shaders: SlotMap::new(),
-            buffers: SlotMap::new(),
+            thread_pool: ThreadPool::with_threads(std::thread::available_parallelism().map(|x| x.get()).unwrap_or(1)),
         }
     }
 
@@ -58,138 +50,87 @@ impl<'a> SoftwareContext<'a> {
             screen: self.screen.reborrow(),
         }
     }
-
-    fn draw_to_buffer(&mut self, commands: &[Command], buffer: Option<BufferMut>) -> Result<(), DrawError> {
-        let mut dispatch = Dispatcher::new(&self.owner.arena);
-
-        for command in commands {
-            match *command {
-                Command::Clear(bounds) => {
-                    dispatch.clear(bounds);
-                }
-                Command::ObjectBegin(shader) => {
-                    let shader = self
-                        .owner
-                        .shaders
-                        .get(KeyData::from_ffi(shader.0).into())
-                        .ok_or_else(|| DrawError::InvalidShader)?;
-
-                    dispatch.object_start(&shader);
-                }
-                Command::ObjectRect(bounds) => {
-                    dispatch.object_rect(bounds);
-                }
-                Command::ObjectEnd => {
-                    dispatch.object_end()?;
-                }
-                Command::ObjectData(ObjectData::Float(float)) => {
-                    dispatch.object_inputs(&[VMSlot { float }]);
-                }
-                Command::ObjectData(ObjectData::Int(int)) => {
-                    dispatch.object_inputs(&[VMSlot { int }]);
-                }
-                Command::ObjectData(ObjectData::Texture(tex)) => {
-                    let tex = self
-                        .owner
-                        .buffers
-                        .get(KeyData::from_ffi(tex.0).into())
-                        .ok_or_else(|| DrawError::InvalidTexture)?
-                        .as_ref()
-                        .ok_or_else(|| DrawError::TargetInUse)?;
-
-                    dispatch.object_texture(tex.as_ref());
-                }
-            }
-        }
-
-        dispatch.dispatch(
-            &mut self.owner.thread_pool,
-            self.owner.simd_dispatch,
-            buffer.unwrap_or(self.screen.reborrow()),
-        );
-        self.owner.arena.reset();
-
-        Ok(())
-    }
 }
 
 impl<'a> Context for SoftwareContext<'a> {
-    fn create_texture(&mut self, size: Size, _: TextureFormat) -> TextureId {
-        let id = self
-            .owner
-            .buffers
-            .insert(Some(Buffer::new(size.width as _, size.height as _)));
-        TextureId(id.data().as_ffi())
+    type Shader = CompiledShader;
+    type Texture = Buffer;
+
+    fn create_texture(&mut self, size: Size, _: TextureFormat) -> Result<Buffer, TextureError> {
+        Ok(Buffer::new(size.width as usize, size.height as usize))
     }
 
-    fn delete_texture(&mut self, id: TextureId) -> bool {
-        self.owner.buffers.remove(KeyData::from_ffi(id.0).into()).is_some()
+    fn delete_texture(&mut self, texture: Buffer) {
+        drop(texture);
     }
 
-    fn upload_texture(&mut self, id: TextureId, data: TextureData) -> bool {
-        let buffer = self
-            .owner
-            .buffers
-            .get_mut(KeyData::from_ffi(id.0).into())
-            .map(|x| x.as_mut().expect("texture is invalid state"));
-
-        if let Some(buffer) = buffer {
-            buffer
-                .as_mut()
-                .subregion_mut(
-                    data.bounds.left as usize,
-                    data.bounds.top as usize,
-                    data.bounds.width() as usize,
-                    data.bounds.height() as usize,
-                )
-                .unpack_data(
-                    data.bounds.width() as usize,
-                    data.bounds.height() as usize,
-                    data.format,
-                    data.data,
-                );
-
-            return true;
-        }
-
-        false
+    fn upload_texture(&mut self, texture: &mut Buffer, data: TextureData) -> Result<(), TextureError> {
+        texture
+            .as_mut()
+            .subregion_mut(
+                data.bounds.left as usize,
+                data.bounds.top as usize,
+                data.bounds.width() as usize,
+                data.bounds.height() as usize,
+            )
+            .unpack_data(
+                data.bounds.width() as usize,
+                data.bounds.height() as usize,
+                data.format,
+                data.data,
+            )
     }
 
-    fn create_shader(&mut self, graph: Graph) -> ShaderId {
-        let compiled = CompiledShader::compile(&self.owner.arena, &graph);
-        let key = self.owner.shaders.insert(compiled);
+    fn create_shader(&mut self, data: &ShaderData) -> Result<CompiledShader, ShaderError> {
         self.owner.arena.reset();
-
-        ShaderId(key.data().as_ffi())
+        CompiledShader::compile(&self.owner.arena, data)
     }
 
-    fn delete_shader(&mut self, id: ShaderId) -> bool {
-        self.owner.shaders.remove(KeyData::from_ffi(id.0).into()).is_some()
+    fn delete_shader(&mut self, shader: CompiledShader) {
+        drop(shader);
     }
 
-    fn draw_screen(&mut self, commands: &[Command]) -> Result<(), DrawError> {
-        self.draw_to_buffer(commands, None)
+    fn draw<'s>(
+        &'s mut self,
+        target: DrawTarget<Self::Texture>,
+        f: impl FnOnce(&mut dyn FrameEncoder<'s, Shader = Self::Shader, Texture = Self::Texture>),
+    ) {
+        self.owner.arena.reset();
+        let mut dispatcher = Dispatcher::new(&self.owner.arena);
+        f(&mut dispatcher);
+
+        dispatcher.rasterize(
+            &mut self.owner.thread_pool,
+            self.owner.simd_dispatch,
+            match target {
+                DrawTarget::Screen => self.screen.reborrow(),
+                DrawTarget::Texture(texture) => texture.as_mut(),
+            },
+        );
+    }
+}
+
+impl<'a> FrameEncoder<'a> for Dispatcher<'a> {
+    type Shader = CompiledShader;
+    type Texture = Buffer;
+
+    fn clear(&mut self, bounds: Bounds, color: Color) {
+        self.push_clear(bounds, color);
     }
 
-    fn draw_texture(&mut self, target: TextureId, commands: &[Command]) -> Result<(), DrawError> {
-        let mut buffer = self
-            .owner
-            .buffers
-            .get_mut(KeyData::from_ffi(target.0).into())
-            .ok_or_else(|| DrawError::InvalidTarget)?
-            .take()
-            .ok_or_else(|| DrawError::TargetInUse)?;
+    fn draw(&mut self, shader: &'a Self::Shader) {
+        self.push_object(shader);
+    }
 
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            self.draw_to_buffer(commands, Some(buffer.as_mut()))
-        }));
+    fn add_rect(&mut self, rect: Bounds) {
+        self.push_object_rect(rect);
+    }
 
-        // put the buffer back
-        *self.owner.buffers.get_mut(KeyData::from_ffi(target.0).into()).unwrap() = Some(buffer);
+    fn add_data(&mut self, data: &[u8]) {
+        self.push_object_data(data);
+    }
 
-        match result {
-            Ok(result) => result,
-            Err(panic) => resume_unwind(panic),
-        }
+    fn add_texture(&mut self, texture: &'a Self::Texture) {
+        self.push_object_texture(texture.as_ref());
     }
 }

@@ -14,6 +14,8 @@ pub enum VMOp<I, O> {
     LitI(i32, O),
 
     Read(u32, O),
+    ReadU16(u32, O),
+    ReadU8(u32, O),
 
     AddI(I, I, O),
     AddF(I, I, O),
@@ -81,8 +83,8 @@ pub enum VMOp<I, O> {
 
     Select(I, I, I, O),
 
-    CastF(I, O),
-    CastI(I, O),
+    CastAsF(I, O),
+    CastAsI(I, O),
 
     DxF(I, O),
     DyF(I, O),
@@ -108,13 +110,19 @@ impl<I, O> VMOp<I, O> {
             PosY(o) => PosY(out(o)),
             ResX(o) => ResX(out(o)),
             ResY(o) => ResY(out(o)),
+
             QuadT(o) => QuadT(out(o)),
             QuadL(o) => QuadL(out(o)),
             QuadB(o) => QuadB(out(o)),
             QuadR(o) => QuadR(out(o)),
+
             LitF(val, o) => LitF(val, out(o)),
             LitI(val, o) => LitI(val, out(o)),
+
             Read(idx, o) => Read(idx, out(o)),
+            ReadU16(idx, o) => ReadU16(idx, out(o)),
+            ReadU8(idx, o) => ReadU8(idx, out(o)),
+
             AddI(a, b, o) => AddI(inp(a), inp(b), out(o)),
             AddF(a, b, o) => AddF(inp(a), inp(b), out(o)),
             SubI(a, b, o) => SubI(inp(a), inp(b), out(o)),
@@ -175,8 +183,8 @@ impl<I, O> VMOp<I, O> {
             ShlI(a, b, o) => ShlI(inp(a), inp(b), out(o)),
             ShrI(a, b, o) => ShrI(inp(a), inp(b), out(o)),
             Select(a, b, c, o) => Select(inp(a), inp(b), inp(c), out(o)),
-            CastF(a, o) => CastF(inp(a), out(o)),
-            CastI(a, o) => CastI(inp(a), out(o)),
+            CastAsF(a, o) => CastAsF(inp(a), out(o)),
+            CastAsI(a, o) => CastAsI(inp(a), out(o)),
             DxF(a, o) => DxF(inp(a), out(o)),
             DyF(a, o) => DyF(inp(a), out(o)),
             EqI(a, o) => EqI(inp(a), out(o)),

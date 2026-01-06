@@ -9,7 +9,7 @@ pub struct SparseMap<'a, T> {
 
 impl<'a, T> SparseMap<'a, T> {
     pub fn new(width: u32, height: u32, arena: &'a Bump) -> Self {
-        assert!(width * height <= u32::MAX);
+        assert!(width.checked_mul(height).is_some(), "dimensions too large");
 
         Self {
             buckets: Vec::new_in(arena),

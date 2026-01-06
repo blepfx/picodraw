@@ -37,8 +37,8 @@ impl<T: HasContext> GlStreamBuffer<T> {
     pub fn new_tbo(gl: &T, size: u32) -> Self {
         unsafe {
             let tbo_buffer = gl.create_buffer().unwrap();
-            gl.bind_buffer(UNIFORM_BUFFER, Some(tbo_buffer));
-            gl.buffer_data_size(UNIFORM_BUFFER, size as i32, DYNAMIC_DRAW);
+            gl.bind_buffer(TEXTURE_BUFFER, Some(tbo_buffer));
+            gl.buffer_data_size(TEXTURE_BUFFER, size as i32, DYNAMIC_DRAW);
 
             let tbo_texture = gl.create_texture().unwrap();
             gl.bind_texture(TEXTURE_BUFFER, Some(tbo_texture));
@@ -61,7 +61,7 @@ impl<T: HasContext> GlStreamBuffer<T> {
 
     pub fn write(&self, gl: &T, data: &[u8]) -> Range<u32> {
         debug_assert!(
-            data.len() % BUFFER_ALIGNMENT as usize == 0,
+            data.len().is_multiple_of(BUFFER_ALIGNMENT as usize),
             "data length must be aligned to {} bytes",
             BUFFER_ALIGNMENT
         );
@@ -90,7 +90,6 @@ impl<T: HasContext> GlStreamBuffer<T> {
         }
 
         self.ptr.set(ptr + data.len() as u32);
-
         ptr..self.ptr.get()
     }
 

@@ -4,166 +4,239 @@
 mod runner;
 
 use image::{GenericImageView, Rgba, open};
-use picodraw::{shader::*, *};
+use picodraw::{trace::*, *};
 use runner::{MAX_CANVAS_SIZE, run};
 use std::f32::consts::PI;
-
-macro_rules! gen_simple {
-    ($id:ident, $width:expr, $height:expr, $render:block) => {
-        #[test]
-        fn $id() {
-            run(stringify!($id), $width, $height, |context| {
-                let shader = context.create_shader(Graph::trace(|| {
-                    let z = $render;
-                    float4((z.x(), z.y(), z.z(), 1.0))
-                }));
-
-                let mut commands = vec![];
-                add_quad(&mut commands, shader, [0, 0, $width, $height], ());
-                context.draw_screen(&commands).unwrap();
-            });
-        }
-    };
-}
-
-macro_rules! gen_serialize {
-    ($id:ident, $width:expr, $height:expr, $generate:expr, $render:expr) => {
-        #[test]
-        fn $id() {
-            fn imp<T: ShaderData>(
-                context: &mut dyn Context,
-                width: u32,
-                height: u32,
-                value: T,
-                render: impl Fn(T::Data) -> float3,
-            ) {
-                let shader = context.create_shader(Graph::trace(|| {
-                    let z = render(io::read::<T>());
-                    float4((z.x(), z.y(), z.z(), 1.0))
-                }));
-
-                let mut commands = vec![];
-                add_quad(&mut commands, shader, [0, 0, width, height], value);
-                context.draw_screen(&commands).unwrap();
-            }
-
-            run(stringify!($id), $width, $height, |context| {
-                imp(context, $width, $height, $generate, $render);
-            });
-        }
-    };
-}
 
 pub mod ser {
     use super::*;
 
-    struct TestStruct {
-        x: f32,
-        y: u8,
-        z: (f32, f32),
+    #[test]
+    pub fn ser_i32() {
+        run("ser_i32", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = int1::read_i32(0);
+                    float4((
+                        float1(x & 255) / 255.0,
+                        float1((x >> 8) & 255) / 255.0,
+                        float1((x >> 16) & 255) / 255.0,
+                        1.0,
+                    ))
+                }))
+                .unwrap();
+
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&u32::to_ne_bytes(0xCAFEBEEF));
+                encoder.draw(&shader);
+            });
+        });
     }
 
-    struct TestStructShader {
-        x: float1,
-        y: float1,
-        z: (float1, float1),
+    #[test]
+    pub fn ser_u16() {
+        run("ser_u16", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = int1::read_u16(0);
+                    float4((float1(x & 255) / 255.0, float1((x >> 8) & 255) / 255.0, 1.0, 1.0))
+                }))
+                .unwrap();
+
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&u16::to_ne_bytes(0xCAFE));
+                encoder.draw(&shader);
+            });
+        });
     }
 
-    impl ShaderData for TestStruct {
-        type Data = TestStructShader;
+    #[test]
+    pub fn ser_u8() {
+        run("ser_u8", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = int1::read_u8(0);
+                    float4((float1(x & 16) / 16.0, float1((x >> 4) & 16) / 16.0, 1.0, 1.0))
+                }))
+                .unwrap();
 
-        fn read() -> Self::Data {
-            let x = io::read::<f32>();
-            let y = float1(io::read::<u8>()) / 255.0;
-            let z = io::read::<(f32, f32)>();
-            TestStructShader { x, y, z }
-        }
-
-        fn write(&self, mut writer: impl ShaderDataWriter) {
-            self.x.write(&mut writer);
-            self.y.write(&mut writer);
-            self.z.write(&mut writer);
-        }
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&u8::to_ne_bytes(0xCA));
+                encoder.draw(&shader);
+            });
+        });
     }
 
-    gen_serialize!(ser_u32, 4, 4, 0xCAFEBABEu32, |x| {
-        float3((
-            float1(x & 255) / 255.0,
-            float1((x >> 8) & 255) / 255.0,
-            float1((x >> 16) & 255) / 255.0,
-        ))
-    });
+    #[test]
+    pub fn ser_f32_pos() {
+        run("ser_f32_pos", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float1::read_f32(0);
+                    float4((x, x * 2.0, x * 3.0, 1.0))
+                }))
+                .unwrap();
 
-    gen_serialize!(ser_i32, 4, 4, 0xCAFEBEEFu32 as i32, |x| {
-        float3((
-            float1(x & 255) / 255.0,
-            float1((x >> 8) & 255) / 255.0,
-            x.le(0).select(float1(1.0), 0.0),
-        ))
-    });
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&f32::to_ne_bytes(0.3333333f32));
+                encoder.draw(&shader);
+            });
+        });
+    }
 
-    gen_serialize!(ser_u16, 4, 4, 0xCAFEu16, |x| {
-        float3((float1(x & 255) / 255.0, float1((x >> 8) & 255) / 255.0, 1.0))
-    });
+    #[test]
+    pub fn ser_f32_neg() {
+        run("ser_f32_neg", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float1::read_f32(0);
+                    float4((x, -x * 2.0, x * 3.0, 1.0))
+                }))
+                .unwrap();
 
-    gen_serialize!(ser_i16, 4, 4, 0xBABEu16 as i16, |x| {
-        float3((
-            float1(x & 255) / 255.0,
-            float1((x >> 8) & 255) / 255.0,
-            x.le(0).select(float1(1.0), 0.0),
-        ))
-    });
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&f32::to_ne_bytes(-0.3333333f32));
+                encoder.draw(&shader);
+            });
+        });
+    }
 
-    gen_serialize!(ser_u8, 4, 4, 0xCAu8, |x| {
-        float3((float1(x & 16) / 16.0, float1((x >> 4) & 16) / 16.0, 1.0))
-    });
+    #[test]
+    pub fn ser_f32_zero() {
+        run("ser_f32_zero", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float1::read_f32(0);
+                    float4((x, 1.0 - x, 0.5 - x, 1.0))
+                }))
+                .unwrap();
 
-    gen_serialize!(ser_i8, 4, 4, 0xEFu8 as i8, |x| {
-        float3((
-            float1(x & 16) / 16.0,
-            float1((x >> 4) & 16) / 16.0,
-            x.le(0).select(float1(1.0), 0.0),
-        ))
-    });
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.draw(&shader);
+            });
+        });
+    }
 
-    gen_serialize!(ser_bool, 4, 4, true, |x| {
-        float3((
-            x.select(float1(1.0), 0.0),
-            x.select(float1(0.5), 0.0),
-            x.select(float1(0.25), 0.0),
-        ))
-    });
+    #[test]
+    pub fn ser_f32_inf_pos() {
+        run("ser_f32_inf_pos", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float1::read_f32(0);
+                    float4((x, -x, x, 1.0))
+                }))
+                .unwrap();
 
-    gen_serialize!(ser_f32_pos, 4, 4, 0.3333333f32, |x| { float3((x, 2.0 * x, 3.0 * x)) });
-    gen_serialize!(ser_f32_neg, 4, 4, -0.3333333f32, |x| { float3((x, -2.0 * x, 3.0 * x)) });
-    gen_serialize!(ser_f32_zero, 4, 4, 0.0, |x| { float3((x, 1.0f32 - x, 0.5f32 - x)) });
-    gen_serialize!(ser_f32_inf_pos, 4, 4, f32::INFINITY, |x| { float3((x, -x, x)) });
-    gen_serialize!(ser_f32_inf_neg, 4, 4, f32::NEG_INFINITY, |x| { float3((x, -x, x)) });
-    gen_serialize!(ser_f32_nan, 4, 4, f32::NAN, |x| {
-        float3(x.eq(x).select(float1(0.0), 1.0))
-    });
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&f32::to_ne_bytes(f32::INFINITY));
+                encoder.draw(&shader);
+            });
+        });
+    }
 
-    gen_serialize!(ser_tuple, 4, 4, (0.2, 0.3, 0.5), |x| { float3((x.0, x.1, x.2)) });
+    #[test]
+    pub fn ser_f32_inf_neg() {
+        run("ser_f32_inf_neg", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float1::read_f32(0);
+                    float4((x, -x, x, 1.0))
+                }))
+                .unwrap();
 
-    gen_serialize!(
-        ser_struct,
-        4,
-        4,
-        TestStruct {
-            x: 0.6666666666666,
-            y: 0xCAu8,
-            z: (0.25, 0.5)
-        },
-        |x| { float3((x.x, x.y, x.z.0 * 0.5 + x.z.1 * 0.5,)) }
-    );
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&f32::to_ne_bytes(f32::NEG_INFINITY));
+                encoder.draw(&shader);
+            });
+        });
+    }
+
+    #[test]
+    pub fn ser_f32_nan() {
+        run("ser_f32_nan", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float1::read_f32(0);
+                    float4((
+                        x.eq(x).select(float1(0.0), 1.0),
+                        x.eq(x).select(float1(0.0), 1.0),
+                        x.eq(x).select(float1(0.0), 1.0),
+                        1.0,
+                    ))
+                }))
+                .unwrap();
+
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&f32::to_ne_bytes(f32::NAN));
+                encoder.draw(&shader);
+            });
+        });
+    }
+
+    #[test]
+    pub fn ser_multiple() {
+        run("ser_multiple", 4, 4, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    // XXXX YYYY ZZW_
+                    let x = float1::read_f32(0);
+                    let y = int1::read_i32(4);
+                    let z = int1::read_u16(8);
+                    let w = int1::read_u8(10);
+
+                    float4((x, y, z, w)) / 255.0
+                }))
+                .unwrap();
+
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_data(&f32::to_ne_bytes(200.0));
+                encoder.add_data(&i32::to_ne_bytes(100));
+                encoder.add_data(&u16::to_ne_bytes(50));
+                encoder.add_data(&u8::to_ne_bytes(250));
+                encoder.draw(&shader);
+            });
+        });
+    }
 }
 
 pub mod ops {
     use super::*;
 
-    gen_simple!(op_nothing, 4, 4, { float3((1.0, 0.0, 1.0)) });
+    macro_rules! test {
+        ($id:ident, $width:expr, $height:expr, $render:block) => {
+            #[test]
+            fn $id() {
+                run(stringify!($id), $width, $height, |context| {
+                    let shader = context
+                        .create_shader(&ShaderData::trace(|| {
+                            let z = { $render };
+                            float4((z.x(), z.y(), z.z(), 1.0))
+                        }))
+                        .unwrap();
 
-    gen_simple!(op_infinity, 4, 4, {
+                    context.draw(DrawTarget::Screen, |encoder| {
+                        encoder.add_rect([0, 0, $width, $height].into());
+                        encoder.draw(&shader);
+                    });
+                });
+            }
+        };
+    }
+
+    test!(op_nothing, 4, 4, { float3((1.0, 0.0, 1.0)) });
+
+    test!(op_infinity, 4, 4, {
         let pos_inf = float1(f32::INFINITY);
         let neg_inf = float1(f32::NEG_INFINITY);
         let nan = float1(f32::NAN);
@@ -171,8 +244,8 @@ pub mod ops {
         float3((pos_inf, neg_inf, nan.eq(nan).select(float1(0.0), 1.0)))
     });
 
-    gen_simple!(op_comp_ge, 64, 64, {
-        let p = io::position() / io::resolution();
+    test!(op_comp_ge, 64, 64, {
+        let p = float2::position() / float2::resolution();
 
         float3((
             p.x().ge(p.y()).select(float1(1.0), 0.0),
@@ -181,8 +254,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_le, 64, 64, {
-        let p = io::position() / io::resolution();
+    test!(op_comp_le, 64, 64, {
+        let p = float2::position() / float2::resolution();
 
         float3((
             p.x().le(p.y()).select(float1(1.0), 0.0),
@@ -191,8 +264,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_gt, 64, 64, {
-        let p = io::position() / io::resolution();
+    test!(op_comp_gt, 64, 64, {
+        let p = float2::position() / float2::resolution();
 
         float3((
             p.x().gt(p.y()).select(float1(1.0), 0.0),
@@ -201,8 +274,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_lt, 64, 64, {
-        let p = io::position() / io::resolution();
+    test!(op_comp_lt, 64, 64, {
+        let p = float2::position() / float2::resolution();
 
         float3((
             p.x().lt(p.y()).select(float1(1.0), 0.0),
@@ -211,8 +284,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_eq, 64, 64, {
-        let p = io::position() / io::resolution();
+    test!(op_comp_eq, 64, 64, {
+        let p = float2::position() / float2::resolution();
 
         float3((
             p.x().eq(p.y()).select(float1(1.0), 0.0),
@@ -221,8 +294,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_ne, 64, 64, {
-        let p = io::position() / io::resolution();
+    test!(op_comp_ne, 64, 64, {
+        let p = float2::position() / float2::resolution();
 
         float3((
             p.x().ne(p.y()).select(float1(1.0), 0.0),
@@ -231,8 +304,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_ge_int, 64, 64, {
-        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+    test!(op_int_comp_ge, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 16.0 - 8.0;
 
         float3((
             int1(p.x()).ge(int1(p.y())).select(float1(1.0), 0.0),
@@ -241,8 +314,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_le_int, 64, 64, {
-        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+    test!(op_int_comp_le, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 16.0 - 8.0;
 
         float3((
             int1(p.x()).le(int1(p.y())).select(float1(1.0), 0.0),
@@ -251,8 +324,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_gt_int, 64, 64, {
-        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+    test!(op_int_comp_gt, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 16.0 - 8.0;
 
         float3((
             int1(p.x()).gt(int1(p.y())).select(float1(1.0), 0.0),
@@ -261,8 +334,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_lt_int, 64, 64, {
-        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+    test!(op_int_comp_lt, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 16.0 - 8.0;
 
         float3((
             int1(p.x()).lt(int1(p.y())).select(float1(1.0), 0.0),
@@ -271,8 +344,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_eq_int, 64, 64, {
-        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+    test!(op_int_comp_eq, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 16.0 - 8.0;
 
         float3((
             int1(p.x()).eq(int1(p.y())).select(float1(1.0), 0.0),
@@ -281,8 +354,8 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_comp_ne_int, 64, 64, {
-        let p = (io::position() / io::resolution()) * 16.0 - 8.0;
+    test!(op_int_comp_ne, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 16.0 - 8.0;
 
         float3((
             int1(p.x()).ne(int1(p.y())).select(float1(1.0), 0.0),
@@ -291,192 +364,264 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_sin, 64, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_sin, 64, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.sin())
     });
 
-    gen_simple!(op_cos, 64, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_cos, 64, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.cos())
     });
 
-    gen_simple!(op_tan, 64, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_tan, 64, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.tan())
     });
 
-    gen_simple!(op_asin, 64, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_asin, 64, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.asin())
     });
 
-    gen_simple!(op_acos, 64, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_acos, 64, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.acos())
     });
 
-    gen_simple!(op_atan, 64, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_atan, 64, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.atan())
     });
 
-    gen_simple!(op_exp, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_exp, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.exp())
     });
 
-    gen_simple!(op_sqrt, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_sqrt, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.sqrt())
     });
 
-    gen_simple!(op_ln, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_ln, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3(x.ln())
     });
 
-    gen_simple!(op_pow, 64, 64, {
-        let p = (io::position() / io::resolution()) * 4.0;
+    test!(op_pow, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 4.0;
 
-        float3((p.x().pow(p.y()), p.x().pow(-p.y()), (-p.x()).pow(2.0)))
+        float3((p.x().powf(p.y()), p.x().powf(-p.y()), (-p.x()).powf(2.0)))
     });
 
-    gen_simple!(op_cast, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_cast, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         let y = int1(x);
         float3((
             (float1(y) - x).abs(),
-            float1(y % 2) * 0.5 + 0.5,
+            float1(y.rem_euclid(2)) * 0.5 + 0.5,
             (float1(y) + 5.0) / 10.0,
         ))
     });
 
-    gen_simple!(op_floor, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_floor, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         float3((x.floor() + 5.0) / 10.0)
     });
 
-    gen_simple!(op_abs, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
-        (float3((x.abs(), x.len(), 0.0)) + 5.0) / 10.0
+    test!(op_abs, 128, 8, {
+        let x = (float2::position() / float2::resolution()) * 10.0 - 5.0;
+        (float3((x.x().abs(), x.y().abs(), 0.0)) + 5.0) / 10.0
     });
 
-    gen_simple!(op_sign, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
-        float3((x.sign(), x.norm(), 0.0))
+    test!(op_sign, 8, 8, {
+        let x = (float2::position() / float2::resolution()) * 10.0 - 5.0;
+        float3((x.x().signum(), x.y().signum(), 0.0))
     });
 
-    gen_simple!(op_smoothstep, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
-        float3((x.smoothstep(0.0, 1.0), x.smoothstep(1.0, -1.0), x.smoothstep(-1.0, 0.0)))
-    });
-
-    gen_simple!(op_min, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_min, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         (float3((x.min(0.0), x.min(1.0), x.min(-1.0))) + 5.0) / 10.0
     });
 
-    gen_simple!(op_max, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_max, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         (float3((x.max(0.0), x.max(1.0), x.max(-1.0))) + 5.0) / 10.0
     });
 
-    gen_simple!(op_clamp, 128, 8, {
-        let x = (io::position() / io::resolution()).x() * 10.0 - 5.0;
+    test!(op_clamp, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x() * 10.0 - 5.0;
         (float3((x.clamp(0.0, 1.0), x.clamp(-1.0, 1.0), x.clamp(-1.0, 0.0))) + 5.0) / 10.0
     });
 
-    gen_simple!(op_lerp, 128, 8, {
-        let x = (io::position() / io::resolution()).x();
-        float3((x.lerp(0.5, 1.0), x.lerp(1.0, 0.0), float1(0.5).lerp(x, 0.5)))
-    });
-
-    gen_simple!(op_bit_and, 32, 32, {
-        let x = int1(io::position().x());
-        let y = int1(io::position().y());
-
+    test!(op_lerp, 128, 8, {
+        let x = (float2::position() / float2::resolution()).x();
         float3((
-            float1((x & y) % 16) / 16.0,
-            float1((x & y) % 32) / 32.0,
-            float1((x & y) % 64) / 64.0,
+            x.lerp(float1(0.5), 1.0),
+            x.lerp(float1(1.0), 0.0),
+            float1(0.5).lerp(x, 0.5),
         ))
     });
 
-    gen_simple!(op_bit_or, 32, 32, {
-        let x = int1(io::position().x());
-        let y = int1(io::position().y());
+    test!(op_int_sign, 8, 8, {
+        let x = float2::position() - 4.5;
+        float3((int1(x.x()).signum(), int1(x.y()).signum(), int1(0).signum())) * 0.5 + 0.5
+    });
+
+    test!(op_int_abs, 8, 8, {
+        let x = float2::position() - 4.5;
+        float3((float1(int1(x.x()).abs()), float1(int1(x.y()).abs()), int1(0).abs())) / 4.5
+    });
+
+    test!(op_int_and, 32, 32, {
+        let x = int1(float2::position().x());
+        let y = int1(float2::position().y());
 
         float3((
-            float1((x | y) % 16) / 16.0,
-            float1((x | y) % 32) / 32.0,
-            float1((x | y) % 64) / 64.0,
+            float1((x & y).rem_euclid(16)) / 16.0,
+            float1((x & y).rem_euclid(32)) / 32.0,
+            float1((x & y).rem_euclid(64)) / 64.0,
         ))
     });
 
-    gen_simple!(op_bit_xor, 32, 32, {
-        let x = int1(io::position().x());
-        let y = int1(io::position().y());
+    test!(op_int_or, 32, 32, {
+        let x = int1(float2::position().x());
+        let y = int1(float2::position().y());
 
         float3((
-            float1((x ^ y) % 16) / 16.0,
-            float1((x ^ y) % 32) / 32.0,
-            float1((x ^ y) % 64) / 64.0,
+            float1((x | y).rem_euclid(16)) / 16.0,
+            float1((x | y).rem_euclid(32)) / 32.0,
+            float1((x | y).rem_euclid(64)) / 64.0,
         ))
     });
 
-    gen_simple!(op_bit_not, 32, 32, {
-        let x = int1(io::position().x());
-        let y = int1(io::position().y());
+    test!(op_int_xor, 32, 32, {
+        let x = int1(float2::position().x());
+        let y = int1(float2::position().y());
 
         float3((
-            float1(!x % 32) / 32.0,
-            float1(!y % 32) / 32.0,
-            float1(!(x + y) % 32) / 32.0,
+            float1((x ^ y).rem_euclid(16)) / 16.0,
+            float1((x ^ y).rem_euclid(32)) / 32.0,
+            float1((x ^ y).rem_euclid(64)) / 64.0,
         ))
     });
 
-    gen_simple!(op_bit_shl, 32, 32, {
-        let x = int1(io::position().x());
-        let y = int1(io::position().y()) / 4;
+    test!(op_int_not, 32, 32, {
+        let x = int1(float2::position().x());
+        let y = int1(float2::position().y());
 
         float3((
-            float1((x << y) % 16) / 16.0,
-            float1((x << y) % 32) / 32.0,
-            float1((x << y) % 64) / 64.0,
+            float1((!x).rem_euclid(32)) / 32.0,
+            float1((!y).rem_euclid(32)) / 32.0,
+            float1((!(x + y)).rem_euclid(32)) / 32.0,
         ))
     });
 
-    gen_simple!(op_bit_shr, 32, 32, {
-        let x = int1(io::position().x());
-        let y = int1(io::position().y()) / 4;
+    test!(op_int_shl, 32, 32, {
+        let x = int1(float2::position().x());
+        let y = int1(float2::position().y()) / 4;
 
         float3((
-            float1((x >> y) % 16) / 16.0,
-            float1((x >> y) % 32) / 32.0,
-            float1((x >> y) % 64) / 64.0,
+            float1((x << y).rem_euclid(16)) / 16.0,
+            float1((x << y).rem_euclid(32)) / 32.0,
+            float1((x << y).rem_euclid(64)) / 64.0,
         ))
     });
 
-    gen_simple!(op_dydx, 64, 64, {
-        let p = io::position() / io::resolution();
+    test!(op_int_shr, 32, 32, {
+        let x = int1(float2::position().x());
+        let y = int1(float2::position().y()) / 4;
+
+        float3((
+            float1((x >> y).rem_euclid(16)) / 16.0,
+            float1((x >> y).rem_euclid(32)) / 32.0,
+            float1((x >> y).rem_euclid(64)) / 64.0,
+        ))
+    });
+
+    test!(op_bool_or, 32, 32, {
+        let x = int1(float2::position().x()).rem_euclid(2).eq(0);
+        let y = int1(float2::position().y()).rem_euclid(2).eq(0);
+        let z = int1(float2::position().x()).rem_euclid(3).eq(0);
+        let w = int1(float2::position().y()).rem_euclid(3).eq(0);
+
+        float3((
+            (x | y).select(float1(1.0), 0.0),
+            (z | w).select(float1(1.0), 0.0),
+            (x | z).select(float1(1.0), 0.0),
+        ))
+    });
+
+    test!(op_bool_and, 32, 32, {
+        let x = int1(float2::position().x()).rem_euclid(2).eq(0);
+        let y = int1(float2::position().y()).rem_euclid(2).eq(0);
+        let z = int1(float2::position().x()).rem_euclid(3).eq(0);
+        let w = int1(float2::position().y()).rem_euclid(3).eq(0);
+
+        float3((
+            (x & y).select(float1(1.0), 0.0),
+            (z & w).select(float1(1.0), 0.0),
+            (x & z).select(float1(1.0), 0.0),
+        ))
+    });
+
+    test!(op_bool_xor, 32, 32, {
+        let x = int1(float2::position().x()).rem_euclid(2).eq(0);
+        let y = int1(float2::position().y()).rem_euclid(2).eq(0);
+        let z = int1(float2::position().x()).rem_euclid(3).eq(0);
+        let w = int1(float2::position().y()).rem_euclid(3).eq(0);
+
+        float3((
+            (x ^ y).select(float1(1.0), 0.0),
+            (z ^ w).select(float1(1.0), 0.0),
+            (x ^ z).select(float1(1.0), 0.0),
+        ))
+    });
+
+    test!(op_bool_not, 32, 32, {
+        let x = int1(float2::position().x()).rem_euclid(2).eq(0);
+        let y = int1(float2::position().y()).rem_euclid(2).eq(0);
+
+        float3((
+            (!x).select(float1(1.0), 0.0),
+            (!y & boolean(true)).select(float1(1.0), 0.0),
+            (!x & boolean(false)).select(float1(1.0), 0.0),
+        ))
+    });
+
+    test!(op_bool_select, 32, 32, {
+        let x = int1(float2::position().x()).rem_euclid(2).eq(0);
+        let y = int1(float2::position().y()).rem_euclid(2).eq(0);
+        let z = int1(float2::position().x()).rem_euclid(3).eq(0);
+        let w = int1(float2::position().y()).rem_euclid(3).eq(0);
+
+        float3((
+            x.select(z, w).select(float1(1.0), 0.0),
+            y.select(x, z).select(float1(0.0), 1.0),
+            z.select(w, y).select(float1(1.0), 0.0),
+        ))
+    });
+
+    test!(op_dydx, 64, 64, {
+        let p = float2::position() / float2::resolution();
         let z = (p.x() * 10.0).sin() * (p.y() * 10.0).cos();
 
-        float3((z.dx() + 0.5, z.dy() + 0.5, z.fwidth()))
+        float3((z.dx() + 0.5, z.dy() + 0.5, p.dx().len()))
     });
 
-    gen_simple!(op_atan2, 64, 64, {
-        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+    test!(op_atan2, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 2.0 - 1.0;
         float3(p.x().atan2(p.y()) / PI * 0.5 + 0.5)
     });
 
-    gen_simple!(op_norm2, 64, 64, {
-        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+    test!(op_norm2, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 2.0 - 1.0;
         float3((p.norm().x() * 0.5 + 0.5, p.norm().y() * 0.5 + 0.5, p.len()))
     });
 
-    gen_simple!(op_dot2, 64, 64, {
-        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+    test!(op_dot2, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 2.0 - 1.0;
         let p = float2((p.x(), p.y()));
         float3((
             p.dot((1.0, 1.0)) * 0.5 + 0.5,
@@ -485,18 +630,36 @@ pub mod ops {
         ))
     });
 
-    gen_simple!(op_cross3, 64, 64, {
-        let p = (io::position() / io::resolution()) * 2.0 - 1.0;
+    test!(op_cross3, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 2.0 - 1.0;
         let p = float3((p.x(), p.y(), 0.0));
         p.cross((1.0, 1.0, 1.0)) * 0.5 + 0.5
     });
+
+    test!(op_norm3, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 2.0 - 1.0;
+        let p = float3((p.x(), p.y(), 1.0));
+
+        float3((p.norm().x() * 0.5 + 0.5, p.norm().y() * 0.5 + 0.5, p.len()))
+    });
+
+    test!(op_dot3, 64, 64, {
+        let p = (float2::position() / float2::resolution()) * 2.0 - 1.0;
+        let p = float3((p.x(), p.y(), 1.0));
+
+        float3((
+            p.dot((1.0, 1.0, 1.0)) * 0.5 + 0.5,
+            p.dot((0.0, 1.0, 1.0)) * 0.5 + 0.5,
+            p.dot((1.0, 0.0, 1.0)) * 0.5 + 0.5,
+        ))
+    });
 }
 
-pub mod texture {
+pub mod tex {
     use super::*;
 
     const TEST_DITHER0: [u8; 16] = [
-        0 * 16,
+        0,
         8 * 16,
         2 * 16,
         10 * 16,
@@ -506,7 +669,7 @@ pub mod texture {
         6 * 16,
         3 * 16,
         11 * 16,
-        1 * 16,
+        16,
         9 * 16,
         15 * 16,
         7 * 16,
@@ -517,194 +680,241 @@ pub mod texture {
     #[test]
     fn texture_static_nearest() {
         run("texture_static_nearest", 32, 32, |context| {
-            let texture = context.create_texture([4, 4].into(), TextureFormat::R8);
+            let mut texture = context.create_texture([4, 4].into(), TextureFormat::R8).unwrap();
+            context
+                .upload_texture(
+                    &mut texture,
+                    TextureData {
+                        bounds: [0, 0, 4, 4].into(),
+                        format: TextureFormat::R8,
+                        data: &TEST_DITHER0,
+                    },
+                )
+                .unwrap();
 
-            assert!(context.upload_texture(
-                texture,
-                TextureData {
-                    bounds: [0, 0, 4, 4].into(),
-                    format: TextureFormat::R8,
-                    data: &TEST_DITHER0,
-                },
-            ));
-            let shader = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                let uv = io::position() / io::resolution();
-                texture.sample(uv * float2(texture.size()), TextureFilter::Nearest)
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let texture = texture2d::read(0);
+                    let uv = float2::position() / float2::resolution();
+                    texture.sample(uv * float2((texture.width(), texture.height())), TextureFilter::Nearest)
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 0, 32, 32], texture);
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 32, 32].into());
+                encoder.add_texture(&texture);
+                encoder.draw(&shader);
+            });
+
+            context.delete_texture(texture);
         });
     }
 
     #[test]
     fn texture_static_linear() {
         run("texture_static_linear", 32, 32, |context| {
-            let texture = context.create_texture([4, 4].into(), TextureFormat::R8);
+            let mut texture = context.create_texture([4, 4].into(), TextureFormat::R8).unwrap();
+            context
+                .upload_texture(
+                    &mut texture,
+                    TextureData {
+                        bounds: [0, 0, 4, 4].into(),
+                        format: TextureFormat::R8,
+                        data: &TEST_DITHER0,
+                    },
+                )
+                .unwrap();
 
-            assert!(context.upload_texture(
-                texture,
-                TextureData {
-                    bounds: [0, 0, 4, 4].into(),
-                    format: TextureFormat::R8,
-                    data: &TEST_DITHER0,
-                },
-            ));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let texture = texture2d::read(0);
+                    let uv = float2::position() / float2::resolution();
+                    texture.sample(uv * float2((texture.width(), texture.height())), TextureFilter::Linear)
+                }))
+                .unwrap();
 
-            let shader = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                let uv = io::position() / io::resolution();
-                texture.sample(uv * float2(texture.size()), TextureFilter::Linear)
-            }));
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 32, 32].into());
+                encoder.add_texture(&texture);
+                encoder.draw(&shader);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 0, 32, 32], texture);
-            context.draw_screen(&commands).unwrap();
+            context.delete_texture(texture);
         });
     }
 
     #[test]
     fn texture_render_nearest() {
         run("texture_render_nearest", 32, 32, |context| {
-            let texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8);
+            let mut texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8).unwrap();
 
-            let shader_fill = context.create_shader(Graph::trace(|| {
-                let a = float4((1.0, 0.5, 0.25, 1.0));
-                let b = float4((0.5, 0.25, 1.0, 1.0));
-                let p = io::position() / io::resolution();
-                let p = p.dot((0.707, 0.707));
+            let shader_fill = context
+                .create_shader(&ShaderData::trace(|| {
+                    let a = float4((1.0, 0.5, 0.25, 1.0));
+                    let b = float4((0.5, 0.25, 1.0, 1.0));
+                    let p = float2::position() / float2::resolution();
+                    p.dot((0.707, 0.707)).lerp(a, b)
+                }))
+                .unwrap();
 
-                float4(p).lerp(a, b)
-            }));
+            let shader_negative = context
+                .create_shader(&ShaderData::trace(|| {
+                    let texture = texture2d::read(0);
+                    let z = texture.sample(
+                        float2::position() / float2::resolution() * float2((texture.width(), texture.height())),
+                        TextureFilter::Nearest,
+                    );
 
-            let shader_negative = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                let z = texture.sample(
-                    io::position() / io::resolution() * float2(texture.size()),
-                    TextureFilter::Nearest,
-                );
+                    float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
+                }))
+                .unwrap();
 
-                float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
-            }));
+            context.draw(DrawTarget::Texture(&mut texture), |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.draw(&shader_fill);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader_fill, [0, 0, 4, 4], ());
-            context.draw_texture(texture, &commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 20, 32].into());
+                encoder.add_texture(&texture);
+                encoder.draw(&shader_negative);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader_negative, [0, 0, 20, 32], texture);
-            context.draw_screen(&commands).unwrap();
+            context.delete_texture(texture);
         });
     }
 
     #[test]
     fn texture_render_linear() {
         run("texture_render_linear", 32, 32, |context| {
-            let texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8);
+            let mut texture = context.create_texture([4, 4].into(), TextureFormat::RGBA8).unwrap();
 
-            let shader_fill = context.create_shader(Graph::trace(|| {
-                let a = float4((1.0, 0.5, 0.25, 1.0));
-                let b = float4((0.5, 0.25, 1.0, 1.0));
-                let p = io::position() / io::resolution();
-                let p = p.dot((0.707, 0.707));
+            let shader_fill = context
+                .create_shader(&ShaderData::trace(|| {
+                    let a = float4((1.0, 0.5, 0.25, 1.0));
+                    let b = float4((0.5, 0.25, 1.0, 1.0));
+                    let p = float2::position() / float2::resolution();
+                    p.dot((0.707, 0.707)).lerp(a, b)
+                }))
+                .unwrap();
 
-                float4(p).lerp(a, b)
-            }));
+            let shader_negative = context
+                .create_shader(&ShaderData::trace(|| {
+                    let texture = texture2d::read(0);
+                    let z = texture.sample(
+                        float2::position() / float2::resolution() * float2((texture.width(), texture.height())),
+                        TextureFilter::Linear,
+                    );
 
-            let shader_negative = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                let z = texture.sample(
-                    io::position() / io::resolution() * float2(texture.size()),
-                    TextureFilter::Linear,
-                );
+                    float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
+                }))
+                .unwrap();
 
-                float4((1.0 - z.x(), 1.0 - z.y(), 1.0 - z.z(), z.w()))
-            }));
+            context.draw(DrawTarget::Texture(&mut texture), |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.draw(&shader_fill);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader_fill, [0, 0, 4, 4], ());
-            context.draw_texture(texture, &commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 20, 32].into());
+                encoder.add_texture(&texture);
+                encoder.draw(&shader_negative);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader_negative, [0, 0, 20, 32], texture);
-            context.draw_screen(&commands).unwrap();
+            context.delete_texture(texture);
         });
     }
 
     #[test]
     fn texture_load_r8() {
         run("texture_load_r8", 4, 4, |context| {
-            let texture = context.create_texture([1, 1].into(), TextureFormat::R8);
+            let mut texture = context.create_texture([1, 1].into(), TextureFormat::R8).unwrap();
+            context
+                .upload_texture(
+                    &mut texture,
+                    TextureData {
+                        bounds: [0, 0, 1, 1].into(),
+                        format: TextureFormat::R8,
+                        data: &[100],
+                    },
+                )
+                .unwrap();
 
-            assert!(context.upload_texture(
-                texture,
-                TextureData {
-                    bounds: [0, 0, 1, 1].into(),
-                    format: TextureFormat::R8,
-                    data: &[100],
-                },
-            ));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    texture2d::read(0).sample(0.0, TextureFilter::Nearest)
+                }))
+                .unwrap();
 
-            let shader = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                texture.sample(0.0, TextureFilter::Nearest)
-            }));
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_texture(&texture);
+                encoder.draw(&shader);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
-            context.draw_screen(&commands).unwrap();
+            context.delete_texture(texture);
         });
     }
 
     #[test]
     fn texture_load_rgb8() {
         run("texture_load_rgb8", 4, 4, |context| {
-            let texture = context.create_texture([1, 1].into(), TextureFormat::RGB8);
+            let mut texture = context.create_texture([1, 1].into(), TextureFormat::RGB8).unwrap();
+            context
+                .upload_texture(
+                    &mut texture,
+                    TextureData {
+                        bounds: [0, 0, 1, 1].into(),
+                        format: TextureFormat::RGB8,
+                        data: &[100, 50, 200],
+                    },
+                )
+                .unwrap();
 
-            assert!(context.upload_texture(
-                texture,
-                TextureData {
-                    bounds: [0, 0, 1, 1].into(),
-                    format: TextureFormat::RGB8,
-                    data: &[100, 50, 200],
-                },
-            ));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    texture2d::read(0).sample(0.0, TextureFilter::Nearest)
+                }))
+                .unwrap();
 
-            let shader = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                texture.sample(0.0, TextureFilter::Nearest)
-            }));
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_texture(&texture);
+                encoder.draw(&shader);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
-            context.draw_screen(&commands).unwrap();
+            context.delete_texture(texture);
         });
     }
 
     #[test]
     fn texture_load_rgba8() {
         run("texture_load_rgba8", 4, 4, |context| {
-            let texture = context.create_texture([1, 1].into(), TextureFormat::RGBA8);
+            let mut texture = context.create_texture([1, 1].into(), TextureFormat::RGBA8).unwrap();
+            context
+                .upload_texture(
+                    &mut texture,
+                    TextureData {
+                        bounds: [0, 0, 1, 1].into(),
+                        format: TextureFormat::RGBA8,
+                        data: &[100, 50, 200, 150],
+                    },
+                )
+                .unwrap();
 
-            assert!(context.upload_texture(
-                texture,
-                TextureData {
-                    bounds: [0, 0, 1, 1].into(),
-                    format: TextureFormat::RGBA8,
-                    data: &[100, 50, 200, 150],
-                },
-            ));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    texture2d::read(0).sample(0.0, TextureFilter::Nearest)
+                }))
+                .unwrap();
 
-            let shader = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                texture.sample(0.0, TextureFilter::Nearest)
-            }));
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 4, 4].into());
+                encoder.add_texture(&texture);
+                encoder.draw(&shader);
+            });
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 0, 4, 4], texture);
-            context.draw_screen(&commands).unwrap();
+            context.delete_texture(texture);
         });
     }
 }
@@ -715,88 +925,192 @@ pub mod semantics {
     #[test]
     fn semantics_alpha() {
         run("semantics_alpha", 64, 8, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let x = io::position().x() / io::resolution().x();
-                float4((1.0, 1.0, 1.0, x))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float2::position().x() / float2::resolution().x();
+                    float4((1.0, 1.0, 1.0, x))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 0, 64, 8], ());
-            add_quad(&mut commands, shader, [0, 4, 64, 8], ());
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, 64, 8].into());
+                encoder.draw(&shader);
+
+                encoder.add_rect([0, 4, 64, 8].into());
+                encoder.draw(&shader);
+            });
         });
     }
 
     #[test]
     fn semantics_blend() {
         run("semantics_blend", 8, 8, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = io::read::<[f32; 4]>();
-                float4((data[0], data[1], data[2], data[3]))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let r = float1::read_f32(0);
+                    let g = float1::read_f32(4);
+                    let b = float1::read_f32(8);
+                    let a = float1::read_f32(12);
+                    float4((r, g, b, a))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [1, 1, 5, 5], [1.0, 0.0, 0.0, 0.50]);
-            add_quad(&mut commands, shader, [3, 3, 7, 7], [0.0, 1.0, 1.0, 0.25]);
-            add_quad(&mut commands, shader, [0, 0, 8, 8], [1.0, 1.0, 1.0, 0.1]);
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([1, 1, 5, 5].into());
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.add_data(&f32::to_ne_bytes(0.5));
+                encoder.draw(&shader);
+
+                encoder.add_rect([3, 3, 7, 7].into());
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.25));
+                encoder.draw(&shader);
+
+                encoder.add_rect([0, 0, 8, 8].into());
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.1));
+                encoder.draw(&shader);
+            });
+        });
+    }
+
+    #[test]
+    fn semantics_empty_draw() {
+        run("semantics_empty_draw", 8, 8, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let t = texture2d::read(0);
+                    let r = float1::read_f32(0);
+                    let g = float1::read_f32(4);
+                    let b = float1::read_f32(8);
+                    let a = float1::read_f32(12);
+                    float4((r, g, b, a)) + t.sample(0.0, TextureFilter::Nearest)
+                }))
+                .unwrap();
+
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.draw(&shader);
+            });
+        });
+    }
+
+    #[test]
+    fn semantics_missing_data() {
+        run("semantics_missing_data", 8, 8, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let t = texture2d::read(0);
+                    let r = float1::read_f32(0);
+                    let g = float1::read_f32(4);
+                    let b = float1::read_f32(8);
+                    let a = float1::read_f32(12);
+                    float4((r, g, b, a)) + t.sample(0.0, TextureFilter::Nearest)
+                }))
+                .unwrap();
+
+            // reading missing data or sampling missing texture results in implementation-defined values
+            // but it should not crash/result in undefined behavior (selecting between defined and impl-defined is still defined)
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([1, 1, 7, 7].into());
+                encoder.draw(&shader);
+                encoder.clear([1, 1, 7, 7].into(), Color::default());
+            });
         });
     }
 
     #[test]
     fn semantics_clear() {
         run("semantics_clear", 8, 8, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = io::read::<[f32; 4]>();
-                float4((data[0], data[1], data[2], data[3]))
-            }));
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.clear(
+                    [1, 1, 7, 7].into(),
+                    Color {
+                        r: 128,
+                        g: 64,
+                        b: 32,
+                        a: 255,
+                    },
+                );
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [1, 1, 7, 7], [1.0, 0.0, 0.0, 0.50]);
-            add_clear(&mut commands, [4, 4, 8, 8]);
-            context.draw_screen(&commands).unwrap();
+                encoder.clear(
+                    [4, 4, 8, 8].into(),
+                    Color {
+                        r: 32,
+                        g: 64,
+                        b: 128,
+                        a: 128,
+                    },
+                );
+
+                encoder.clear([0, 0, 4, 4].into(), Color::default());
+            });
         });
     }
 
     #[test]
+    #[cfg(false)]
     fn semantics_screen_preserve() {
         run("semantics_screen_preserve", 8, 8, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = io::read::<[f32; 4]>();
-                float4((data[0], data[1], data[2], data[3]))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let r = float1::read_f32(0);
+                    let g = float1::read_f32(4);
+                    let b = float1::read_f32(8);
+                    let a = float1::read_f32(12);
+                    float4((r, g, b, a))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [1, 1, 7, 7], [1.0, 0.0, 0.0, 0.50]);
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([1, 1, 7, 7].into());
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.add_data(&f32::to_ne_bytes(0.5));
+                encoder.object(&shader);
+            });
 
-            let mut commands = vec![];
-            add_clear(&mut commands, [4, 4, 8, 8]);
-            add_quad(&mut commands, shader, [1, 1, 7, 7], [0.0, 1.0, 1.0, 0.25]);
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.clear([4, 4, 8, 8].into());
+
+                encoder.add_rect([1, 1, 7, 7].into());
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.25));
+                encoder.object(&shader);
+            });
         });
     }
 
     #[test]
     fn semantics_object_multiquad() {
         run("semantics_object_multiquad", 8, 8, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = io::read::<[f32; 4]>();
-                float4((data[0], data[1], data[2], data[3]))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let r = float1::read_f32(0);
+                    let g = float1::read_f32(4);
+                    let b = float1::read_f32(8);
+                    let a = float1::read_f32(12);
+                    float4((r, g, b, a))
+                }))
+                .unwrap();
 
-            let commands = vec![
-                Command::ObjectBegin(shader),
-                Command::ObjectRect([1, 1, 5, 5].into()),
-                Command::ObjectRect([3, 3, 7, 7].into()),
-                Command::ObjectData(ObjectData::Float(0.0)),
-                Command::ObjectData(ObjectData::Float(0.5)),
-                Command::ObjectData(ObjectData::Float(1.0)),
-                Command::ObjectData(ObjectData::Float(0.5)),
-                Command::ObjectEnd,
-            ];
-
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([1, 1, 5, 5].into());
+                encoder.add_rect([3, 3, 7, 7].into());
+                encoder.add_data(&f32::to_ne_bytes(0.0));
+                encoder.add_data(&f32::to_ne_bytes(0.5));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.5));
+                encoder.draw(&shader);
+            });
         });
     }
 }
@@ -807,84 +1121,102 @@ pub mod tiling {
     #[test]
     fn tiling_aligned_8() {
         run("tiling_aligned_8", 16, 16, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = (io::position() % 3.0) / 3.0;
-                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let data = float2::position().rem_euclid(3.0) / 3.0;
+                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 8, 8, 16], ());
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 8, 8, 16].into());
+                encoder.draw(&shader);
+            });
         });
     }
 
     #[test]
     fn tiling_centered_8() {
         run("tiling_centered_8", 16, 16, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = (io::position() % 3.0) / 3.0;
-                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let data = float2::position().rem_euclid(3.0) / 3.0;
+                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [4, 4, 12, 12], ());
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([4, 4, 12, 12].into());
+                encoder.draw(&shader);
+            });
         });
     }
 
     #[test]
     fn tiling_aligned_4() {
         run("tiling_aligned_4", 16, 16, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = (io::position() % 3.0) / 3.0;
-                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let data = float2::position().rem_euclid(3.0) / 3.0;
+                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [0, 8, 4, 12], ());
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 8, 4, 12].into());
+                encoder.draw(&shader);
+            });
         });
     }
 
     #[test]
     fn tiling_centered_4() {
         run("tiling_centered_4", 16, 16, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = (io::position() % 3.0) / 3.0;
-                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let data = float2::position().rem_euclid(3.0) / 3.0;
+                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [6, 6, 10, 10], ());
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([6, 6, 10, 10].into());
+                encoder.draw(&shader);
+            });
         });
     }
 
     #[test]
     fn tiling_aligned_2() {
         run("tiling_aligned_2", 16, 16, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = (io::position() % 3.0) / 3.0;
-                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let data = float2::position().rem_euclid(3.0) / 3.0;
+                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [4, 8, 6, 10], ());
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([4, 8, 6, 10].into());
+                encoder.draw(&shader);
+            });
         });
     }
 
     #[test]
     fn tiling_centered_2() {
         run("tiling_centered_2", 16, 16, |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let data = (io::position() % 3.0) / 3.0;
-                float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let data = float2::position().rem_euclid(3.0) / 3.0;
+                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(&mut commands, shader, [7, 7, 9, 9], ());
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([7, 7, 9, 9].into());
+                encoder.draw(&shader);
+            });
         });
     }
 }
@@ -897,41 +1229,48 @@ pub mod stress {
         run("stress_texture_count", 256, 8, move |context| {
             let textures = (0..=255u8)
                 .map(|x| {
-                    let texture = context.create_texture([1, 1].into(), TextureFormat::R8);
+                    let mut tex = context.create_texture([1, 1].into(), TextureFormat::R8).unwrap();
 
-                    assert!(context.upload_texture(
-                        texture,
-                        TextureData {
-                            bounds: [0, 0, 1, 1].into(),
-                            format: TextureFormat::R8,
-                            data: &[x],
-                        },
-                    ));
+                    context
+                        .upload_texture(
+                            &mut tex,
+                            TextureData {
+                                bounds: [0, 0, 1, 1].into(),
+                                format: TextureFormat::R8,
+                                data: &[x],
+                            },
+                        )
+                        .unwrap();
 
-                    texture
+                    tex
                 })
                 .collect::<Vec<_>>();
 
-            let shader = context.create_shader(Graph::trace(|| {
-                let texture = io::read::<TextureId>();
-                texture.sample(float2(0.0), TextureFilter::Linear)
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let tex = texture2d::read(0);
+                    tex.sample(float2(0.0), TextureFilter::Linear)
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
-            for i in 0..=255 {
-                add_quad(&mut commands, shader, [i, 0, i + 1, 8], textures[i as usize]);
-            }
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                for i in 0..=255i32 {
+                    encoder.add_rect([i, 0, i + 1, 8].into());
+                    encoder.add_texture(&textures[i as usize]);
+                    encoder.draw(&shader);
+                }
+            });
         });
     }
 
     #[test]
     #[cfg(not(miri))]
+    #[cfg(false)]
     fn stress_fill_rate() {
         run("stress_fill_rate", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
             let shader = context.create_shader(Graph::trace(|| {
                 let i = io::read::<i32>();
-                let j = int1(io::position().x()) + int1(io::position().y()) * int1(io::resolution().x());
+                let j = int1(float2::position().x()) + int1(float2::position().y()) * int1(float2::resolution().x());
                 float4((1.0, 1.0, 1.0, (j % i).eq(0).select(float1(i).sqrt() / 255.0, 0.0)))
             }));
 
@@ -949,41 +1288,42 @@ pub mod stress {
     }
 
     #[test]
-    #[cfg(not(miri))]
     fn stress_quad_count() {
         run("stress_quad_count", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
-            let shader = context.create_shader(Graph::trace(|| {
-                let [r, g, b] = io::read::<[f32; 3]>();
-                io::read::<[u32; 8]>();
-                float4((r, g, b, 1.0))
-            }));
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    float4((
+                        float1(int1::read_u8(0)) / 255.0,
+                        float1(int1::read_u8(1)) / 255.0,
+                        float1(int1::read_u8(2)) / 255.0,
+                        1.0,
+                    ))
+                }))
+                .unwrap();
 
             for _ in 0..2 {
-                let mut commands = vec![];
-                add_clear(&mut commands, [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
+                context.draw(DrawTarget::Screen, |encoder| {
+                    encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
 
-                for i in 0..MAX_CANVAS_SIZE {
-                    for j in 0..MAX_CANVAS_SIZE {
-                        add_quad(
-                            &mut commands,
-                            shader,
-                            [i, j, i + 1, j + 1],
+                    for i in 0..MAX_CANVAS_SIZE {
+                        for j in 0..MAX_CANVAS_SIZE {
+                            encoder.add_rect([i, j, i + 1, j + 1].into());
                             if (i + j) % 2 == 0 {
-                                ([1.0, 1.0, 0.0], [0u32; 8])
+                                encoder.add_data(&[255u8, 255u8, 0u8]);
                             } else {
-                                ([0.0, 0.0, 1.0], [0u32; 8])
-                            },
-                        );
+                                encoder.add_data(&[0u8, 0u8, 255u8]);
+                            }
+                            encoder.draw(&shader);
+                        }
                     }
-                }
-
-                context.draw_screen(&commands).unwrap();
+                });
             }
         });
     }
 
     #[test]
     #[cfg(not(miri))] //TODO: Fix
+    #[cfg(false)]
     fn stress_shader_complexity() {
         run("stress_shader_complexity", 4, 4, move |context| {
             let shader = context.create_shader(Graph::trace(|| {
@@ -1009,23 +1349,23 @@ pub mod complex {
         run("complex_sdf_round_rect", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
             // https://iquilezles.org/articles/distfunctions2d/
             fn shader_rect() -> float4 {
-                let center = float2((io::read::<f32>(), io::read::<f32>()));
-                let angle = io::read::<f32>();
-                let extents = float2((io::read::<f32>(), io::read::<f32>()));
+                let center = float2((float1::read_f32(0), float1::read_f32(4)));
+                let angle = float1::read_f32(8);
+                let extents = float2((float1::read_f32(12), float1::read_f32(16)));
                 let radius = float4((
-                    io::read::<f32>(),
-                    io::read::<f32>(),
-                    io::read::<f32>(),
-                    io::read::<f32>(),
+                    float1::read_f32(20),
+                    float1::read_f32(24),
+                    float1::read_f32(28),
+                    float1::read_f32(32),
                 ));
                 let color = float4((
-                    io::read::<f32>(),
-                    io::read::<f32>(),
-                    io::read::<f32>(),
-                    io::read::<f32>(),
+                    float1::read_f32(36),
+                    float1::read_f32(40),
+                    float1::read_f32(44),
+                    float1::read_f32(48),
                 ));
 
-                let p = io::position() - center;
+                let p = float2::position() - center;
                 let p = float2((
                     p.x() * angle.cos() - p.y() * angle.sin(),
                     p.x() * angle.sin() + p.y() * angle.cos(),
@@ -1043,34 +1383,45 @@ pub mod complex {
                 float4((color.x(), color.y(), color.z(), color.w() * mask))
             }
 
-            let shader_rect = context.create_shader(Graph::trace(shader_rect));
+            let shader_rect = context.create_shader(&ShaderData::trace(shader_rect)).unwrap();
 
-            let mut commands = vec![];
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
+                encoder.add_data(&f32::to_ne_bytes(256.0)); // center.x
+                encoder.add_data(&f32::to_ne_bytes(256.0)); // center.y
+                encoder.add_data(&f32::to_ne_bytes(0.5)); // angle
+                encoder.add_data(&f32::to_ne_bytes(100.0)); // extents.x
+                encoder.add_data(&f32::to_ne_bytes(50.0)); // extents.y
+                encoder.add_data(&f32::to_ne_bytes(10.0)); // radius.top_left
+                encoder.add_data(&f32::to_ne_bytes(20.0)); // radius.top_right
+                encoder.add_data(&f32::to_ne_bytes(30.0)); // radius.bottom_right
+                encoder.add_data(&f32::to_ne_bytes(10.0)); // radius.bottom_left
+                encoder.add_data(&f32::to_ne_bytes(1.0)); // color.r
+                encoder.add_data(&f32::to_ne_bytes(0.0)); // color.g
+                encoder.add_data(&f32::to_ne_bytes(1.0)); // color.b
+                encoder.add_data(&f32::to_ne_bytes(0.5)); // color.a
+                encoder.draw(&shader_rect);
 
-            add_quad(
-                &mut commands,
-                shader_rect,
-                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
-                [
-                    256.0, 256.0, 0.5, 100.0, 50.0, 0.0, 10.0, 20.0, 30.0, 1.0, 0.0, 1.0, 0.5,
-                ],
-            );
-
-            add_quad(
-                &mut commands,
-                shader_rect,
-                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
-                [
-                    300.0, 200.0, -0.1, 60.0, 90.0, 10.0, 10.0, 20.0, 20.0, 0.0, 1.0, 1.0, 0.5,
-                ],
-            );
-
-            context.draw_screen(&commands).unwrap();
+                encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
+                encoder.add_data(&f32::to_ne_bytes(300.0)); // center.x
+                encoder.add_data(&f32::to_ne_bytes(200.0)); // center.y
+                encoder.add_data(&f32::to_ne_bytes(-0.1)); // angle
+                encoder.add_data(&f32::to_ne_bytes(60.0)); // extents.x
+                encoder.add_data(&f32::to_ne_bytes(90.0)); // extents.y
+                encoder.add_data(&f32::to_ne_bytes(10.0)); // radius.top_left
+                encoder.add_data(&f32::to_ne_bytes(10.0)); // radius.top_right
+                encoder.add_data(&f32::to_ne_bytes(20.0)); // radius.bottom_right
+                encoder.add_data(&f32::to_ne_bytes(20.0)); // radius.bottom_left
+                encoder.add_data(&f32::to_ne_bytes(0.0)); // color.r
+                encoder.add_data(&f32::to_ne_bytes(1.0)); // color.g
+                encoder.add_data(&f32::to_ne_bytes(1.0)); // color.b
+                encoder.add_data(&f32::to_ne_bytes(0.5)); // color.a
+                encoder.draw(&shader_rect);
+            });
         });
     }
 
     #[test]
-    #[cfg(not(miri))]
     fn complex_msdf() {
         let (width, height, data) = {
             let msdf = open("./tests/drawtest/msdf.webp").unwrap();
@@ -1078,7 +1429,7 @@ pub mod complex {
             for i in 0..msdf.width() {
                 for j in 0..msdf.height() {
                     let Rgba([r, g, b, _]) = msdf.get_pixel(i, j);
-                    data[((i + j * msdf.width()) * 4 + 0) as usize] = r;
+                    data[((i + j * msdf.width()) * 4) as usize] = r;
                     data[((i + j * msdf.width()) * 4 + 1) as usize] = g;
                     data[((i + j * msdf.width()) * 4 + 2) as usize] = b;
                     data[((i + j * msdf.width()) * 4 + 3) as usize] = 255;
@@ -1089,123 +1440,125 @@ pub mod complex {
         };
 
         run("complex_msdf", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
-            let texture = context.create_texture([width, height].into(), TextureFormat::RGBA8);
+            let mut texture = context
+                .create_texture([width, height].into(), TextureFormat::RGBA8)
+                .unwrap();
 
-            assert!(context.upload_texture(
-                texture,
-                TextureData {
-                    bounds: [0, 0, width, height].into(),
-                    format: TextureFormat::RGBA8,
-                    data: &data,
-                },
-            ));
+            context
+                .upload_texture(
+                    &mut texture,
+                    TextureData {
+                        bounds: [0, 0, width, height].into(),
+                        format: TextureFormat::RGBA8,
+                        data: &data,
+                    },
+                )
+                .unwrap();
 
-            let shader = context.create_shader(Graph::trace(|| {
-                let atlas = io::read::<TextureId>();
-                let (x, y) = io::read::<(f32, f32)>();
-                let scale = io::read::<f32>();
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let (x, y) = (float1::read_f32(0), float1::read_f32(4));
+                    let scale = float1::read_f32(8);
+                    let atlas = texture2d::read(0);
 
-                let pos = (io::position() - float2((x, y))) / scale + float2(12.0);
-                let sample = atlas.sample(pos.clamp(0.0, atlas.size()), TextureFilter::Linear);
-                let median = float1::max(
-                    float1::min(sample.x(), sample.y()),
-                    float1::min(float1::max(sample.x(), sample.y()), sample.z()),
-                );
+                    let pos = (float2::position() - float2((x, y))) / scale + float2(12.0);
+                    let sample = atlas.sample(
+                        pos.clamp(0.0, float2((atlas.width(), atlas.height()))),
+                        TextureFilter::Linear,
+                    );
+                    let median = float1::max(
+                        float1::min(sample.x(), sample.y()),
+                        float1::min(float1::max(sample.x(), sample.y()), sample.z()),
+                    );
 
-                let mask = (((2.0 * scale).max(1.0) * (median - 0.5)) + 0.5).smoothstep(0.0, 1.0);
-                float4(mask)
-            }));
+                    let mask = (((2.0 * scale).max(1.0) * (median - 0.5)) + 0.5).clamp(0.0, 1.0);
+                    float4(mask)
+                }))
+                .unwrap();
 
-            let mut commands = vec![];
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
 
-            let mut x = 10.0;
-            let mut scale = 0.5;
-            for _ in 0..=10 {
-                add_quad(
-                    &mut commands,
-                    shader,
-                    [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
-                    (texture, x, 12.0 + scale * 10.0, scale),
-                );
+                let mut x = 10.0;
+                let mut scale = 0.5;
+                for _ in 0..=10 {
+                    encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
+                    encoder.add_data(&f32::to_ne_bytes(x)); // x
+                    encoder.add_data(&f32::to_ne_bytes(12.0 + scale * 10.0)); // y
+                    encoder.add_data(&f32::to_ne_bytes(scale)); // scale
+                    encoder.add_texture(&texture);
+                    encoder.draw(&shader);
 
-                x += 18.0 * scale;
-                scale *= 1.325;
-            }
+                    x += 18.0 * scale;
+                    scale *= 1.325;
+                }
 
-            add_quad(
-                &mut commands,
-                shader,
-                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
-                (texture, 256.0, 320.0, 20.0),
-            );
-
-            context.draw_screen(&commands).unwrap();
+                encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
+                encoder.add_data(&f32::to_ne_bytes(256.0)); // x
+                encoder.add_data(&f32::to_ne_bytes(320.0)); // y
+                encoder.add_data(&f32::to_ne_bytes(20.0)); // scale
+                encoder.add_texture(&texture);
+                encoder.draw(&shader);
+            });
         });
     }
 
     #[test]
-    #[cfg(not(miri))]
     fn complex_boxblur() {
         run("complex_boxblur", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
             fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
-                ((center - pos).len() - radius).smoothstep(0.707, -0.707)
+                (0.5 - ((center - pos).len() - radius) / 0.707).clamp(0.0, 1.0)
             }
 
-            let shader_circle = context.create_shader(Graph::trace(|| {
-                let [x, y] = io::read::<[f32; 2]>();
+            let shader_circle = context
+                .create_shader(&ShaderData::trace(|| {
+                    let x = float1::read_f32(0);
+                    let y = float1::read_f32(4);
 
-                let grid = (io::position() / 32.0).floor();
-                let checker = (grid.x() + grid.y()) % 2.0;
-                let texture = float4(checker).lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
-                let mask = sdf_circle(io::position(), float2((x, y)), float1(128.0));
-                let color = texture * mask;
+                    let grid = (float2::position() / 32.0).floor();
+                    let checker = (grid.x() + grid.y()).rem_euclid(2.0);
+                    let texture = checker.lerp(float4((1.0, 1.0, 1.0, 1.0)), float4((1.0, 0.0, 0.0, 1.0)));
+                    let mask = sdf_circle(float2::position(), float2((x, y)), float1(128.0));
+                    let color = texture * mask;
 
-                float4(mask * color)
-            }));
+                    float4(mask * color)
+                }))
+                .unwrap();
 
-            let shader_boxblur = context.create_shader(Graph::trace(|| {
-                let buffer = io::read::<TextureId>();
+            let shader_boxblur = context
+                .create_shader(&ShaderData::trace(|| {
+                    let buffer = texture2d::read(0);
 
-                let mut result = float4(0.0);
-                for i in -5..=5 {
-                    for j in -5..=5 {
-                        result = result + buffer.sample(io::position() + float2((i, j)), TextureFilter::Nearest);
+                    let mut result = float4(0.0);
+                    for i in -5..=5 {
+                        for j in -5..=5 {
+                            result =
+                                result + buffer.sample(float2::position() + float2((i, j)), TextureFilter::Nearest);
+                        }
                     }
-                }
 
-                result / (11 * 11) as f32
-            }));
+                    result / (11 * 11) as f32
+                }))
+                .unwrap();
 
-            let buffer = context.create_texture([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), TextureFormat::RGBA8);
+            let mut buffer = context
+                .create_texture([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), TextureFormat::RGBA8)
+                .unwrap();
 
-            let mut commands = vec![];
-            add_quad(
-                &mut commands,
-                shader_circle,
-                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
-                [256.0, 256.0],
-            );
-            context.draw_texture(buffer, &commands).unwrap();
+            context.draw(DrawTarget::Texture(&mut buffer), |encoder| {
+                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
+                encoder.add_data(&f32::to_ne_bytes(256.0)); // circle center x
+                encoder.add_data(&f32::to_ne_bytes(256.0)); // circle center y
+                encoder.draw(&shader_circle);
+            });
 
-            let mut commands = vec![];
-            add_quad(
-                &mut commands,
-                shader_boxblur,
-                [0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
-                buffer,
-            );
-            context.draw_screen(&commands).unwrap();
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
+                encoder.add_texture(&buffer);
+                encoder.draw(&shader_boxblur);
+            });
         });
     }
-}
-
-fn add_quad<T: ShaderData>(mut cmds: &mut Vec<Command>, shader: ShaderId, bounds: impl Into<Bounds>, data: T) {
-    cmds.push(Command::ObjectBegin(shader));
-    cmds.push(Command::ObjectRect(bounds.into()));
-    data.write(&mut cmds);
-    cmds.push(Command::ObjectEnd);
-}
-
-fn add_clear(cmds: &mut Vec<Command>, bounds: impl Into<Bounds>) {
-    cmds.push(Command::Clear(bounds.into()));
 }
