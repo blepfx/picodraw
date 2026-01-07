@@ -8,10 +8,12 @@ members = [
 
 [workspace.dependencies]
 # tests & benchmarks
+divan = "0.1.21"
 gungraun = "0.17.0"
 picoview = { git = "https://github.com/blepfx/picoview", rev = "5657ae49f15e8d76fb696995f235e5a99d1e2100" }
 image = { version = "0.25.5", default-features = false, features = ["webp"] }
 yansi = "1.0"
+fastrand = "2.3"
 
 # feature(software)
 bumpalo = { version = "3.17", features = ["boxed", "collections"] }
@@ -20,6 +22,7 @@ bumpalo = { version = "3.17", features = ["boxed", "collections"] }
 glow = { git = "https://github.com/grovesNL/glow/", branch = "main" }
 
 [profile.bench]
+opt-level = 2
 debug = true
 
 [package]
@@ -39,23 +42,19 @@ picodraw-opengl = { path = "crates/opengl", optional = true }
 picodraw-software = { path = "crates/software", optional = true }
 
 [dev-dependencies]
-gungraun = { workspace = true }
 picoview = { workspace = true }
 image = { workspace = true }
 yansi = { workspace = true }
 
 [features]
-default = ["opengl", "software"]
+default = []
 opengl = ["dep:picodraw-opengl"]
 software = ["dep:picodraw-software"]
 
 [[example]]
 name = "opengl_circles"
+required-features = ["opengl"]
 
 [[example]]
 name = "opengl_stress"
-
-[[bench]]
-name = "software"
-harness = false
-required-features = ["software"]
+required-features = ["opengl"]  

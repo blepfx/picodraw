@@ -1,3 +1,7 @@
+//! A dynamic dispatch layer for the `Context` trait.
+//! This module provides type-erased wrappers for textures and shaders, allowing
+//! different context implementations to be used interchangeably at runtime.
+
 use crate::{
     Bounds, Color, Context, DrawTarget, FrameEncoder, ShaderData, ShaderError, Size, TextureData, TextureError,
     TextureFormat,

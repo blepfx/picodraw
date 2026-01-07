@@ -1289,6 +1289,10 @@ pub mod stress {
 
     #[test]
     fn stress_quad_count() {
+        if cfg!(miri) {
+            return;
+        }
+
         run("stress_quad_count", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, move |context| {
             let shader = context
                 .create_shader(&ShaderData::trace(|| {
@@ -1346,6 +1350,10 @@ pub mod complex {
 
     #[test]
     fn complex_sdf_round_rect() {
+        if cfg!(miri) {
+            return;
+        }
+
         run("complex_sdf_round_rect", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
             // https://iquilezles.org/articles/distfunctions2d/
             fn shader_rect() -> float4 {
@@ -1423,6 +1431,10 @@ pub mod complex {
 
     #[test]
     fn complex_msdf() {
+        if cfg!(miri) {
+            return;
+        }
+
         let (width, height, data) = {
             let msdf = open("./tests/drawtest/msdf.webp").unwrap();
             let mut data = vec![0u8; (4 * msdf.width() * msdf.height()) as usize];
@@ -1505,6 +1517,10 @@ pub mod complex {
 
     #[test]
     fn complex_boxblur() {
+        if cfg!(miri) {
+            return;
+        }
+
         run("complex_boxblur", MAX_CANVAS_SIZE, MAX_CANVAS_SIZE, |context| {
             fn sdf_circle(pos: float2, center: float2, radius: float1) -> float1 {
                 (0.5 - ((center - pos).len() - radius) / 0.707).clamp(0.0, 1.0)

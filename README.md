@@ -2,7 +2,7 @@
 a smol 2d graphics abstraction library
 
 ## Features
-- High level abstraction of different graphics APIs
+- Low level abstraction of different graphics APIs
 - Dynamically draw a list of quads, each with a different custom shader
 - Supports reading from textures, and drawing onto render textures
 - Write custom shaders in Rust
@@ -11,7 +11,7 @@ a smol 2d graphics abstraction library
 ## Backends
 Currently `picodraw` supports the following backends:
 - `opengl` - OpenGL 3.1+ GPU backend, suitable for rerendering every frame. Can draw most scenes in a single drawcall by using clever batching techniques.
-- `software` - Multithreaded software rasterizer backend, slower than `opengl` but more portable
+- `software` - Multithreaded software rasterizer backend, slower than `opengl` but more portable.
 
 I might implement a Vulkan backend in the future. I probably won't implement a Metal backend out of spite (unless they decide to remove OpenGL support), but PRs are welcome!
 
@@ -25,7 +25,7 @@ fn shader_red_circle(pos: float2, x: float1, y: float1, radius: float1) -> float
     float4((1.0, 0.0, 0.0, mask))
 }
 
-let context: &mut dyn DynContext = todo!() /* create context */;
+let context: &mut dyn dynamic::DynContext = todo!() /* create context */;
 let shader = context.create_shader(&ShaderData::trace(|| 
     shader_red_circle(
         float2::position(), 

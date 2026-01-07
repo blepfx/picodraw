@@ -64,7 +64,7 @@ impl Backend<Native> {
     /// - `ARB_timer_query`
     ///
     /// #### Error Conditions
-    /// - If the version is not supported [`OpenGlError::UnsupportedVersion`] is returned.
+    /// - If the version is not supported [`InitError::UnsupportedVersion`] is returned.
     ///
     /// #### Safety
     /// This function should be called only if an OpenGL context is currently active for the current thread.
@@ -85,7 +85,7 @@ impl Backend<Native> {
 impl<T: HasContext> Backend<T> {
     /// Creates a new OpenGL backend from a given `glow` context.
     ///
-    /// See [`OpenGlBackend::new`] for more details.
+    /// See [`Backend::new`] for more details.
     ///
     /// # Safety
     /// This function should be called only if an OpenGL context is currently active for the current thread.

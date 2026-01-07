@@ -1,5 +1,5 @@
 use image::{DynamicImage, GenericImage, GenericImageView, Rgba, open};
-use picodraw::{Context, DynContext};
+use picodraw::{Context, dynamic::DynContext};
 use std::{
     fs::{create_dir_all, remove_file},
     sync::Arc,
@@ -324,7 +324,7 @@ fn blend_difference(a: &DynamicImage, b: &DynamicImage) -> DynamicImage {
 pub mod opengl {
     use super::{MAX_CANVAS_SIZE, RenderJob};
     use image::{DynamicImage, Rgba, RgbaImage};
-    use picodraw::{Color, Context, DrawTarget, DynContext, opengl};
+    use picodraw::{Color, Context, DrawTarget, dynamic::DynContext, opengl};
     use picoview::{Event, GlConfig, GlVersion, WindowBuilder};
     use std::any::Any;
     use std::panic::{AssertUnwindSafe, resume_unwind};
@@ -478,7 +478,7 @@ pub mod software {
     };
 
     pub fn render(width: u32, height: u32, render: RenderJob) -> DynamicImage {
-        let mut backend = SoftwareBackend::multi_threaded();
+        let mut backend = SoftwareBackend::with_max_parallelism();
         let mut buffer = vec![Color::default(); (width * height) as usize];
         let mut context = backend.open(BufferMut::from_slice(&mut buffer, width as usize, height as usize));
 

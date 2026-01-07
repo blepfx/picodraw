@@ -63,6 +63,7 @@ impl<'a> Dispatcher<'a> {
         let inputs = {
             let mut inputs = Vec::new_in(self.arena);
             for chunk in self.current_data.chunks(4) {
+                #[allow(clippy::get_first)]
                 inputs.push(VMSlot::from(i32::from_ne_bytes([
                     *chunk.get(0).unwrap_or(&0),
                     *chunk.get(1).unwrap_or(&0),
@@ -107,6 +108,7 @@ impl<'a> Dispatcher<'a> {
         // (i.e. the parts that don't depend on the current pixel)
         // and tile them into buckets
         let mut memory = VMMemory::new(256, self.arena);
+
         let jobs = self.objects.iter().map(|object| {
             match object {
                 DispatchObject::Draw {

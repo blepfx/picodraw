@@ -34,7 +34,7 @@ pub struct VMMemory<'a> {
 impl<'a> VMMemory<'a> {
     pub fn new(slots: usize, arena: &'a Bump) -> Self {
         Self {
-            memory: Box::from_iter_in((0..slots.div_ceil(256)).map(|_| VMTile16::zeroed()), arena),
+            memory: Box::from_iter_in((0..slots.div_ceil(16 * 16)).map(|_| VMTile16::zeroed()), arena),
         }
     }
 

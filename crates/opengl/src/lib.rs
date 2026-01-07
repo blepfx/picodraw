@@ -12,7 +12,7 @@ pub struct Stats {
     /// Does not necessarily correspond to the time of the last draw call (there is a small delay due to the asynchronous nature of GPUs).
     pub gpu_time: Option<std::time::Duration>,
 
-    /// Total CPU time spent building and issuing draw calls for the last call to [`Context::draw`].
+    /// Total CPU time spent building and issuing draw calls for the last call to [`Context::draw`](picodraw_core::Context::draw).
     /// Includes time spent within the `draw` closure.
     pub cpu_time: Option<std::time::Duration>,
 

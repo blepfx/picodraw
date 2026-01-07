@@ -22,20 +22,16 @@ pub struct SoftwareContext<'a> {
 }
 
 impl SoftwareBackend {
-    pub fn single_threaded() -> Self {
+    pub fn with_threads(threads: usize) -> Self {
         Self {
             arena: Bump::new(),
             simd_dispatch: SimdDispatcher::new(),
-            thread_pool: ThreadPool::with_threads(1),
+            thread_pool: ThreadPool::with_threads(threads),
         }
     }
 
-    pub fn multi_threaded() -> Self {
-        Self {
-            arena: Bump::new(),
-            simd_dispatch: SimdDispatcher::new(),
-            thread_pool: ThreadPool::with_threads(std::thread::available_parallelism().map(|x| x.get()).unwrap_or(1)),
-        }
+    pub fn with_max_parallelism() -> Self {
+        Self::with_threads(std::thread::available_parallelism().map(|x| x.get()).unwrap_or(1))
     }
 
     pub fn open<'a>(&'a mut self, screen: BufferMut<'a>) -> SoftwareContext<'a> {

@@ -164,6 +164,8 @@ impl<'a> BufferMut<'a> {
     /// The caller must ensure that the provided data pointer is valid for
     /// the given width, height, and stride.
     pub unsafe fn from_raw_parts(data: *mut Color, width: usize, height: usize, stride: usize) -> Self {
+        debug_assert!(!data.is_null());
+
         Self(BufferRef {
             data,
             width,

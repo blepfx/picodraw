@@ -104,30 +104,37 @@ impl<'a> Debug for CompiledProgram<'a> {
 mod tests {
     use picodraw_core::{
         ShaderData,
-        trace::{float1, float4},
+        trace::{float1, float2, float4},
     };
+
+    fn shader_rect() -> float4 {
+        let center = float2((float1::read_f32(0), float1::read_f32(4)));
+        let angle = float1::read_f32(8);
+        let extents = float2((float1::read_f32(12), float1::read_f32(16)));
+        let radius = float1::read_f32(20);
+        let color = float4((
+            float1::read_f32(24),
+            float1::read_f32(28),
+            float1::read_f32(32),
+            float1::read_f32(36),
+        ));
+
+        let p = float2::position() - center;
+        let p = float2((
+            p.x() * angle.cos() - p.y() * angle.sin(),
+            p.x() * angle.sin() + p.y() * angle.cos(),
+        ));
+
+        let q = p.abs() - extents + radius;
+        let d = q.x().max(q.y()).min(0.0) + q.max(0.0).len() - radius;
+
+        let mask = (0.5 - d * 0.707).clamp(0.0, 1.0);
+        float4((color.x(), color.y(), color.z(), color.w() * mask))
+    }
 
     #[test]
     fn test() {
-        let graph = ShaderData::trace(|| {
-            let p = float1::read_f32(0);
-
-            let z0 = p.sin();
-            let z1 = p.cos();
-            let z2 = p.tan();
-            let z3 = p.asin();
-            let z4 = p.acos();
-
-            let z0 = z0.abs();
-            let z1 = z1.abs();
-            let z2 = z2.abs();
-            let z3 = z3.abs();
-            let z4 = z4.abs();
-
-            let u = ((z4 + z3) + z2) + z1 + z0;
-
-            float4(u)
-        });
+        let graph = ShaderData::trace(shader_rect);
 
         let arena = bumpalo::Bump::new();
         let compiled = super::CompiledShader::compile(&arena, &graph).unwrap();
