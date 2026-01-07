@@ -9,24 +9,18 @@ use yansi::Paint;
 
 pub const MAX_CANVAS_SIZE: u32 = 512;
 
-const MAX_P50_ERROR: f64 = 0.5;
-const MAX_P95_ERROR: f64 = 2.0;
-const MAX_P99_ERROR: f64 = 15.0;
+const MAX_P90_ERROR: f64 = 0.05;
+const MAX_P95_ERROR: f64 = 1.20;
+const MAX_P99_ERROR: f64 = 2.00;
 
-#[cfg(miri)]
-pub fn run(
-    test: &str,
-    width: u32,
-    height: u32,
-    render: impl for<'a, 'b> Fn(&'a mut (dyn DynContext + 'b)) + Sync + Send + 'static,
-) {
-    #[cfg(feature = "software")]
-    software::render(width, height, Arc::new(render));
-}
-
-#[cfg(not(miri))]
 #[track_caller]
 pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynContext) + Sync + Send + 'static) {
+    if cfg!(miri) {
+        #[cfg(feature = "software")]
+        software::render(width, height, Arc::new(render));
+        return;
+    }
+
     let renderer = Arc::new(render);
     let expected = open(format!("./tests/drawtest/expected/{}.webp", test)).ok();
 
@@ -61,7 +55,7 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynCont
             }
 
             let (p50, p95, p99) = measure_difference(expected, &image);
-            if p50 > MAX_P50_ERROR || p95 > MAX_P95_ERROR || p99 > MAX_P99_ERROR {
+            if p50 > MAX_P90_ERROR || p95 > MAX_P95_ERROR || p99 > MAX_P99_ERROR {
                 let diff = blend_difference(expected, &image);
 
                 return Outcome::Difference {
@@ -142,7 +136,7 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynCont
             Outcome::Difference {
                 test,
                 backend,
-                p50,
+                p50: p90,
                 p95,
                 p99,
                 image,
@@ -159,7 +153,7 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynCont
                     "rendered image differs from what is expected".dim()
                 ));
 
-                messages.push(format!(" | [{}, {}, {}]", "50th", "95th", "99th"));
+                messages.push(format!(" | [{}, {}, {}]", "90th", "95th", "99th"));
 
                 macro_rules! perc {
                     ($p:ident, $m:ident) => {
@@ -173,7 +167,7 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynCont
 
                 messages.push(format!(
                     " | [{}, {}, {}]",
-                    perc!(p50, MAX_P50_ERROR),
+                    perc!(p90, MAX_P99_ERROR),
                     perc!(p95, MAX_P95_ERROR),
                     perc!(p99, MAX_P99_ERROR),
                 ));
@@ -291,7 +285,7 @@ fn measure_difference(a: &DynamicImage, b: &DynamicImage) -> (f64, f64, f64) {
 
     samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let p50 = samples
-        .get((samples.len() as f64 * 0.50).floor() as usize)
+        .get((samples.len() as f64 * 0.90).floor() as usize)
         .copied()
         .unwrap_or_default();
     let p95 = samples

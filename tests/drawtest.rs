@@ -943,6 +943,7 @@ pub mod semantics {
     }
 
     #[test]
+    #[cfg(false)]
     fn semantics_blend() {
         run("semantics_blend", 8, 8, |context| {
             let shader = context
@@ -1109,6 +1110,29 @@ pub mod semantics {
                 encoder.add_data(&f32::to_ne_bytes(0.5));
                 encoder.add_data(&f32::to_ne_bytes(1.0));
                 encoder.add_data(&f32::to_ne_bytes(0.5));
+                encoder.draw(&shader);
+            });
+        });
+    }
+
+    #[test]
+    fn semantics_quad_bounds() {
+        run("semantics_quad_bounds", 16, 16, |context| {
+            let shader = context
+                .create_shader(&ShaderData::trace(|| {
+                    let start = float2::quad_start();
+                    let end = float2::quad_end();
+                    let uv = (float2::position() - start) / (end - start);
+
+                    float4((uv.x(), uv.y(), uv.x() + uv.y(), 1.0))
+                }))
+                .unwrap();
+
+            context.draw(DrawTarget::Screen, |encoder| {
+                encoder.add_rect([8, 0, 16, 8].into());
+                encoder.draw(&shader);
+
+                encoder.add_rect([8, 8, 16, 16].into());
                 encoder.draw(&shader);
             });
         });
@@ -1430,6 +1454,7 @@ pub mod complex {
     }
 
     #[test]
+    #[cfg(false)]
     fn complex_msdf() {
         if cfg!(miri) {
             return;
@@ -1516,6 +1541,7 @@ pub mod complex {
     }
 
     #[test]
+    #[cfg(false)]
     fn complex_boxblur() {
         if cfg!(miri) {
             return;

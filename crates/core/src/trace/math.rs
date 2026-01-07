@@ -564,6 +564,22 @@ mod float {
             }
         }
 
+        /// Get the top-left corner of the current quad.
+        pub fn quad_start() -> Self {
+            Self {
+                x: float1(emit(ShaderOp::QuadL)),
+                y: float1(emit(ShaderOp::QuadT)),
+            }
+        }
+
+        /// Get the bottom-right corner of the current quad.
+        pub fn quad_end() -> Self {
+            Self {
+                x: float1(emit(ShaderOp::QuadR)),
+                y: float1(emit(ShaderOp::QuadB)),
+            }
+        }
+
         /// Get the dot product with another vector.
         pub fn dot(self, other: impl Into<Self>) -> float1 {
             let other = other.into();

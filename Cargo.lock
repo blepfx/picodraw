@@ -151,16 +151,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fastant"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e825441bfb2d831c47c97d05821552db8832479f44c571b97fededbf0099c07"
-dependencies = [
- "small_ctor",
- "web-time",
-]
-
-[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -407,7 +397,6 @@ version = "0.1.0"
 dependencies = [
  "bumpalo",
  "divan",
- "fastant",
  "fastrand",
  "gungraun",
  "image",
@@ -417,7 +406,7 @@ dependencies = [
 [[package]]
 name = "picoview"
 version = "0.1.0"
-source = "git+https://github.com/blepfx/picoview?rev=5657ae49f15e8d76fb696995f235e5a99d1e2100#5657ae49f15e8d76fb696995f235e5a99d1e2100"
+source = "git+https://github.com/blepfx/picoview?rev=d79b238d363e8e902f5a3ba2b5676162df14dffb#d79b238d363e8e902f5a3ba2b5676162df14dffb"
 dependencies = [
  "bitflags",
  "libc",
@@ -578,12 +567,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "small_ctor"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88414a5ca1f85d82cc34471e975f0f74f6aa54c40f062efa42c0080e7f763f81"
-
-[[package]]
 name = "syn"
 version = "2.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -679,16 +662,6 @@ name = "web-sys"
 version = "0.3.77"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33b6dd2ef9186f1f2072e409e99cd22a975331a6b3591b12c764e0e55c60d5d2"
-dependencies = [
- "js-sys",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "web-time"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",

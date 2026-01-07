@@ -10,7 +10,7 @@ members = [
 # tests & benchmarks
 divan = "0.1.21"
 gungraun = "0.17.0"
-picoview = { git = "https://github.com/blepfx/picoview", rev = "5657ae49f15e8d76fb696995f235e5a99d1e2100" }
+picoview = { git = "https://github.com/blepfx/picoview", rev = "d79b238d363e8e902f5a3ba2b5676162df14dffb" }
 image = { version = "0.25.5", default-features = false, features = ["webp"] }
 yansi = "1.0"
 fastrand = "2.3"
@@ -37,7 +37,7 @@ exclude = [
 ]
 
 [dependencies]
-picodraw-core = { path = "crates/core", default-features = false }
+picodraw-core = { path = "crates/core" }
 picodraw-opengl = { path = "crates/opengl", optional = true }
 picodraw-software = { path = "crates/software", optional = true }
 
