@@ -24,7 +24,7 @@ fn main() {
                 // SAFETY: there's a current OpenGL context because we called `make_current` above
                 unsafe {
                     let data = data.get_or_insert_with(|| {
-                        let mut gl = opengl::Backend::new(opengl::Config::default(),|c| gl.get_proc_address(c) as *const _).unwrap();
+                        let mut gl = opengl::Backend::new(opengl::Config::default(), |c| gl.get_proc_address(c) as *const _).unwrap();
                         let shader = gl
                             .open()
                             .create_shader(&ShaderData::trace(|| {
@@ -49,7 +49,7 @@ fn main() {
                     let mut gl = data.gl.open();
                     gl.set_viewport([data.width, data.height]);
                     gl.draw(DrawTarget::Screen, |encoder| {
-                        encoder.clear([0, 0, data.width, data.height].into(), Color::default());
+                        encoder.fill([0, 0, data.width, data.height].into(), Color::default());
 
                         for i in 0..data.width {
                             for j in 0..data.height {

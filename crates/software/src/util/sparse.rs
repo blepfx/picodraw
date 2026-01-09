@@ -27,6 +27,15 @@ impl<'a, T> SparseMap<'a, T> {
         self.height
     }
 
+    pub fn clear(&mut self, x: u32, y: u32) {
+        assert!(x < self.width && y < self.height);
+
+        let mapping = &mut self.mapping[(x + y * self.width) as usize];
+        if *mapping != u32::MAX {
+            self.buckets[*mapping as usize].2.clear();
+        }
+    }
+
     pub fn push(&mut self, x: u32, y: u32, value: T) {
         assert!(x < self.width && y < self.height);
 

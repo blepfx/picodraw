@@ -231,6 +231,8 @@ pub fn process(shader: &ShaderData) -> GlslShader {
     let mut expressions: HashMap<u32, GlslExpr> = HashMap::new();
     let mut statements: Vec<GlslStmt> = vec![];
 
+    //dbg!(scope::discover(&graph));
+
     for (type_, count) in vars.counts.into_iter() {
         statements.push(GlslStmt::DeclareVars { type_, count });
     }
@@ -519,47 +521,91 @@ mod optimize {
 /// split graph into scopes (if branches, etc)
 mod scope {
     use super::{GlslExpr, graph::GlslGraph};
-    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-    pub enum Scope {
-        Root,
-        Branch(u32, bool),
+    #[derive(Debug, Clone)]
+    pub enum Scoped {
+        Expression(u32),
+        Branch {
+            condition: u32,
+            outputs: Vec<(u32, u32)>,
+            then_nodes: Vec<Scoped>,
+            else_nodes: Vec<Scoped>,
+        },
     }
 
     /// Find all possible branches (if statements) in the graph.
     /// For each branch, find the island of nodes that are only reachable from the branch itself (i.e. not used outside the branch).
-    pub fn discover(graph: &GlslGraph) -> HashMap<Scope, Vec<u32>> {
+    pub fn discover(graph: &GlslGraph) -> Vec<Scoped> {
+        #[derive(Default, Debug)]
+        struct Branch {
+            then_island: BTreeSet<u32>,
+            else_island: BTreeSet<u32>,
+            outputs: Vec<(u32, u32)>,
+        }
+
+        fn emit_nodes(graph: &GlslGraph, nodes: Vec<u32>, branches: &mut BTreeMap<u32, Branch>) -> Vec<Scoped> {
+            let mut result = vec![];
+            for node in nodes {
+                let (expr, _) = graph.get(node);
+                match expr {
+                    GlslExpr::Select(cond, ..) => {
+                        if let Some(branch) = branches.remove(&cond) {
+                            result.push(Scoped::Branch {
+                                condition: cond,
+                                outputs: branch.outputs,
+                                then_nodes: emit_nodes(graph, branch.then_island.into_iter().collect(), branches),
+                                else_nodes: emit_nodes(graph, branch.else_island.into_iter().collect(), branches),
+                            });
+                        }
+                    }
+                    _ => {
+                        result.push(Scoped::Expression(node));
+                    }
+                }
+            }
+            result
+        }
+
         // collect branch roots
-        let mut branches = BTreeMap::<Scope, HashSet<u32>>::new();
+        let mut branches = BTreeMap::<u32, Branch>::new();
+        let mut taken = HashSet::new();
+
         for (_, expr, _) in graph.iter() {
             if let GlslExpr::Select(cond, then, else_) = expr {
-                branches.entry(Scope::Branch(cond, true)).or_default().insert(then);
-                branches.entry(Scope::Branch(cond, false)).or_default().insert(else_);
+                branches.entry(cond).or_default().outputs.push((then, else_));
             }
         }
 
-        // turn them into scopes
-        let mut scopes = vec![Scope::Root; graph.iter().count()];
-        for (cond, branch) in branches.into_iter().rev() {
-            for scope in extend_island(graph, branch) {
-                scopes[scope as usize] = cond;
-            }
+        // for each branch, find its island
+        for (_, branch) in branches.iter_mut() {
+            branch.then_island = extend_island(graph, branch.outputs.iter().map(|x| x.0).collect());
+            branch.else_island = extend_island(graph, branch.outputs.iter().map(|x| x.1).collect());
+
+            branch.then_island.retain(|node| !taken.contains(node));
+            branch.else_island.retain(|node| !taken.contains(node));
+
+            taken.extend(branch.then_island.iter().chain(branch.else_island.iter()).copied());
         }
 
-        let mut result: HashMap<Scope, Vec<u32>> = HashMap::new();
-        for (index, scope) in scopes.into_iter().enumerate() {
-            result.entry(scope).or_default().push(index as u32);
-        }
+        let result = emit_nodes(
+            graph,
+            graph
+                .iter()
+                .map(|(index, _, _)| index)
+                .filter(|index| !taken.contains(index))
+                .collect(),
+            &mut branches,
+        );
 
         result
     }
 
-    fn extend_island(graph: &GlslGraph, mut island: HashSet<u32>) -> HashSet<u32> {
+    fn extend_island(graph: &GlslGraph, mut island: BTreeSet<u32>) -> BTreeSet<u32> {
         let mut waiting = HashMap::new();
         let mut exits = vec![];
 
-        for entry in island.drain() {
+        while let Some(entry) = island.pop_first() {
             match graph.forward(entry).count() {
                 0 => unreachable!(),
                 1 => exits.push(entry),
@@ -697,7 +743,19 @@ mod tests {
 
             let mask = sdf_circle(float2::position(), float2((x, y)), r);
             let color = select! {
-                q.eq(0) => float4((1.0, 0.5, 1.0, 1.0)),
+                q.eq(0) => {
+                    let x = x.sin();
+                    let y = y.cos();
+                    float4((x, y, 1.0, 1.0))
+                },
+                q.eq(1) => {
+                    let z = select! {
+                        x.lt(0.0) => x.cos(),
+                        else => x.tan()
+                    };
+
+                    float4((z, z, z, z))
+                },
                 else => float4((0.5, 0.5, 1.0, 1.0))
             };
 

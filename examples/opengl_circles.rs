@@ -26,10 +26,9 @@ fn shader_circle() -> float4 {
     let y = float1::read_f32(4);
     let radius = float1::read_f32(8);
     let alpha = float1::read_f32(12);
+    let mask = sdf_circle(float2::position(), float2((x, y)), radius) * alpha;
 
-    let mask = sdf_circle(float2::position(), float2((x, y)), radius);
-
-    float4((1.0, 0.5, 1.0, mask * alpha))
+    float4((mask, mask * 0.5, mask, mask))
 }
 
 fn main() {
@@ -65,7 +64,7 @@ fn main() {
                     let mut gl = data.gl.open();
                     gl.set_viewport([data.width, data.height]);
                     gl.draw(DrawTarget::Screen, |encoder| {
-                        encoder.clear([0, 0, data.width, data.height].into(), Color {
+                        encoder.fill([0, 0, data.width, data.height].into(), Color {
                             r: 0,
                             g: 20,
                             b: 0,

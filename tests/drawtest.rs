@@ -244,6 +244,27 @@ pub mod ops {
         float3((pos_inf, neg_inf, nan.eq(nan).select(float1(0.0), 1.0)))
     });
 
+    test!(op_select, 64, 64, {
+        let p = int1(float2::position().x()).rem_euclid(4);
+
+        select! {
+            p.eq(0) => float3((1.0, 1.0, 0.0)),
+            p.eq(1) => {
+                let x = (float2::position().x() / float2::resolution().x()).clamp(0.0, 1.0);
+                let y = (float2::position().y() / float2::resolution().y()).clamp(0.0, 1.0);
+                float3((0.0, 1.0 - x, y))
+            },
+            p.eq(2) => {
+                let x = (float2::position().x() / float2::resolution().x()).clamp(0.0, 1.0);
+                let y = (float2::position().y() / float2::resolution().y()).clamp(0.0, 1.0);
+                float3((1.0, x, 1.0 - y))
+            },
+            else => {
+                float3((0.0, 0.0, 1.0))
+            }
+        }
+    });
+
     test!(op_comp_ge, 64, 64, {
         let p = float2::position() / float2::resolution();
 
@@ -943,7 +964,6 @@ pub mod semantics {
     }
 
     #[test]
-    #[cfg(false)]
     fn semantics_blend() {
         run("semantics_blend", 8, 8, |context| {
             let shader = context
@@ -958,7 +978,7 @@ pub mod semantics {
 
             context.draw(DrawTarget::Screen, |encoder| {
                 encoder.add_rect([1, 1, 5, 5].into());
-                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.5));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.5));
@@ -966,15 +986,15 @@ pub mod semantics {
 
                 encoder.add_rect([3, 3, 7, 7].into());
                 encoder.add_data(&f32::to_ne_bytes(0.0));
-                encoder.add_data(&f32::to_ne_bytes(1.0));
-                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.25));
+                encoder.add_data(&f32::to_ne_bytes(0.25));
                 encoder.add_data(&f32::to_ne_bytes(0.25));
                 encoder.draw(&shader);
 
                 encoder.add_rect([0, 0, 8, 8].into());
-                encoder.add_data(&f32::to_ne_bytes(1.0));
-                encoder.add_data(&f32::to_ne_bytes(1.0));
-                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.1));
+                encoder.add_data(&f32::to_ne_bytes(0.1));
+                encoder.add_data(&f32::to_ne_bytes(0.1));
                 encoder.add_data(&f32::to_ne_bytes(0.1));
                 encoder.draw(&shader);
             });
@@ -1020,7 +1040,7 @@ pub mod semantics {
             context.draw(DrawTarget::Screen, |encoder| {
                 encoder.add_rect([1, 1, 7, 7].into());
                 encoder.draw(&shader);
-                encoder.clear([1, 1, 7, 7].into(), Color::default());
+                encoder.fill([1, 1, 7, 7].into(), Color::default());
             });
         });
     }
@@ -1029,7 +1049,7 @@ pub mod semantics {
     fn semantics_clear() {
         run("semantics_clear", 8, 8, |context| {
             context.draw(DrawTarget::Screen, |encoder| {
-                encoder.clear(
+                encoder.fill(
                     [1, 1, 7, 7].into(),
                     Color {
                         r: 128,
@@ -1039,7 +1059,7 @@ pub mod semantics {
                     },
                 );
 
-                encoder.clear(
+                encoder.fill(
                     [4, 4, 8, 8].into(),
                     Color {
                         r: 32,
@@ -1049,13 +1069,12 @@ pub mod semantics {
                     },
                 );
 
-                encoder.clear([0, 0, 4, 4].into(), Color::default());
+                encoder.fill([0, 0, 4, 4].into(), Color::default());
             });
         });
     }
 
     #[test]
-    #[cfg(false)]
     fn semantics_screen_preserve() {
         run("semantics_screen_preserve", 8, 8, |context| {
             let shader = context
@@ -1070,22 +1089,22 @@ pub mod semantics {
 
             context.draw(DrawTarget::Screen, |encoder| {
                 encoder.add_rect([1, 1, 7, 7].into());
-                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(0.5));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.5));
-                encoder.object(&shader);
+                encoder.draw(&shader);
             });
 
             context.draw(DrawTarget::Screen, |encoder| {
-                encoder.clear([4, 4, 8, 8].into());
+                encoder.fill([4, 4, 8, 8].into(), Color::default());
 
                 encoder.add_rect([1, 1, 7, 7].into());
                 encoder.add_data(&f32::to_ne_bytes(0.0));
-                encoder.add_data(&f32::to_ne_bytes(1.0));
-                encoder.add_data(&f32::to_ne_bytes(1.0));
                 encoder.add_data(&f32::to_ne_bytes(0.25));
-                encoder.object(&shader);
+                encoder.add_data(&f32::to_ne_bytes(0.25));
+                encoder.add_data(&f32::to_ne_bytes(0.25));
+                encoder.draw(&shader);
             });
         });
     }
@@ -1331,7 +1350,7 @@ pub mod stress {
 
             for _ in 0..2 {
                 context.draw(DrawTarget::Screen, |encoder| {
-                    encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                    encoder.fill([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
 
                     for i in 0..MAX_CANVAS_SIZE {
                         for j in 0..MAX_CANVAS_SIZE {
@@ -1454,7 +1473,6 @@ pub mod complex {
     }
 
     #[test]
-    #[cfg(false)]
     fn complex_msdf() {
         if cfg!(miri) {
             return;
@@ -1514,7 +1532,7 @@ pub mod complex {
                 .unwrap();
 
             context.draw(DrawTarget::Screen, |encoder| {
-                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                encoder.fill([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
 
                 let mut x = 10.0;
                 let mut scale = 0.5;
@@ -1541,7 +1559,6 @@ pub mod complex {
     }
 
     #[test]
-    #[cfg(false)]
     fn complex_boxblur() {
         if cfg!(miri) {
             return;
@@ -1588,7 +1605,7 @@ pub mod complex {
                 .unwrap();
 
             context.draw(DrawTarget::Texture(&mut buffer), |encoder| {
-                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                encoder.fill([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
                 encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
                 encoder.add_data(&f32::to_ne_bytes(256.0)); // circle center x
                 encoder.add_data(&f32::to_ne_bytes(256.0)); // circle center y
@@ -1596,7 +1613,7 @@ pub mod complex {
             });
 
             context.draw(DrawTarget::Screen, |encoder| {
-                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                encoder.fill([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
                 encoder.add_rect([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into());
                 encoder.add_texture(&buffer);
                 encoder.draw(&shader_boxblur);

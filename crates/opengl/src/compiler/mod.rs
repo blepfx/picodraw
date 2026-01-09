@@ -65,7 +65,7 @@ impl GlslCompiler {
     pub fn add_shader(&mut self, shader: &ShaderData) -> Result<CompilerShader, ShaderError> {
         let structure = analysis::process(shader);
         if structure.num_textures > self.options.texture_units {
-            return Err(ShaderError::TooComplex);
+            return Err(ShaderError::TooManyTextures);
         }
 
         let shader = CompilerShader {

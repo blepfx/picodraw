@@ -5,7 +5,7 @@ use std::collections::HashMap;
 pub fn optimize_peephole<'a>(
     program: &IRProgram<'a>,
     arena: &'a Bump,
-    peeper: impl Fn(&'a Bump, IR<'a>) -> IR<'a>,
+    peeper: fn(&'a Bump, IR<'a>) -> IR<'a>,
 ) -> IRProgram<'a> {
     let mut mapping = HashMap::new();
     program.visit_dfs(arena, |visit| match visit {

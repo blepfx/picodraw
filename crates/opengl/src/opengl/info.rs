@@ -7,13 +7,9 @@ use std::{
     ffi::{CStr, c_void},
 };
 
-#[derive(Debug, Clone)]
-#[non_exhaustive]
 pub struct GlInfo {
     pub version: (u32, u32),
     pub is_gles: bool,
-
-    pub vendor: String,
     pub extensions: HashSet<String>,
 
     pub max_texture_size: u32,
@@ -34,8 +30,6 @@ impl GlInfo {
             Self {
                 version: (version.major, version.minor),
                 is_gles: version.is_embedded,
-
-                vendor: version.vendor_info.clone(),
                 extensions: gl.supported_extensions().clone(),
 
                 max_texture_size,
@@ -70,7 +64,7 @@ impl GlInfo {
         }
     }
 
-    pub(crate) fn is_baseline_supported(&self) -> bool {
+    pub fn is_baseline_supported(&self) -> bool {
         if self.is_gles {
             let baseline = self.version >= (2, 0);
             let any_buffer = self.is_uniform_buffer_supported() || self.is_texture_buffer_supported();
@@ -85,7 +79,7 @@ impl GlInfo {
         }
     }
 
-    pub(crate) fn is_uniform_buffer_supported(&self) -> bool {
+    pub fn is_uniform_buffer_supported(&self) -> bool {
         if self.is_gles {
             self.version >= (3, 0) || self.extensions.contains("GL_ARB_uniform_buffer_object")
         } else {
@@ -93,21 +87,21 @@ impl GlInfo {
         }
     }
 
-    pub(crate) fn is_texture_buffer_supported(&self) -> bool {
+    pub fn is_texture_buffer_supported(&self) -> bool {
         let tbo = self.extensions.contains("GL_ARB_texture_buffer_object") || (self.version >= (3, 1) && !self.is_gles);
         let bit = self.extensions.contains("GL_ARB_shader_bit_encoding") || (self.version >= (3, 3) && !self.is_gles);
         tbo && bit
     }
 
-    pub(crate) fn is_timer_query_supported(&self) -> bool {
+    pub fn is_timer_query_supported(&self) -> bool {
         self.extensions.contains("GL_ARB_timer_query") || (self.version >= (3, 3) && !self.is_gles)
     }
 
-    pub(crate) fn is_debug_callback_supported(&self) -> bool {
+    pub fn is_debug_callback_supported(&self) -> bool {
         self.extensions.contains("GL_KHR_debug") || (self.version >= (4, 3) && !self.is_gles)
     }
 
-    pub(crate) fn prefer_tbo_over_ubo(&self) -> bool {
+    pub fn prefer_tbo_over_ubo(&self) -> bool {
         if !self.is_uniform_buffer_supported() {
             return true;
         }
@@ -117,12 +111,12 @@ impl GlInfo {
             && self.max_texture_units > 8
     }
 
-    pub(crate) fn target_ubo_size(&self) -> u32 {
+    pub fn target_ubo_size(&self) -> u32 {
         let target = self.max_uniform_block_size_bytes.min(65536);
         target - target % BUFFER_ALIGNMENT // align to 16 bytes
     }
 
-    pub(crate) fn target_tbo_size(&self) -> u32 {
+    pub fn target_tbo_size(&self) -> u32 {
         let target = self
             .max_texture_buffer_size_texels
             .saturating_mul(BUFFER_ALIGNMENT)

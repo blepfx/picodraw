@@ -13,15 +13,26 @@ pub trait Context: Sized {
     /// Create a texture of the given size and returns its handle.
     ///
     /// To upload data from the CPU, use [`Context::upload_texture`].
+    ///
+    /// # Errors
+    /// - [`TextureError::OutOfMemory`]: If the backend ran out of memory (e.g. the requested size is too large).
     fn create_texture(&mut self, size: Size, format: TextureFormat) -> Result<Self::Texture, TextureError>;
 
     /// Upload texture data from the CPU and put it into a subregion of a texture object.
+    ///
+    /// # Errors
+    /// - [`TextureError::OutOfMemory`]: If the backend ran out of memory (e.g. region is too large).
+    /// - [`TextureError::MalformedData`]: If the provided data was malformed.
     fn upload_texture(&mut self, texture: &mut Self::Texture, data: TextureData) -> Result<(), TextureError>;
 
     /// Delete a texture.
     fn delete_texture(&mut self, texture: Self::Texture);
 
     /// Create a shader from the given shader graph and returns its handle.
+    ///
+    /// # Errors
+    /// - [`ShaderError::TooComplex`]: If the shader graph is too complex to be compiled. (e.g. uses too many registers)
+    /// - [`ShaderError::TooManyTextures`]: If the shader uses more texture units at once than the backend supports.
     fn create_shader(&mut self, shader: &ShaderData) -> Result<Self::Shader, ShaderError>;
 
     /// Delete a shader.
@@ -56,8 +67,16 @@ pub trait FrameEncoder<'a> {
     /// The type of texture used for drawing.
     type Texture: 'static;
 
+    /// Set every pixel in the region to be undefined. (i.e. arbitrary garbage data)
+    ///
+    /// The backend is free to assume that the contents of this region are not needed anymore.  
+    /// This is useful for optimizing regions that will be fully overwritten later.
+    fn invalidate(&mut self, bounds: Bounds);
+
     /// Set every pixel in the region to the given color.
-    fn clear(&mut self, bounds: Bounds, color: Color);
+    ///
+    /// Does not do alpha blending, just overwrites the pixels.
+    fn fill(&mut self, bounds: Bounds, color: Color);
 
     /// Emit an **object** to be drawn with the given shader.
     ///

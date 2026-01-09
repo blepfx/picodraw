@@ -1,5 +1,5 @@
 use crate::{DebugCallback, DebugMessage};
-use glow::{BLEND, DEBUG_OUTPUT, DEBUG_OUTPUT_SYNCHRONOUS, HasContext, ONE, ONE_MINUS_SRC_ALPHA, SRC_ALPHA};
+use glow::{BLEND, DEBUG_OUTPUT, DEBUG_OUTPUT_SYNCHRONOUS, HasContext, ONE, ONE_MINUS_SRC_ALPHA};
 
 pub fn viewport(gl: &impl HasContext, x: i32, y: i32, w: u32, h: u32) {
     unsafe {
@@ -8,10 +8,10 @@ pub fn viewport(gl: &impl HasContext, x: i32, y: i32, w: u32, h: u32) {
     }
 }
 
-pub fn enable_blend_normal(gl: &impl HasContext) {
+pub fn enable_blend_premul(gl: &impl HasContext) {
     unsafe {
         gl.enable(BLEND);
-        gl.blend_func_separate(SRC_ALPHA, ONE_MINUS_SRC_ALPHA, ONE, ONE_MINUS_SRC_ALPHA);
+        gl.blend_func(ONE, ONE_MINUS_SRC_ALPHA);
     }
 }
 

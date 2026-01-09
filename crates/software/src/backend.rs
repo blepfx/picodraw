@@ -10,18 +10,23 @@ use picodraw_core::{
     TextureFormat,
 };
 
+/// A software rendering backend for `picodraw`.
 pub struct SoftwareBackend {
     arena: Bump,
     thread_pool: ThreadPool,
     simd_dispatch: SimdDispatcher,
 }
 
+/// A rendering context for the software backend.
+///
+/// Created by calling [`SoftwareBackend::open`].
 pub struct SoftwareContext<'a> {
     owner: &'a mut SoftwareBackend,
     screen: BufferMut<'a>,
 }
 
 impl SoftwareBackend {
+    /// Create a new software backend with the given number of threads.
     pub fn with_threads(threads: usize) -> Self {
         Self {
             arena: Bump::new(),
@@ -30,16 +35,21 @@ impl SoftwareBackend {
         }
     }
 
+    /// Create a new software backend with the maximum available parallelism.
+    ///
+    /// Usually equivalent to `SoftwareBackend::with_threads(num_cores)`.
     pub fn with_max_parallelism() -> Self {
         Self::with_threads(std::thread::available_parallelism().map(|x| x.get()).unwrap_or(1))
     }
 
+    /// Create a new rendering context that draws onto the given screen buffer.
     pub fn open<'a>(&'a mut self, screen: BufferMut<'a>) -> SoftwareContext<'a> {
         SoftwareContext { owner: self, screen }
     }
 }
 
 impl<'a> SoftwareContext<'a> {
+    /// Reborrow the context for a shorter lifetime
     pub fn reborrow(&mut self) -> SoftwareContext<'_> {
         SoftwareContext {
             owner: self.owner,
@@ -110,8 +120,12 @@ impl<'a> FrameEncoder<'a> for Dispatcher<'a> {
     type Shader = CompiledShader;
     type Texture = Buffer;
 
-    fn clear(&mut self, bounds: Bounds, color: Color) {
-        self.push_clear(bounds, color);
+    fn invalidate(&mut self, bounds: Bounds) {
+        self.push_clear(bounds, None);
+    }
+
+    fn fill(&mut self, bounds: Bounds, color: Color) {
+        self.push_clear(bounds, Some(color));
     }
 
     fn draw(&mut self, shader: &'a Self::Shader) {

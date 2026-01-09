@@ -118,8 +118,12 @@ impl<C: Context> DynContext for C {
             type Shader = DynShader;
             type Texture = DynTexture;
 
-            fn clear(&mut self, bounds: Bounds, color: Color) {
-                self.inner.clear(bounds, color);
+            fn invalidate(&mut self, bounds: Bounds) {
+                self.inner.invalidate(bounds);
+            }
+
+            fn fill(&mut self, bounds: Bounds, color: Color) {
+                self.inner.fill(bounds, color);
             }
 
             fn draw(&mut self, shader: &'a Self::Shader) {

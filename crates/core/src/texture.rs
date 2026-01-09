@@ -1,4 +1,4 @@
-/// A color represented as RGBA components in SRGB space.
+/// A color represented as RGBA components in sRGB space.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Default)]
 #[repr(C)]
 pub struct Color {
@@ -13,7 +13,7 @@ pub struct Color {
 }
 
 impl Color {
-    /// Linearly interpolate between this color and another color by a given factor.
+    /// Linearly interpolate between this color and another color (in the sRGB space!) by a given factor.
     ///
     /// `t` is in the range `[0, 255]`, where 0 returns `self` and 255 returns `other`.
     #[inline]

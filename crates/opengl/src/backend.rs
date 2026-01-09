@@ -1,10 +1,10 @@
 use crate::{
-    DebugCallback, InitError, OpenGlInfo, Stats,
+    Config, InitError, Stats,
     compiler::{self, CompilerShader, GlslCompiler},
     dispatch::{Dispatcher, DispatcherScratch},
     opengl::{
-        GlFramebufferBinding, GlProfiler, GlProgram, GlStreamBuffer, GlTexture, GlVertexArray, enable_blend_normal,
-        enable_debug, is_context_valid,
+        GlFramebufferBinding, GlInfo, GlProfiler, GlProgram, GlStreamBuffer, GlTexture, GlVertexArray,
+        enable_blend_premul, enable_debug, is_context_valid,
     },
 };
 use glow::HasContext;
@@ -13,6 +13,7 @@ use picodraw_core::{
 };
 use std::{collections::HashMap, ffi::CStr, time::Duration};
 
+/// The native OpenGL context type for the current platform.
 #[cfg(not(target_arch = "wasm32"))]
 pub type Native = glow::Context;
 
@@ -20,7 +21,6 @@ pub type Native = glow::Context;
 pub struct Backend<T: HasContext> {
     shader_compiler: GlslCompiler,
     viewport_size: Size,
-    tbo_over_ubo: bool,
     scratch: DispatcherScratch<T>,
     stats: Stats,
 
@@ -30,24 +30,30 @@ pub struct Backend<T: HasContext> {
     gl_buffer: GlStreamBuffer<T>,
     gl_program: Option<GlProgram<T>>,
     gl_textures: HashMap<T::Texture, GlTexture<T>>,
+
+    info_tbo_over_ubo: bool,
+    info_max_texture_size: u32,
 }
 
+/// A rendering context for the OpenGL backend.
+///
+/// Created by calling [`Backend::open`] in the OpenGL thread.
 pub struct Context<'a, T: HasContext>(&'a mut Backend<T>);
 
+/// A handle representing a texture used for drawing or as a render target.
+///
+/// Cannot be shared between different OpenGL contexts.
 pub struct Texture<T: HasContext> {
     texture: T::Texture,
     owner: usize,
 }
 
+/// A handle representing a shader used for drawing.
+///
+/// Cannot be shared between different OpenGL contexts.
 pub struct Shader {
     shader: CompilerShader,
     owner: usize,
-}
-
-pub struct Config {
-    pub debug_logger: Option<DebugCallback>,
-    pub enable_gpu_time_queries: bool,
-    pub prefer_ubo_over_tbo: bool,
 }
 
 impl Backend<Native> {
@@ -56,17 +62,18 @@ impl Backend<Native> {
     ///
     /// The `proc_addr` function is used to load a pointer to an OpenGL procedure given it's name.
     ///
-    /// #### Requirements
+    /// # Requirements
     /// `picodraw` requires at least OpenGL v3.3.
     /// It is possible that the backend can be created with OpenGL v3.0 if the following extensions are present:
     /// - `ARB_texture_buffer_object` or `EXT_texture_buffer`
     /// - `ARB_shader_bit_encoding`
     /// - `ARB_timer_query`
     ///
-    /// #### Error Conditions
+    /// # Errors
     /// - If the version is not supported [`InitError::UnsupportedVersion`] is returned.
+    /// - If the OpenGL context is invalid [`InitError::InvalidContext`] is returned.
     ///
-    /// #### Safety
+    /// # Safety
     /// This function should be called only if an OpenGL context is currently active for the current thread.
     pub unsafe fn new<F>(config: Config, mut loader: F) -> Result<Self, InitError>
     where
@@ -90,9 +97,13 @@ impl<T: HasContext> Backend<T> {
     /// # Safety
     /// This function should be called only if an OpenGL context is currently active for the current thread.
     pub unsafe fn from_glow(config: Config, mut gl_context: T) -> Result<Self, InitError> {
-        let gl_info = OpenGlInfo::query(&gl_context);
+        let gl_info = GlInfo::query(&gl_context);
         if !gl_info.is_baseline_supported() {
-            return Err(InitError::UnsupportedVersion { info: gl_info });
+            return Err(InitError::UnsupportedVersion {
+                version: gl_info.version,
+                is_gles: gl_info.is_gles,
+                extensions: gl_info.extensions.into_iter().collect(),
+            });
         }
 
         let gl_vertex = GlVertexArray::new(&gl_context);
@@ -140,7 +151,6 @@ impl<T: HasContext> Backend<T> {
             viewport_size: Size { width: 1, height: 1 },
             scratch: DispatcherScratch::default(),
             stats: Stats::default(),
-            tbo_over_ubo,
 
             gl_program: None,
             gl_context: Box::new(gl_context),
@@ -148,6 +158,9 @@ impl<T: HasContext> Backend<T> {
             gl_profiler,
             gl_vertex,
             gl_buffer,
+
+            info_tbo_over_ubo: tbo_over_ubo,
+            info_max_texture_size: gl_info.max_texture_size,
         })
     }
 
@@ -179,6 +192,7 @@ impl<T: HasContext> Backend<T> {
 }
 
 impl<'a, T: HasContext> Context<'a, T> {
+    /// Reborrow the context for a shorter lifetime
     pub fn reborrow(&'_ mut self) -> Context<'_, T> {
         Context(self.0)
     }
@@ -218,7 +232,7 @@ impl<'a, T: HasContext> Context<'a, T> {
         )
     }
 
-    pub fn unique_id(&self) -> usize {
+    fn unique_id(&self) -> usize {
         &*self.0.gl_context as *const _ as usize
     }
 }
@@ -228,6 +242,10 @@ impl<'a, T: HasContext + 'static> picodraw_core::Context for Context<'a, T> {
     type Texture = Texture<T>;
 
     fn create_texture(&mut self, size: Size, format: TextureFormat) -> Result<Self::Texture, TextureError> {
+        if size.width > self.0.info_max_texture_size || size.height > self.0.info_max_texture_size {
+            return Err(TextureError::OutOfMemory);
+        }
+
         let texture = GlTexture::new(&*self.0.gl_context, size.width, size.height, format);
         let texture_id = texture.texture();
 
@@ -298,7 +316,7 @@ impl<'a, T: HasContext + 'static> picodraw_core::Context for Context<'a, T> {
             let program = GlProgram::compile(gl, &result.vertex, &result.fragment);
             let bind_program = program.bind(gl);
 
-            if self.0.tbo_over_ubo {
+            if self.0.info_tbo_over_ubo {
                 bind_program.set_texture_sampler_binding(gl, compiler::UNIFORM_BUFFER_TEXTURE, 0);
 
                 for i in 0..texture_units {
@@ -352,7 +370,7 @@ impl<'a, T: HasContext + 'static> picodraw_core::Context for Context<'a, T> {
             }
         }
 
-        enable_blend_normal(gl);
+        enable_blend_premul(gl);
 
         f(&mut dispatcher);
 
@@ -374,7 +392,11 @@ impl<'a, T: HasContext + 'static> FrameEncoder<'a> for Dispatcher<'a, T> {
     type Shader = Shader;
     type Texture = Texture<T>;
 
-    fn clear(&mut self, bounds: Bounds, color: Color) {
+    fn invalidate(&mut self, _: Bounds) {
+        // do nothing; its faster to just overwrite/blend later
+    }
+
+    fn fill(&mut self, bounds: Bounds, color: Color) {
         self.push_clear(bounds, color);
     }
 
@@ -392,15 +414,5 @@ impl<'a, T: HasContext + 'static> FrameEncoder<'a> for Dispatcher<'a, T> {
 
     fn add_texture(&mut self, texture: &Texture<T>) {
         self.push_object_texture(texture.texture);
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            debug_logger: None,
-            enable_gpu_time_queries: true,
-            prefer_ubo_over_tbo: false,
-        }
     }
 }

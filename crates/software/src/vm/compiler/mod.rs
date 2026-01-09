@@ -78,7 +78,6 @@ impl<'a> CompiledProgram<'a> {
         self.outputs
     }
 
-    #[allow(unused)]
     pub fn used_registers(&self) -> usize {
         self.registers as usize
     }

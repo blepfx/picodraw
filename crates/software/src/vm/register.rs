@@ -74,9 +74,6 @@ impl From<VMSlot> for f32 {
 #[repr(C, align(128))]
 pub struct VMTile16([[VMSlot; 16]; 16]);
 #[derive(Copy, Clone)]
-#[repr(C, align(128))]
-pub struct VMTile8([[VMSlot; 8]; 8]);
-#[derive(Copy, Clone)]
 #[repr(C, align(64))]
 pub struct VMTile4([[VMSlot; 4]; 4]);
 
@@ -114,6 +111,5 @@ macro_rules! impl_tile {
 }
 
 impl_tile!(VMTile16, 16, 16);
-impl_tile!(VMTile8, 8, 8);
 impl_tile!(VMTile4, 4, 4);
 impl_tile!(VMSlot, 1, 1);

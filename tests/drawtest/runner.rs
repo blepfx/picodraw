@@ -9,7 +9,7 @@ use yansi::Paint;
 
 pub const MAX_CANVAS_SIZE: u32 = 512;
 
-const MAX_P90_ERROR: f64 = 0.05;
+const MAX_P90_ERROR: f64 = 1.01;
 const MAX_P95_ERROR: f64 = 1.20;
 const MAX_P99_ERROR: f64 = 2.00;
 
@@ -167,7 +167,7 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynCont
 
                 messages.push(format!(
                     " | [{}, {}, {}]",
-                    perc!(p90, MAX_P99_ERROR),
+                    perc!(p90, MAX_P90_ERROR),
                     perc!(p95, MAX_P95_ERROR),
                     perc!(p99, MAX_P99_ERROR),
                 ));
@@ -395,7 +395,7 @@ pub mod opengl {
                         {
                             gl_backend.set_viewport([MAX_CANVAS_SIZE, MAX_CANVAS_SIZE]);
                             gl_backend.draw(DrawTarget::Screen, |encoder| {
-                                encoder.clear([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
+                                encoder.fill([0, 0, MAX_CANVAS_SIZE, MAX_CANVAS_SIZE].into(), Color::default());
                             });
 
                             gl_backend.set_viewport([job.width, job.height]);

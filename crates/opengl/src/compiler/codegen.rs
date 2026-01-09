@@ -321,7 +321,7 @@ pub fn emit_shader_expression(buffer: &mut String, shader: &ShaderContext, expr:
             emit_shader_variable(buffer, *var, *ty);
         }
 
-        GlslExpr::Output(_) => {}
+        GlslExpr::Output(_) => unreachable!(),
     }
 }
 

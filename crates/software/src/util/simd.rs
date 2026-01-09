@@ -22,6 +22,7 @@ macro_rules! impl_dispatcher {
                 match *self {
                     $(Self::$name => {
                         $(#[target_feature(enable = $feature)])*
+                        #[inline(never)]
                         unsafe fn __dispatch(f: impl FnOnce()) { f() }
                         unsafe { __dispatch(f) }
                     }),*
@@ -36,8 +37,8 @@ macro_rules! impl_dispatcher {
 #[cfg(target_arch = "x86_64")]
 impl_dispatcher! {
     is_x86_feature_detected;
-    Avx512, "avx512f", "avx512bw", "avx512cd", "avx512dq", "avx512vl";
-    Avx2, "sse4.1", "sse4.2", "avx2", "fma";
+    // Avx512, "avx512f", "avx512bw", "avx512cd", "avx512dq", "avx512vl";
+    Avx2, "sse4.1", "sse4.2", "avx", "avx2", "fma";
     Avx, "sse4.1", "sse4.2", "avx";
     Sse42, "sse4.1", "sse4.2";
 }

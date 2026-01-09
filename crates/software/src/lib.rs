@@ -1,3 +1,6 @@
+#![doc = include_str!("../README.md")]
+#![deny(missing_docs)]
+
 mod backend;
 mod buffer;
 mod dispatch;
@@ -6,6 +9,7 @@ mod vm;
 
 pub use backend::*;
 pub use buffer::*;
+pub use dispatch::TILE_SIZE;
 
 // TODO: implement
 //

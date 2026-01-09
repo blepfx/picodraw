@@ -2,11 +2,13 @@
 a smol 2d graphics abstraction library
 
 ## Features
-- Low level abstraction of different graphics APIs
+- Medium[^1] level abstraction of different graphics APIs
 - Dynamically draw a list of quads, each with a different custom shader
 - Supports reading from textures, and drawing onto render textures
 - Write custom shaders in Rust
 - Heavily tested (see [drawtest.rs](tests/drawtest.rs))
+
+[^1]: Not as low level as raw OpenGL/Vulkan/DirectX, but not as high level as Vello or Skia.
 
 ## Backends
 Currently `picodraw` supports the following backends:

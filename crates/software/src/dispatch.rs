@@ -1,13 +1,14 @@
 use crate::{
     buffer::{BufferMut, BufferRef},
     util::{Pod, SimdDispatcher, SparseMap, ThreadPool},
-    vm::{CompiledShader, VMContext, VMMemory, VMSlot, VMTile, VMTile4, VMTile8, VMTile16},
+    vm::{CompiledShader, VMContext, VMMemory, VMSlot, VMTile, VMTile4, VMTile16},
 };
 use bumpalo::{Bump, collections::Vec};
 use picodraw_core::{Bounds, Color};
 use std::hint::unreachable_unchecked;
 
-const TILE_SIZE: usize = 16;
+/// The size of a tile in pixels.
+pub const TILE_SIZE: usize = 16;
 
 enum DispatchObject<'a> {
     Draw {
@@ -17,9 +18,9 @@ enum DispatchObject<'a> {
         bounds: Bounds,
     },
 
-    Clear {
+    Fill {
         bounds: Bounds,
-        color: Color,
+        color: Option<Color>,
     },
 }
 
@@ -27,7 +28,7 @@ impl DispatchObject<'_> {
     fn bounds(&self) -> &Bounds {
         match self {
             DispatchObject::Draw { bounds, .. } => bounds,
-            DispatchObject::Clear { bounds, .. } => bounds,
+            DispatchObject::Fill { bounds, .. } => bounds,
         }
     }
 }
@@ -51,8 +52,8 @@ impl<'a> Dispatcher<'a> {
         }
     }
 
-    pub fn push_clear(&mut self, bounds: impl Into<Bounds>, color: Color) {
-        self.objects.push(DispatchObject::Clear {
+    pub fn push_clear(&mut self, bounds: impl Into<Bounds>, color: Option<Color>) {
+        self.objects.push(DispatchObject::Fill {
             bounds: bounds.into(),
             color,
         });
@@ -136,16 +137,15 @@ impl<'a> Dispatcher<'a> {
                         .run::<VMSlot>(&mut memory)
                     };
 
-                    let inputs = &*self.arena.alloc_slice_fill_iter(result.iter().copied());
                     DispatchObject::Draw {
-                        shader,
-                        inputs,
-                        textures,
+                        inputs: &*self.arena.alloc_slice_fill_iter(result.iter().copied()),
                         bounds: *bounds,
+                        shader,
+                        textures,
                     }
                 }
 
-                DispatchObject::Clear { bounds, color } => DispatchObject::Clear {
+                DispatchObject::Fill { bounds, color } => DispatchObject::Fill {
                     bounds: *bounds,
                     color: *color,
                 },
@@ -167,6 +167,24 @@ impl<'a> Dispatcher<'a> {
                 let x1 = bounds.right.div_ceil(TILE_SIZE as u32).min(tiles.width());
                 let y1 = bounds.bottom.div_ceil(TILE_SIZE as u32).min(tiles.height());
 
+                // If the job is a clear operation, we can optimize by
+                // removing any previous jobs in the affected tiles.
+                // This is because a clear operation overwrites everything
+                // in the region, so previous operations are redundant.
+                if let DispatchObject::Fill { bounds, .. } = job {
+                    let x0 = bounds.left.div_ceil(TILE_SIZE as u32);
+                    let y0 = bounds.top.div_ceil(TILE_SIZE as u32);
+                    let x1 = (bounds.right / TILE_SIZE as u32).min(tiles.width());
+                    let y1 = (bounds.bottom / TILE_SIZE as u32).min(tiles.height());
+
+                    for y in y0..y1 {
+                        for x in x0..x1 {
+                            tiles.clear(x, y);
+                        }
+                    }
+                }
+
+                // Allocate the job to get a small pointer
                 let job = &*self.arena.alloc(job);
                 for y in y0..y1 {
                     for x in x0..x1 {
@@ -197,25 +215,24 @@ impl<'a> Dispatcher<'a> {
             .alloc_slice_fill_iter((0..pool.num_workers()).map(|_| DispatchWorker::new(self.arena)));
 
         // dispatch groups
-
         pool.run_arrays(workers, groups, |worker, group| {
+            // SAFETY: the buffer is guaranteed to be valid because
+            // it's alive for the duration of the outer scope,
+            // and we access each region only once
+            // (i.e. threads have no intersecting read-write regions)
+            let (buffer, width, height) = unsafe {
+                let mut buffer = std::ptr::read::<BufferMut<'_>>(&buffer as *const _);
+
+                (
+                    buffer.subregion_mut(group.x as usize, group.y as usize, TILE_SIZE, TILE_SIZE),
+                    buffer.width(),
+                    buffer.height(),
+                )
+            };
+
             simd.dispatch(
                 #[inline(always)]
                 || {
-                    // SAFETY: the buffer is guaranteed to be valid because
-                    // it's alive for the duration of the outer scope,
-                    // and we access each region only once
-                    // (i.e. threads have no intersecting read-write regions)
-                    let (buffer, width, height) = unsafe {
-                        let mut buffer = std::ptr::read::<BufferMut<'_>>(&buffer as *const _);
-
-                        (
-                            buffer.subregion_mut(group.x as usize, group.y as usize, TILE_SIZE, TILE_SIZE),
-                            buffer.width(),
-                            buffer.height(),
-                        )
-                    };
-
                     worker.reset_tile();
 
                     // draw the objects in sequence
@@ -231,8 +248,11 @@ impl<'a> Dispatcher<'a> {
                             });
 
                         match job {
-                            DispatchObject::Clear { color, .. } => {
-                                worker.clear_region(
+                            DispatchObject::Fill { color: None, .. } => {
+                                worker.fill_undefined();
+                            }
+                            DispatchObject::Fill { color: Some(color), .. } => {
+                                worker.fill_region(
                                     bounds.left as usize,
                                     bounds.top as usize,
                                     bounds.right as usize,
@@ -264,7 +284,7 @@ impl<'a> Dispatcher<'a> {
                                     bounds,
                                 );
                             },
-                        }
+                        };
                     }
 
                     worker.finish_tile(buffer);
@@ -285,7 +305,15 @@ struct DispatchWorker<'a> {
     g: VMTile16,
     b: VMTile16,
     a: VMTile16,
+    content: DispatchContent,
     memory: VMMemory<'a>,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum DispatchContent {
+    Zero,    // all transparent, can blend without lerp
+    Screen,  // not yet materialized screen content, needs to read from screen first
+    Storage, // materialized content, needs full alpha blending
 }
 
 impl<'a> DispatchWorker<'a> {
@@ -295,17 +323,26 @@ impl<'a> DispatchWorker<'a> {
             g: VMTile16::zeroed(),
             b: VMTile16::zeroed(),
             a: VMTile16::zeroed(),
+            content: DispatchContent::Zero,
             memory: VMMemory::new(256 * 64, arena),
         }
     }
 
+    fn fill_undefined(&mut self) {
+        self.content = DispatchContent::Zero;
+    }
+
     #[inline(always)]
-    fn clear_region(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, color: Color) {
+    fn fill_region(&mut self, x0: usize, y0: usize, x1: usize, y1: usize, color: Color) {
         if color.a == 0 {
+            self.content = DispatchContent::Zero;
+
             for j in y0..y1 {
                 self.a.as_f32_mut()[j * TILE_SIZE..][..TILE_SIZE][x0..x1].fill(0.0);
             }
         } else {
+            self.content = DispatchContent::Storage;
+
             let r = color.r as f32 / 255.0;
             let g = color.g as f32 / 255.0;
             let b = color.b as f32 / 255.0;
@@ -322,51 +359,49 @@ impl<'a> DispatchWorker<'a> {
 
     #[inline(always)]
     unsafe fn draw_region(&mut self, context: VMContext, bounds: Bounds) {
-        if bounds.contains([0, 0, 16, 16]) && self.memory.slots::<VMTile16>() >= context.program.used_registers() {
+        let width = bounds.width();
+        let height = bounds.height();
+
+        // at least 25% occupancy
+        if (width > 8 || height > 8) && self.memory.slots::<VMTile16>() >= context.program.used_registers() {
             unsafe {
-                self.draw_region_subtile::<VMTile16>(context, 0, 0, 0, 0, 16, 16);
+                self.draw_region_subtile::<VMTile16>(
+                    context,
+                    0,
+                    0,
+                    bounds.left as usize,
+                    bounds.top as usize,
+                    width as usize,
+                    height as usize,
+                );
             }
         } else {
-            for i in 0..4u32 {
-                let (x0, y0) = ((i % 2) * 8, (i / 2) * 8);
-                if bounds.contains([x0, y0, x0 + 8, y0 + 8])
-                    && self.memory.slots::<VMTile8>() >= context.program.used_registers()
-                {
+            for i in (bounds.left..bounds.right).step_by(4) {
+                for j in (bounds.top..bounds.bottom).step_by(4) {
                     unsafe {
-                        self.draw_region_subtile::<VMTile8>(context, x0 as usize, y0 as usize, 0, 0, 8, 8);
-                    }
-                } else {
-                    for i in 0..4u32 {
-                        let (x1, y1) = (x0 + (i % 2) * 4, y0 + (i / 2) * 4);
-                        let bounds = bounds.intersect([x1, y1, x1 + 4, y1 + 4]);
-                        if !bounds.is_empty() {
-                            unsafe {
-                                self.draw_region_subtile::<VMTile4>(
-                                    context,
-                                    x1 as usize,
-                                    y1 as usize,
-                                    (bounds.left - x1) as usize,
-                                    (bounds.top - y1) as usize,
-                                    bounds.width() as usize,
-                                    bounds.height() as usize,
-                                );
-                            }
-                        }
+                        self.draw_region_subtile::<VMTile4>(
+                            context,
+                            i as usize,
+                            j as usize,
+                            0,
+                            0,
+                            (bounds.right - i).min(4) as usize,
+                            (bounds.bottom - j).min(4) as usize,
+                        );
                     }
                 }
             }
         }
     }
 
-    #[inline(always)]
     #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
     unsafe fn draw_region_subtile<T: VMTile>(
         &mut self,
         mut context: VMContext,
 
         tile_x: usize,
         tile_y: usize,
-
         mask_x: usize,
         mask_y: usize,
         mask_w: usize,
@@ -410,18 +445,18 @@ impl<'a> DispatchWorker<'a> {
                         }
                     }
 
-                    let a1 = a1[src].clamp(0.0, 1.0);
-                    a0[dst] = (1.0 - a0[dst]) * a1 + a0[dst];
-                    r0[dst] = (r1[src] - r0[dst]) * a1 + r0[dst];
-                    g0[dst] = (g1[src] - g0[dst]) * a1 + g0[dst];
-                    b0[dst] = (b1[src] - b0[dst]) * a1 + b0[dst];
+                    let a1 = 1.0 - a1[src].clamp(0.0, 1.0);
+                    a0[dst] = (1.0 - a1) + a0[dst] * a1;
+                    r0[dst] = r1[src] + r0[dst] * a1;
+                    g0[dst] = g1[src] + g0[dst] * a1;
+                    b0[dst] = b1[src] + b0[dst] * a1;
                 }
             }
         }
     }
 
-    #[inline(always)]
     fn reset_tile(&mut self) {
+        self.content = DispatchContent::Screen;
         self.r.as_f32_mut().fill(0.0);
         self.g.as_f32_mut().fill(0.0);
         self.b.as_f32_mut().fill(0.0);
