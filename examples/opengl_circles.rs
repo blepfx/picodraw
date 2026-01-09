@@ -26,9 +26,9 @@ fn shader_circle() -> float4 {
     let y = float1::read_f32(4);
     let radius = float1::read_f32(8);
     let alpha = float1::read_f32(12);
-    let mask = sdf_circle(float2::position(), float2((x, y)), radius) * alpha;
+    let mask = sdf_circle(float2::position(), float2((x, y)), radius);
 
-    float4((mask, mask * 0.5, mask, mask))
+    float4((1.0, 0.5, 1.0, mask * alpha))
 }
 
 fn main() {

@@ -3,20 +3,13 @@ members = [
     ".",
     "crates/core",
     "crates/opengl",
-    "crates/software",
 ]
 
 [workspace.dependencies]
 # tests & benchmarks
-divan = "0.1.21"
-gungraun = "0.17.0"
 picoview = { git = "https://github.com/blepfx/picoview", rev = "d79b238d363e8e902f5a3ba2b5676162df14dffb" }
 image = { version = "0.25.5", default-features = false, features = ["webp"] }
 yansi = "1.0"
-fastrand = "2.3"
-
-# feature(software)
-bumpalo = { version = "3.17", features = ["boxed", "collections"] }
 
 # feature(opengl)
 glow = { git = "https://github.com/grovesNL/glow/", branch = "main" }
@@ -39,7 +32,6 @@ exclude = [
 [dependencies]
 picodraw-core = { path = "crates/core" }
 picodraw-opengl = { path = "crates/opengl", optional = true }
-picodraw-software = { path = "crates/software", optional = true }
 
 [dev-dependencies]
 picoview = { workspace = true }
@@ -49,7 +41,6 @@ yansi = { workspace = true }
 [features]
 default = []
 opengl = ["dep:picodraw-opengl"]
-software = ["dep:picodraw-software"]
 
 [[example]]
 name = "opengl_circles"

@@ -9,15 +9,13 @@ use yansi::Paint;
 
 pub const MAX_CANVAS_SIZE: u32 = 512;
 
-const MAX_P90_ERROR: f64 = 1.01;
+const MAX_P90_ERROR: f64 = 0.05;
 const MAX_P95_ERROR: f64 = 1.20;
 const MAX_P99_ERROR: f64 = 2.00;
 
 #[track_caller]
 pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynContext) + Sync + Send + 'static) {
     if cfg!(miri) {
-        #[cfg(feature = "software")]
-        software::render(width, height, Arc::new(render));
         return;
     }
 
@@ -26,8 +24,6 @@ pub fn run(test: &str, width: u32, height: u32, render: impl Fn(&mut dyn DynCont
 
     #[allow(clippy::type_complexity)]
     let results: Vec<(&'static str, fn(u32, u32, RenderJob) -> DynamicImage)> = vec![
-        #[cfg(feature = "software")]
-        ("software", software::render),
         #[cfg(feature = "opengl")]
         ("opengl", opengl::render),
     ];
@@ -459,33 +455,5 @@ pub mod opengl {
             Ok(image) => image,
             Err(err) => resume_unwind(err),
         }
-    }
-}
-
-#[cfg(feature = "software")]
-pub mod software {
-    use super::RenderJob;
-    use image::{DynamicImage, Rgba, RgbaImage};
-    use picodraw::{
-        Color,
-        software::{BufferMut, SoftwareBackend},
-    };
-
-    pub fn render(width: u32, height: u32, render: RenderJob) -> DynamicImage {
-        let mut backend = SoftwareBackend::with_max_parallelism();
-        let mut buffer = vec![Color::default(); (width * height) as usize];
-        let mut context = backend.open(BufferMut::from_slice(&mut buffer, width as usize, height as usize));
-
-        render(&mut context);
-
-        let mut image = RgbaImage::new(width, height);
-        for i in 0..width {
-            for j in 0..height {
-                let data = buffer[(i + j * width) as usize];
-                image.put_pixel(i, j, Rgba([data.r, data.g, data.b, data.a]));
-            }
-        }
-
-        image.into()
     }
 }

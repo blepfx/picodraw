@@ -978,7 +978,7 @@ pub mod semantics {
 
             context.draw(DrawTarget::Screen, |encoder| {
                 encoder.add_rect([1, 1, 5, 5].into());
-                encoder.add_data(&f32::to_ne_bytes(0.5));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.5));
@@ -986,15 +986,15 @@ pub mod semantics {
 
                 encoder.add_rect([3, 3, 7, 7].into());
                 encoder.add_data(&f32::to_ne_bytes(0.0));
-                encoder.add_data(&f32::to_ne_bytes(0.25));
-                encoder.add_data(&f32::to_ne_bytes(0.25));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
                 encoder.add_data(&f32::to_ne_bytes(0.25));
                 encoder.draw(&shader);
 
                 encoder.add_rect([0, 0, 8, 8].into());
-                encoder.add_data(&f32::to_ne_bytes(0.1));
-                encoder.add_data(&f32::to_ne_bytes(0.1));
-                encoder.add_data(&f32::to_ne_bytes(0.1));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
                 encoder.add_data(&f32::to_ne_bytes(0.1));
                 encoder.draw(&shader);
             });
@@ -1089,7 +1089,7 @@ pub mod semantics {
 
             context.draw(DrawTarget::Screen, |encoder| {
                 encoder.add_rect([1, 1, 7, 7].into());
-                encoder.add_data(&f32::to_ne_bytes(0.5));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.0));
                 encoder.add_data(&f32::to_ne_bytes(0.5));
@@ -1101,8 +1101,8 @@ pub mod semantics {
 
                 encoder.add_rect([1, 1, 7, 7].into());
                 encoder.add_data(&f32::to_ne_bytes(0.0));
-                encoder.add_data(&f32::to_ne_bytes(0.25));
-                encoder.add_data(&f32::to_ne_bytes(0.25));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
+                encoder.add_data(&f32::to_ne_bytes(1.0));
                 encoder.add_data(&f32::to_ne_bytes(0.25));
                 encoder.draw(&shader);
             });
@@ -1152,112 +1152,6 @@ pub mod semantics {
                 encoder.draw(&shader);
 
                 encoder.add_rect([8, 8, 16, 16].into());
-                encoder.draw(&shader);
-            });
-        });
-    }
-}
-
-pub mod tiling {
-    use super::*;
-
-    #[test]
-    fn tiling_aligned_8() {
-        run("tiling_aligned_8", 16, 16, |context| {
-            let shader = context
-                .create_shader(&ShaderData::trace(|| {
-                    let data = float2::position().rem_euclid(3.0) / 3.0;
-                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-                }))
-                .unwrap();
-
-            context.draw(DrawTarget::Screen, |encoder| {
-                encoder.add_rect([0, 8, 8, 16].into());
-                encoder.draw(&shader);
-            });
-        });
-    }
-
-    #[test]
-    fn tiling_centered_8() {
-        run("tiling_centered_8", 16, 16, |context| {
-            let shader = context
-                .create_shader(&ShaderData::trace(|| {
-                    let data = float2::position().rem_euclid(3.0) / 3.0;
-                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-                }))
-                .unwrap();
-
-            context.draw(DrawTarget::Screen, |encoder| {
-                encoder.add_rect([4, 4, 12, 12].into());
-                encoder.draw(&shader);
-            });
-        });
-    }
-
-    #[test]
-    fn tiling_aligned_4() {
-        run("tiling_aligned_4", 16, 16, |context| {
-            let shader = context
-                .create_shader(&ShaderData::trace(|| {
-                    let data = float2::position().rem_euclid(3.0) / 3.0;
-                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-                }))
-                .unwrap();
-
-            context.draw(DrawTarget::Screen, |encoder| {
-                encoder.add_rect([0, 8, 4, 12].into());
-                encoder.draw(&shader);
-            });
-        });
-    }
-
-    #[test]
-    fn tiling_centered_4() {
-        run("tiling_centered_4", 16, 16, |context| {
-            let shader = context
-                .create_shader(&ShaderData::trace(|| {
-                    let data = float2::position().rem_euclid(3.0) / 3.0;
-                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-                }))
-                .unwrap();
-
-            context.draw(DrawTarget::Screen, |encoder| {
-                encoder.add_rect([6, 6, 10, 10].into());
-                encoder.draw(&shader);
-            });
-        });
-    }
-
-    #[test]
-    fn tiling_aligned_2() {
-        run("tiling_aligned_2", 16, 16, |context| {
-            let shader = context
-                .create_shader(&ShaderData::trace(|| {
-                    let data = float2::position().rem_euclid(3.0) / 3.0;
-                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-                }))
-                .unwrap();
-
-            context.draw(DrawTarget::Screen, |encoder| {
-                encoder.add_rect([4, 8, 6, 10].into());
-                encoder.draw(&shader);
-            });
-        });
-    }
-
-    #[test]
-    fn tiling_centered_2() {
-        run("tiling_centered_2", 16, 16, |context| {
-            let shader = context
-                .create_shader(&ShaderData::trace(|| {
-                    let data = float2::position().rem_euclid(3.0) / 3.0;
-                    float4((data.x(), data.y(), data.x() + data.y(), 1.0))
-                }))
-                .unwrap();
-
-            context.draw(DrawTarget::Screen, |encoder| {
-                encoder.add_rect([7, 7, 9, 9].into());
                 encoder.draw(&shader);
             });
         });

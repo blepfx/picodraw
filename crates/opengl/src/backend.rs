@@ -4,7 +4,7 @@ use crate::{
     dispatch::{Dispatcher, DispatcherScratch},
     opengl::{
         GlFramebufferBinding, GlInfo, GlProfiler, GlProgram, GlStreamBuffer, GlTexture, GlVertexArray,
-        enable_blend_premul, enable_debug, is_context_valid,
+        enable_blend_normal, enable_debug, is_context_valid,
     },
 };
 use glow::HasContext;
@@ -370,7 +370,7 @@ impl<'a, T: HasContext + 'static> picodraw_core::Context for Context<'a, T> {
             }
         }
 
-        enable_blend_premul(gl);
+        enable_blend_normal(gl);
 
         f(&mut dispatcher);
 
